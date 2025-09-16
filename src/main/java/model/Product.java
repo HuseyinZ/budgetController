@@ -3,27 +3,40 @@ package model;
 import java.math.BigDecimal;
 
 public class Product extends BaseEntity {
-    protected String pName;
+    private String name;
     private Long categoryId;           // basit JDBC için FK id
     private BigDecimal unitPrice;      // NET fiyat (KDV hariç)
     private BigDecimal vatRate;        // örn: 0.20 (yüzde 20)
+    private Integer stock = 0;
     private boolean active = true;
     public static final int NAME_MAX = 100;
     public static final int SKU_MAX = 64;
     public static final java.math.BigDecimal DEFAULT_VAT = new java.math.BigDecimal("0.20");
 
+    public Product() {
+    }
+
     public String getPName() {
-        return pName;
+        return name;
     }
 
     public void setPName(String pName) {
-        if (pName == null || (pName = pName.trim()).isEmpty())
-            throw new IllegalArgumentException("name boş olamaz");
-        if (pName.length() > NAME_MAX)
-            throw new IllegalArgumentException("name uzun");
-        this.pName = pName;
+        setName(pName);
     }
 
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        if (name == null || (name = name.trim()).isEmpty()) {
+            throw new IllegalArgumentException("name boş olamaz");
+        }
+        if (name.length() > NAME_MAX) {
+            throw new IllegalArgumentException("name uzun");
+        }
+        this.name = name;
+    }
 
     public Long getCategoryId() {
         return categoryId;
@@ -57,6 +70,26 @@ public class Product extends BaseEntity {
         this.vatRate = vatRate;
     }
 
+    public Integer getStock() {
+        return stock;
+    }
+
+    public void setStock(Integer stock) {
+        if (stock != null && stock < 0) {
+            throw new IllegalArgumentException("stok negatif olamaz");
+        }
+        this.stock = stock;
+    }
+
+    public void adjustStock(int delta) {
+        int current = stock == null ? 0 : stock;
+        int updated = current + delta;
+        if (updated < 0) {
+            throw new IllegalArgumentException("stok negatif olamaz");
+        }
+        this.stock = updated;
+    }
+
     public boolean isActive() {
         return active;
     }
@@ -64,5 +97,4 @@ public class Product extends BaseEntity {
     public void setActive(boolean active) {
         this.active = active;
     }
-
 }

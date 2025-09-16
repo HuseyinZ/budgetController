@@ -1,33 +1,86 @@
 package service;
 
-import dao.*;
-import dao.jdbc.OrderJdbcDAO;
+import DataConnection.Db;
+import DataConnection.TransactionExecutor;
+import dao.OrderDAO;
+import dao.OrderItemsDAO;
+import dao.PaymentDAO;
+import dao.ProductDAO;
+import dao.RestaurantTableDAO;
 import dao.jdbc.OrderItemsJdbcDAO;
+import dao.jdbc.OrderJdbcDAO;
 import dao.jdbc.PaymentJdbcDAO;
 import dao.jdbc.ProductJdbcDAO;
-import model.*;
+import dao.jdbc.RestaurantTableJdbcDAO;
+import model.Order;
+import model.OrderItem;
+import model.OrderStatus;
+import model.Payment;
+import model.PaymentMethod;
+import model.Product;
+import model.TableStatus;
 
 import java.math.BigDecimal;
+import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 public class OrderService {
 
-    // DAO’ların JDBC implementasyonları
-    private final OrderDAO orderDAO = new OrderJdbcDAO();
-    private final OrderItemsDAO orderItemsDAO = new OrderItemsJdbcDAO();
-    private final ProductDAO productDAO = new ProductJdbcDAO();
-    private final PaymentDAO paymentDAO = new PaymentJdbcDAO();
+    private final OrderDAO orderDAO;
+    private final OrderItemsDAO orderItemsDAO;
+    private final ProductDAO productDAO;
+    private final PaymentDAO paymentDAO;
+    private final RestaurantTableDAO tableDAO;
 
-    // Masa durumunu güncellemek için service’e ihtiyacımız var
-    private final RestaurantTableService tableService;
+    private final Function<Connection, OrderDAO> orderDaoFactory;
+    private final Function<Connection, OrderItemsDAO> orderItemsDaoFactory;
+    private final Function<Connection, ProductDAO> productDaoFactory;
+    private final Function<Connection, PaymentDAO> paymentDaoFactory;
+    private final Function<Connection, RestaurantTableDAO> tableDaoFactory;
+    private final TransactionExecutor txExecutor;
 
-    public OrderService(RestaurantTableService tableService) {
-        this.tableService = tableService;
+    public OrderService() {
+        this(new OrderJdbcDAO(), new OrderItemsJdbcDAO(), new ProductJdbcDAO(),
+                new PaymentJdbcDAO(), new RestaurantTableJdbcDAO());
     }
 
-    /* ===================== SORGULAR ===================== */
+    public OrderService(OrderDAO orderDAO,
+                        OrderItemsDAO orderItemsDAO,
+                        ProductDAO productDAO,
+                        PaymentDAO paymentDAO,
+                        RestaurantTableDAO tableDAO) {
+        this(orderDAO, orderItemsDAO, productDAO, paymentDAO, tableDAO,
+                OrderJdbcDAO::new, OrderItemsJdbcDAO::new, ProductJdbcDAO::new,
+                PaymentJdbcDAO::new, RestaurantTableJdbcDAO::new, Db::tx);
+    }
+
+    public OrderService(OrderDAO orderDAO,
+                        OrderItemsDAO orderItemsDAO,
+                        ProductDAO productDAO,
+                        PaymentDAO paymentDAO,
+                        RestaurantTableDAO tableDAO,
+                        Function<Connection, OrderDAO> orderDaoFactory,
+                        Function<Connection, OrderItemsDAO> orderItemsDaoFactory,
+                        Function<Connection, ProductDAO> productDaoFactory,
+                        Function<Connection, PaymentDAO> paymentDaoFactory,
+                        Function<Connection, RestaurantTableDAO> tableDaoFactory,
+                        TransactionExecutor txExecutor) {
+        this.orderDAO = Objects.requireNonNull(orderDAO, "orderDAO");
+        this.orderItemsDAO = Objects.requireNonNull(orderItemsDAO, "orderItemsDAO");
+        this.productDAO = Objects.requireNonNull(productDAO, "productDAO");
+        this.paymentDAO = Objects.requireNonNull(paymentDAO, "paymentDAO");
+        this.tableDAO = Objects.requireNonNull(tableDAO, "tableDAO");
+        this.orderDaoFactory = Objects.requireNonNull(orderDaoFactory, "orderDaoFactory");
+        this.orderItemsDaoFactory = Objects.requireNonNull(orderItemsDaoFactory, "orderItemsDaoFactory");
+        this.productDaoFactory = Objects.requireNonNull(productDaoFactory, "productDaoFactory");
+        this.paymentDaoFactory = Objects.requireNonNull(paymentDaoFactory, "paymentDaoFactory");
+        this.tableDaoFactory = Objects.requireNonNull(tableDaoFactory, "tableDaoFactory");
+        this.txExecutor = Objects.requireNonNull(txExecutor, "txExecutor");
+    }
 
     public Optional<Order> getOrderById(Long orderId) {
         return orderDAO.findById(orderId);
@@ -41,134 +94,141 @@ public class OrderService {
         return orderDAO.findOpenOrderByTable(tableId);
     }
 
-    /* ===================== SİPARİŞ OLUŞTUR/KAPAT ===================== */
-
     public Order createOrder(Long tableId, Long waiterId) {
-        // Order modelinde parametreli ctor var: (tableId, waiterId, status)
-        Order order = new Order(tableId, waiterId, OrderStatus.PENDING);
-        Long id = orderDAO.create(order);
-        if (id == null || id <= 0) {
-            throw new IllegalStateException("Order create failed");
-        }
-        order.setId(id);
-
-        // Masa dolu
-        if (tableId != null) {
-            tableService.markTableOccupied(tableId, true);
-        }
-        return order;
-    }
-
-    /** Siparişi kapat + ödeme kaydet + masayı boşalt. */
-    // service/OrderService.java
-    public void checkoutAndClose(Long orderId, Long cashierUserId, PaymentMethod method) {
-        // 1) Kalemlerden toplamları topla
-        BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxTotal = BigDecimal.ZERO;
-        BigDecimal total    = BigDecimal.ZERO;
-
-        List<OrderItem> items = orderItemsDAO.findByOrderId(orderId);
-        for (OrderItem it : items) {
-            if (it.getNetAmount()  != null) subtotal = subtotal.add(it.getNetAmount());
-            if (it.getTaxAmount()  != null) taxTotal = taxTotal.add(it.getTaxAmount());
-            if (it.getLineTotal()  != null) total    = total.add(it.getLineTotal());
-        }
-        orderDAO.updateTotals(orderId, subtotal, taxTotal, BigDecimal.ZERO, total);
-
-        // 2) Ödeme kaydı
-        Payment p = new Payment();
-        p.setOrderId(orderId);
-        p.setCashierId(cashierUserId);
-        p.setAmount(total);
-        p.setMethod(method);
-        paymentDAO.create(p);
-
-        // 3) Siparişi KAPAT (ve durumu COMPLETED yap) — tek UPDATE
-        orderDAO.closeOrder(orderId, LocalDateTime.now());
-
-        // 4) Masayı boşalt
-        orderDAO.findById(orderId).ifPresent(o -> {
-            if (o.getTableId() != null) {
-                tableService.markTableOccupied(o.getTableId(), false);
+        return txExecutor.execute(conn -> {
+            OrderDAO txOrder = orderDaoFactory.apply(conn);
+            RestaurantTableDAO txTable = tableDaoFactory.apply(conn);
+            Order order = new Order(tableId, waiterId, OrderStatus.PENDING);
+            Long id = txOrder.create(order);
+            if (id == null || id <= 0) {
+                throw new IllegalStateException("Order create failed");
             }
+            order.setId(id);
+            if (tableId != null) {
+                txTable.updateStatus(tableId, TableStatus.OCCUPIED);
+            }
+            return order;
         });
     }
 
+    public void checkoutAndClose(Long orderId, Long cashierUserId, PaymentMethod method) {
+        txExecutor.execute(conn -> {
+            OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
+            OrderDAO txOrders = orderDaoFactory.apply(conn);
+            PaymentDAO txPayments = paymentDaoFactory.apply(conn);
+            RestaurantTableDAO txTables = tableDaoFactory.apply(conn);
 
-    /* ===================== KALEM İŞLEMLERİ ===================== */
+            BigDecimal subtotal = BigDecimal.ZERO;
+            BigDecimal taxTotal = BigDecimal.ZERO;
+            BigDecimal total = BigDecimal.ZERO;
 
-    /** Siparişe ürün ekle (yoksa ekler, varsa miktarı artırır). Stok düşer. */
+            List<OrderItem> items = txItems.findByOrderId(orderId);
+            for (OrderItem it : items) {
+                if (it.getNetAmount() != null) subtotal = subtotal.add(it.getNetAmount());
+                if (it.getTaxAmount() != null) taxTotal = taxTotal.add(it.getTaxAmount());
+                if (it.getLineTotal() != null) total = total.add(it.getLineTotal());
+            }
+            txOrders.updateTotals(orderId, subtotal, taxTotal, BigDecimal.ZERO, total);
+
+            Payment p = new Payment();
+            p.setOrderId(orderId);
+            p.setCashierId(cashierUserId);
+            p.setAmount(total);
+            p.setMethod(method);
+            txPayments.create(p);
+
+            txOrders.closeOrder(orderId, LocalDateTime.now());
+
+            txOrders.findById(orderId).ifPresent(o -> {
+                if (o.getTableId() != null) {
+                    txTables.updateStatus(o.getTableId(), TableStatus.EMPTY);
+                }
+            });
+            return null;
+        });
+    }
+
     public void addItemToOrder(Long orderId, Long productId, int quantity) {
         if (quantity <= 0) throw new IllegalArgumentException("quantity > 0 olmalı");
 
-        Product product = productDAO.findById(productId).orElseThrow();
-        // Stok kontrolü (modelde getStock var)
-        Integer stock = null;
-        try { stock = (Integer) product.getClass().getMethod("getStock").invoke(product); }
-        catch (Exception ignore) { /* Product'ta getStock yoksa DAO updateStock yine çalışır */ }
+        txExecutor.execute(conn -> {
+            ProductDAO txProduct = productDaoFactory.apply(conn);
+            OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
 
-        if (stock != null && stock < quantity) {
-            throw new IllegalStateException("Stok yetersiz");
-        }
+            Product product = txProduct.findById(productId).orElseThrow();
+            Integer stock = product.getStock();
+            if (stock != null && stock < quantity) {
+                throw new IllegalStateException("Stok yetersiz");
+            }
 
-        BigDecimal unitPrice = product.getUnitPrice(); // snapshot fiyatı
-
-        // Aynı ürün varsa miktarı artır, yoksa yeni satır ekle
-        orderItemsDAO.addOrIncrement(orderId, productId, quantity, unitPrice);
-
-        // Stok düş
-        productDAO.updateStock(productId, -quantity);
+            BigDecimal unitPrice = product.getUnitPrice();
+            txItems.addOrIncrement(orderId, productId, product.getName(), quantity, unitPrice);
+            txProduct.updateStock(productId, -quantity);
+            return null;
+        });
     }
 
-    /** Kalem miktarını azalt; sıfıra inerse siler. Stoku iade eder. */
     public void decrementItem(Long orderItemId, int quantity) {
         if (quantity <= 0) throw new IllegalArgumentException("quantity > 0 olmalı");
 
-        OrderItem item = orderItemsDAO.findById(orderItemId).orElseThrow();
+        txExecutor.execute(conn -> {
+            OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
+            ProductDAO txProduct = productDaoFactory.apply(conn);
 
-        // İade stok
-        productDAO.updateStock(item.getProductId(), +quantity);
-
-        // Kalemi azalt/0 ise sil
-        orderItemsDAO.decrementOrRemove(orderItemId, quantity);
+            OrderItem item = txItems.findById(orderItemId).orElseThrow();
+            txProduct.updateStock(item.getProductId(), quantity);
+            txItems.decrementOrRemove(orderItemId, quantity);
+            return null;
+        });
     }
 
-    /** Siparişten tüm kalemleri siler (ör. iptal). */
     public void clearItems(Long orderId) {
-        // Kalemleri al, stok iade et
-        List<OrderItem> items = orderItemsDAO.findByOrderId(orderId);
-        for (OrderItem it : items) {
-            productDAO.updateStock(it.getProductId(), +it.getQuantity());
-        }
-        // Kalemleri sil
-        orderItemsDAO.removeAllForOrder(orderId);
+        txExecutor.execute(conn -> {
+            OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
+            ProductDAO txProduct = productDaoFactory.apply(conn);
+
+            List<OrderItem> items = txItems.findByOrderId(orderId);
+            for (OrderItem it : items) {
+                txProduct.updateStock(it.getProductId(), it.getQuantity());
+            }
+            txItems.removeAllForOrder(orderId);
+            return null;
+        });
     }
 
-    /* ===================== DİĞER YARDIMCI ===================== */
-
-    /** Siparişin masa atamasını değiştir ve masa doluluklarını güncelle. */
     public void reassignTable(Long orderId, Long newTableId) {
-        Long oldTableId = orderDAO.findById(orderId).map(Order::getTableId).orElse(null);
-        orderDAO.assignTable(orderId, newTableId);
-        if (oldTableId != null && !oldTableId.equals(newTableId)) {
-            tableService.markTableOccupied(oldTableId, false);
-        }
-        if (newTableId != null) {
-            tableService.markTableOccupied(newTableId, true);
-        }
+        txExecutor.execute(conn -> {
+            OrderDAO txOrders = orderDaoFactory.apply(conn);
+            RestaurantTableDAO txTables = tableDaoFactory.apply(conn);
+
+            Long oldTableId = txOrders.findById(orderId).map(Order::getTableId).orElse(null);
+            txOrders.assignTable(orderId, newTableId);
+            if (oldTableId != null && !oldTableId.equals(newTableId)) {
+                txTables.updateStatus(oldTableId, TableStatus.EMPTY);
+            }
+            if (newTableId != null) {
+                txTables.updateStatus(newTableId, TableStatus.OCCUPIED);
+            }
+            return null;
+        });
     }
 
-    /** Sipariş toplamlarını tekrar hesaplayıp yazar. (İstediğin yerde çağırabilirsin.) */
     public void recomputeTotals(Long orderId) {
-        BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxTotal = BigDecimal.ZERO;
-        BigDecimal total = BigDecimal.ZERO;
+        txExecutor.execute(conn -> {
+            OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
+            OrderDAO txOrders = orderDaoFactory.apply(conn);
 
-        for (OrderItem it : orderItemsDAO.findByOrderId(orderId)) {
-            if (it.getNetAmount() != null)  subtotal = subtotal.add(it.getNetAmount());
-            if (it.getTaxAmount() != null)  taxTotal = taxTotal.add(it.getTaxAmount());
-            if (it.getLineTotal() != null)  total    = total.add(it.getLineTotal());
-        }
-        orderDAO.updateTotals(orderId, subtotal, taxTotal, BigDecimal.ZERO, total);
+            BigDecimal subtotal = BigDecimal.ZERO;
+            BigDecimal taxTotal = BigDecimal.ZERO;
+            BigDecimal total = BigDecimal.ZERO;
+
+            for (OrderItem it : txItems.findByOrderId(orderId)) {
+                if (it.getNetAmount() != null) subtotal = subtotal.add(it.getNetAmount());
+                if (it.getTaxAmount() != null) taxTotal = taxTotal.add(it.getTaxAmount());
+                if (it.getLineTotal() != null) total = total.add(it.getLineTotal());
+            }
+            txOrders.updateTotals(orderId, subtotal, taxTotal, BigDecimal.ZERO, total);
+            return null;
+        });
     }
 }
