@@ -6,20 +6,27 @@ import model.RestaurantTable;
 import model.TableStatus;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public class RestaurantTableService {
 
-    private final RestaurantTableDAO tableDAO = new RestaurantTableJdbcDAO();
+    private final RestaurantTableDAO tableDAO;
+
+    public RestaurantTableService() {
+        this(new RestaurantTableJdbcDAO());
+    }
+
+    public RestaurantTableService(RestaurantTableDAO tableDAO) {
+        this.tableDAO = Objects.requireNonNull(tableDAO, "tableDAO");
+    }
 
     /* --------- Sorgular --------- */
 
-    /** Tüm masaları getir (no-arg sürüm; arka planda geniş limit veriyoruz). */
     public List<RestaurantTable> getAllTables() {
         return tableDAO.findAll(0, Integer.MAX_VALUE);
     }
 
-    /** Sayfalı listeleme istersen. */
     public List<RestaurantTable> getAllTables(int offset, int limit) {
         return tableDAO.findAll(offset, limit);
     }
@@ -32,14 +39,12 @@ public class RestaurantTableService {
         return tableDAO.findByTableNo(tableNo);
     }
 
-    /** Şu anda boş olanlar. */
     public List<RestaurantTable> getAvailableTables() {
         return tableDAO.findByStatus(TableStatus.EMPTY);
     }
 
     /* --------- Değişiklikler --------- */
 
-    /** Yeni masa oluştur. */
     public Long createTable(int tableNo, String note) {
         RestaurantTable t = new RestaurantTable();
         t.setTableNo(tableNo);
@@ -50,24 +55,20 @@ public class RestaurantTableService {
         return id;
     }
 
-    /** Masa bilgilerini güncelle. */
     public void updateTable(RestaurantTable table) {
-        tableDAO.update(table); // void
+        tableDAO.update(table);
     }
 
-    /** Masayı sil. */
     public void deleteTable(Long tableId) {
-        tableDAO.deleteById(tableId); // void
+        tableDAO.deleteById(tableId);
     }
 
-    /** Masayı dolu/boş işaretle. */
     public void markTableOccupied(Long tableId, boolean occupied) {
         TableStatus newStatus = occupied ? TableStatus.OCCUPIED : TableStatus.EMPTY;
-        tableDAO.updateStatus(tableId, newStatus); // void
+        tableDAO.updateStatus(tableId, newStatus);
     }
 
-    /** Masa notu güncelle. */
     public void updateTableNote(Long tableId, String note) {
-        tableDAO.setNote(tableId, note); // void
+        tableDAO.setNote(tableId, note);
     }
 }
