@@ -1,60 +1,92 @@
 package UI;
 
-import model.Payment;
-import service.SaleService;
+import state.AppState;
+import state.SaleRecord;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.io.File;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 public class AllSalesPanel extends JPanel {
-    private final SaleService saleService;
+    private final AppState appState;
     private final DefaultTableModel tableModel;
     private final JTable table;
-    private final JLabel totalLabel = new JLabel(" ");
-    private final JSpinner dateSpinner;
+    private final JSpinner dateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
+    private final JLabel totalLabel = new JLabel("0.00");
+    private final PropertyChangeListener listener = this::handleStateChange;
 
-    public AllSalesPanel() {
-        this(new SaleService());
-    }
-
-    public AllSalesPanel(SaleService saleService) {
-        this.saleService = Objects.requireNonNull(saleService, "saleService");
+    public AllSalesPanel(AppState appState) {
+        this.appState = Objects.requireNonNull(appState, "appState");
         setLayout(new BorderLayout(8, 8));
 
-        tableModel = new DefaultTableModel(new Object[]{"Sipariş", "Tutar", "Yöntem", "Kasiyer", "Ödeme Zamanı"}, 0) {
+        tableModel = new DefaultTableModel(new Object[]{"Masa", "Bölüm", "Tutar", "Yöntem", "Kasiyer", "Zaman"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
         table = new JTable(tableModel);
+        table.setRowHeight(22);
+        add(buildControls(), BorderLayout.NORTH);
         add(new JScrollPane(table), BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEADING));
-        controls.add(new JLabel("Tarih"));
-        dateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
+        appState.addPropertyChangeListener(listener);
+        refreshTable();
+    }
+
+    private JComponent buildControls() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panel.add(new JLabel("Tarih"));
         dateSpinner.setEditor(new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd"));
-        JButton loadButton = new JButton("Listele");
-        JButton exportButton = new JButton("Excel'e aktar");
-        controls.add(dateSpinner);
-        controls.add(loadButton);
-        controls.add(exportButton);
-        controls.add(totalLabel);
-        totalLabel.setForeground(Color.DARK_GRAY);
-        add(controls, BorderLayout.NORTH);
+        panel.add(dateSpinner);
+        JButton listButton = new JButton("Listele");
+        listButton.addActionListener(e -> refreshTable());
+        panel.add(listButton);
+        JButton exportButton = new JButton("Dışa aktar");
+        exportButton.addActionListener(e -> exportCsv());
+        panel.add(exportButton);
+        panel.add(totalLabel);
+        totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD));
+        return panel;
+    }
 
-        loadButton.addActionListener(e -> loadData());
-        exportButton.addActionListener(e -> exportReport());
+    private void handleStateChange(PropertyChangeEvent event) {
+        if (AppState.EVENT_SALES.equals(event.getPropertyName())) {
+            SwingUtilities.invokeLater(this::refreshTable);
+        }
+    }
 
-        loadData();
+    private void refreshTable() {
+        LocalDate date = selectedDate();
+        List<SaleRecord> records = appState.getSalesOn(date);
+        tableModel.setRowCount(0);
+        double total = 0;
+        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+        for (SaleRecord record : records) {
+            double amount = record.getTotal().doubleValue();
+            total += amount;
+            tableModel.addRow(new Object[]{
+                    record.getTableNo(),
+                    record.getBuilding() + " / " + record.getSection(),
+                    String.format(Locale.getDefault(), "%.2f", amount),
+                    record.getMethod() == null ? "-" : record.getMethod().name(),
+                    record.getPerformedBy(),
+                    record.getTimestamp().format(timeFormatter)
+            });
+        }
+        totalLabel.setText("Toplam: " + String.format(Locale.getDefault(), "%.2f", total));
     }
 
     private LocalDate selectedDate() {
@@ -62,29 +94,32 @@ public class AllSalesPanel extends JPanel {
         return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
-    private void loadData() {
-        LocalDate date = selectedDate();
-        List<Payment> payments = saleService.getDailySalesList(date);
-        tableModel.setRowCount(0);
-        payments.forEach(payment -> tableModel.addRow(new Object[]{
-                payment.getOrderId(),
-                payment.getAmount() == null ? "0.00" : payment.getAmount().toPlainString(),
-                payment.getMethod(),
-                payment.getCashierId(),
-                payment.getPaidAt()
-        }));
-        totalLabel.setText("Toplam: " + saleService.getDailySalesTotal(date).toPlainString());
+    private void exportCsv() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setSelectedFile(new java.io.File("sales-" + selectedDate() + ".csv"));
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            List<SaleRecord> records = appState.getSalesOn(selectedDate());
+            try (FileWriter writer = new FileWriter(chooser.getSelectedFile())) {
+                writer.write("Masa;Bolum;Tutar;Yontem;Kasiyer;Zaman\n");
+                DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+                for (SaleRecord record : records) {
+                    writer.write(record.getTableNo() + ";" +
+                            record.getBuilding() + " / " + record.getSection() + ";" +
+                            record.getTotal().toPlainString() + ";" +
+                            (record.getMethod() == null ? "-" : record.getMethod().name()) + ";" +
+                            record.getPerformedBy() + ";" +
+                            record.getTimestamp().format(timeFormatter) + "\n");
+                }
+                JOptionPane.showMessageDialog(this, "Dosya kaydedildi", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(this, "Dosya kaydedilemedi: " + e.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+            }
+        }
     }
 
-    private void exportReport() {
-        LocalDate date = selectedDate();
-        JFileChooser chooser = new JFileChooser();
-        chooser.setSelectedFile(new File("DailySales-" + date + ".xlsx"));
-        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File file = chooser.getSelectedFile();
-            boolean ok = saleService.exportDailySalesReport(date, file.getAbsolutePath());
-            totalLabel.setText(ok ? "Rapor kaydedildi: " + file : "Rapor oluşturulamadı");
-            totalLabel.setForeground(ok ? new Color(0, 128, 0) : Color.RED.darker());
-        }
+    @Override
+    public void removeNotify() {
+        super.removeNotify();
+        appState.removePropertyChangeListener(listener);
     }
 }
