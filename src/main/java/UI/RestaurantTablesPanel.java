@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +49,7 @@ public class RestaurantTablesPanel extends JPanel {
                         Collectors.toCollection(ArrayList::new)));
 
         byBuilding.forEach((building, areas) -> {
+            areas.sort(Comparator.comparing(AppState.AreaDefinition::getSection));
             JPanel buildingPanel = new JPanel();
             buildingPanel.setLayout(new BoxLayout(buildingPanel, BoxLayout.Y_AXIS));
             buildingPanel.setBorder(BorderFactory.createTitledBorder(building));

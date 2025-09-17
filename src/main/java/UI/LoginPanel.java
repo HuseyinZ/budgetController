@@ -90,6 +90,12 @@ public class LoginPanel extends JPanel {
         Window window = SwingUtilities.getWindowAncestor(this);
         if (window != null) {
             window.dispose();
+
+        } finally {
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window != null) {
+                window.dispose();
+            }
         }
     }
 

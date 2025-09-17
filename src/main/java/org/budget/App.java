@@ -13,6 +13,7 @@ import java.util.Objects;
 public class App {
     private static final AppState APP_STATE = AppState.getInstance();
 
+
     public static void main(String[] args) {
         UserService userService = new UserService();
 
@@ -35,5 +36,8 @@ public class App {
         User authenticated = Objects.requireNonNull(user, "user");
         DashboardView dashboard = new DashboardView(APP_STATE, authenticated);
         dashboard.open();
+
+        AppState state = AppState.getInstance();
+        new DashboardView(state, user).open();
     }
 }
