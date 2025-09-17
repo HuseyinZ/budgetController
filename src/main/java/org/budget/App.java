@@ -2,9 +2,14 @@ package org.budget;
 
 import UI.View.AdminView;
 import UI.View.AllSalesView;
+import UI.View.ExpensesView;
 import UI.View.LoginView;
+import UI.View.ProfitView;
+import UI.View.RestraurantTablesView;
 import UI.View.SaleView;
 import UI.View.SettingView;
+import UI.View.WaiterView;
+import state.AppState;
 import com.formdev.flatlaf.FlatLightLaf;
 import model.Role;
 import model.User;
@@ -37,11 +42,24 @@ public class App {
     }
 
     private static void onLogin(User user) {
-        new SaleView().open();
-       new AllSalesView().open();
-        if (user.getRole() == Role.ADMIN) {
+        AppState state = AppState.getInstance();
+        Role role = user.getRole();
+
+        switch (role) {
+            case GARSON -> new WaiterView(state, user).open();
+            default -> new RestraurantTablesView(state, user).open();
+        }
+
+        if (role == Role.ADMIN) {
             new AdminView().open();
             new SettingView().open();
+            new SaleView(state).open();
+            new AllSalesView(state).open();
+            new ProfitView(state).open();
+            new ExpensesView(state, user).open();
+        } else if (role == Role.KASIYER) {
+            new SaleView(state).open();
+            new ExpensesView(state, user).open();
         }
     }
 }
