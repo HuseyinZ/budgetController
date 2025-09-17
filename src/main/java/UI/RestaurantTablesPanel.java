@@ -14,7 +14,10 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,7 +42,10 @@ public class RestaurantTablesPanel extends JPanel {
 
     private void buildLayout() {
         Map<String, List<AppState.AreaDefinition>> byBuilding = appState.getAreas().stream()
-                .collect(Collectors.groupingBy(AppState.AreaDefinition::getBuilding, Collectors.toList()));
+                .collect(Collectors.groupingBy(
+                        AppState.AreaDefinition::getBuilding,
+                        LinkedHashMap::new,
+                        Collectors.toCollection(ArrayList::new)));
 
         byBuilding.forEach((building, areas) -> {
             JPanel buildingPanel = new JPanel();
@@ -54,7 +60,9 @@ public class RestaurantTablesPanel extends JPanel {
 
                 JPanel grid = new JPanel(new GridLayout(2, 5, 8, 8));
                 grid.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-                for (Integer tableNo : area.getTableNumbers()) {
+                List<Integer> tableNumbers = new ArrayList<>(area.getTableNumbers());
+                Collections.sort(tableNumbers);
+                for (Integer tableNo : tableNumbers) {
                     JButton button = createTableButton(tableNo);
                     grid.add(button);
                 }
