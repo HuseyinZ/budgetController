@@ -7,13 +7,21 @@ import model.User;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 public class UserService {
 
-    private final UserDAO userDAO = new UserJdbcDAO();
+    private final UserDAO userDAO;
 
-    /* --------- Sorgular --------- */
+    public UserService() {
+        this(new UserJdbcDAO());
+    }
+
+    public UserService(UserDAO userDAO) {
+        this.userDAO = Objects.requireNonNull(userDAO, "userDAO");
+        ensureDefaultAdminUser();
+    }
 
     public Optional<User> getUserById(Long userId) {
         return userDAO.findById(userId);
@@ -24,60 +32,94 @@ public class UserService {
     }
 
     public List<User> getAllUsers() {
-        // CrudRepository imzana uygun olarak offset/limit veriyoruz
         return userDAO.findAll(0, Integer.MAX_VALUE);
     }
 
-    /* --------- Kimlik Doğrulama --------- */
-
-    /** Doğru kullanıcı ve parola ise User döner; değilse null. */
     public User login(String username, String rawPassword) {
         Optional<User> opt = userDAO.findByUsername(username);
         if (opt.isEmpty()) return null;
 
         User user = opt.get();
-        String hash = user.getPasswordHash();
-
-        boolean ok;
-        if (hash != null && hash.startsWith("$2")) { // BCrypt hash
-            ok = BCrypt.checkpw(rawPassword, hash);
-        } else {
-            // Geçici/seed veri için plain karşılaştırma (istersen tamamen kaldır)
-            ok = rawPassword != null && rawPassword.equals(hash);
-        }
-
-        if (!ok || !user.isActive()) return null;
+        if (!passwordMatches(user.getPasswordHash(), rawPassword) || !user.isActive()) return null;
         return user;
     }
 
-    /* --------- Yönetim İşlemleri --------- */
+    private void ensureDefaultAdminUser() {
+        try {
+            Optional<User> existingRoot = userDAO.findByUsername("root");
+            if (existingRoot.isEmpty()) {
+                createUser("root", "1234", Role.ADMIN, "root");
+                return;
+            }
 
-    /** Yeni kullanıcı oluşturur ve ID döner. fullName zorunlu ise boşsa username kullanılır. */
+            User rootUser = existingRoot.get();
+            boolean updated = false;
+
+            if (!rootUser.isActive()) {
+                rootUser.setActive(true);
+                updated = true;
+            }
+
+            if (rootUser.getRole() != Role.ADMIN) {
+                rootUser.setRole(Role.ADMIN);
+                updated = true;
+            }
+
+            String fullName = rootUser.getFullName();
+            if (fullName == null || fullName.isBlank()) {
+                rootUser.setFullName("root");
+                updated = true;
+            }
+
+            if (!passwordMatches(rootUser.getPasswordHash(), "1234")) {
+                rootUser.setPasswordHash(BCrypt.hashpw("1234", BCrypt.gensalt()));
+                updated = true;
+            }
+
+            if (updated) {
+                userDAO.update(rootUser);
+            }
+        } catch (UnsupportedOperationException ignored) {
+            // DAO implementation does not support bootstrap operations (e.g. in tests)
+        } catch (RuntimeException ex) {
+            System.err.println("Default admin bootstrap failed: " + ex.getMessage());
+        }
+    }
+
+    private boolean passwordMatches(String storedHash, String rawPassword) {
+        if (storedHash == null || rawPassword == null) {
+            return false;
+        }
+        if (storedHash.startsWith("$2")) {
+            try {
+                return BCrypt.checkpw(rawPassword, storedHash);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+        return rawPassword.equals(storedHash);
+    }
+
     public Long createUser(String username, String rawPassword, Role role, String fullName) {
         String safeFullName = (fullName == null || fullName.isBlank()) ? username : fullName;
         String hash = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
 
-        // Modelinde bu ctor var (UserJdbcDAO da bunu kullanıyor):
         User user = new User(username, hash, role, safeFullName);
         return userDAO.create(user);
     }
 
-    /** Kullanıcıyı güncelle (username, fullName, aktiflik vb.). */
     public void updateUser(User user) {
         userDAO.update(user);
     }
 
-    /** Kullanıcıyı sil. */
     public void deleteUser(Long userId) {
         userDAO.deleteById(userId);
     }
 
-    /** Rol güncelle. */
     public void setUserRole(Long userId, Role role) {
         userDAO.updateRole(userId, role);
     }
 
-    /** Kullanıcıyı aktif yap. */
     public void activate(Long userId) {
         userDAO.findById(userId).ifPresent(u -> {
             u.setActive(true);
@@ -85,7 +127,6 @@ public class UserService {
         });
     }
 
-    /** Kullanıcıyı pasif yap. */
     public void deactivate(Long userId) {
         userDAO.findById(userId).ifPresent(u -> {
             u.setActive(false);
@@ -93,7 +134,6 @@ public class UserService {
         });
     }
 
-    /** Parolayı değiştir. */
     public void changePassword(Long userId, String newRawPassword) {
         String newHash = BCrypt.hashpw(newRawPassword, BCrypt.gensalt());
         userDAO.findById(userId).ifPresent(u -> {

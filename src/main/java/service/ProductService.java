@@ -5,9 +5,18 @@ import dao.jdbc.ProductJdbcDAO;
 import model.Product;
 
 import java.util.List;
+import java.util.Objects;
 
 public class ProductService {
-    private final ProductDAO productDAO = new ProductJdbcDAO();
+    private final ProductDAO productDAO;
+
+    public ProductService() {
+        this(new ProductJdbcDAO());
+    }
+
+    public ProductService(ProductDAO productDAO) {
+        this.productDAO = Objects.requireNonNull(productDAO, "productDAO");
+    }
 
     public List<Product> getAllProducts() {
         return productDAO.findAll(0, Integer.MAX_VALUE);

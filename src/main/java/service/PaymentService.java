@@ -4,17 +4,27 @@ import dao.PaymentDAO;
 import dao.jdbc.PaymentJdbcDAO;
 import model.Payment;
 
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.ss.usermodel.Row;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 
 public class PaymentService {
-    private final PaymentDAO paymentDAO = new PaymentJdbcDAO();
+    private final PaymentDAO paymentDAO;
+
+    public PaymentService() {
+        this(new PaymentJdbcDAO());
+    }
+
+    public PaymentService(PaymentDAO paymentDAO) {
+        this.paymentDAO = Objects.requireNonNull(paymentDAO, "paymentDAO");
+    }
 
     public List<Payment> getAllPayments() {
         return paymentDAO.findAll(0, Integer.MAX_VALUE);
@@ -49,12 +59,16 @@ public class PaymentService {
                 Row row = sheet.createRow(rowIndex++);
                 row.createCell(0).setCellValue(pay.getId());
                 row.createCell(1).setCellValue(pay.getOrderId());
-                row.createCell(2).setCellValue(pay.getCashierId() == null ? -1 : pay.getCashierId());
-                row.createCell(3).setCellValue(pay.getAmount().doubleValue());
-                row.createCell(4).setCellValue(pay.getMethod().toString());
+                row.createCell(2).setCellValue(pay.getCashierId() == null ? "" : pay.getCashierId().toString());
+                row.createCell(3).setCellValue(
+                        pay.getAmount() == null ? "" : pay.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+                row.createCell(4).setCellValue(pay.getMethod() == null ? "" : pay.getMethod().toString());
                 row.createCell(5).setCellValue(
                         pay.getPaidAt() == null ? "" : pay.getPaidAt().toString()
                 );
+            }
+            for (int i = 0; i <= 5; i++) {
+                sheet.autoSizeColumn(i);
             }
             try (FileOutputStream out = new FileOutputStream(filePath)) {
                 workbook.write(out);
