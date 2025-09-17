@@ -1,4 +1,4 @@
-package UI.View;
+package UI;
 
 public class WaiterPanel {
 }
