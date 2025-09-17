@@ -1,7 +1,7 @@
 package UI.View;
 
 import UI.AllSalesPanel;
-import service.SaleService;
+import state.AppState;
 
 import javax.swing.*;
 import java.awt.*;
@@ -9,15 +9,15 @@ import java.util.Objects;
 
 public class AllSalesView extends JFrame {
     public AllSalesView() {
-        this(new SaleService());
+        this(AppState.getInstance());
     }
 
-    public AllSalesView(SaleService saleService) {
-        super("Günlük Satışlar");
+    public AllSalesView(AppState appState) {
+        super("Satış Listesi");
         setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
-        add(new AllSalesPanel(Objects.requireNonNull(saleService)), BorderLayout.CENTER);
-        setSize(800, 500);
+        add(new AllSalesPanel(Objects.requireNonNull(appState, "appState")), BorderLayout.CENTER);
+        setSize(800, 520);
         setLocationRelativeTo(null);
     }
 
