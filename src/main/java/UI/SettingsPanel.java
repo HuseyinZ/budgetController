@@ -108,7 +108,7 @@ public class SettingsPanel extends JPanel {
             }
             statusLabel.setText("Yapılandırma kaydedildi: " + target);
             statusLabel.setForeground(new Color(0, 128, 0));
-        } catch (NumberFormatException | IllegalArgumentException ex) {
+        } catch (IllegalArgumentException ex) {
             statusLabel.setText(ex.getMessage());
             statusLabel.setForeground(Color.RED.darker());
         } catch (IOException ex) {

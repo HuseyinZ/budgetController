@@ -22,9 +22,9 @@ public final class Db {
         Properties props = loadProperties();
 
         String jdbcUrl = resolve("db.url", "DB_URL", props,
-                "jdbc:mysql://127.0.0.1:3306/budget?useSSL=false&serverTimezone=UTC");
+                "jdbc:mysql://127.0.0.1:3306/?user=root");
         String username = resolve("db.user", "DB_USER", props, "root");
-        String password = resolve("db.password", "DB_PASS", props, "");
+        String password = resolve("db.password", "DB_PASS", props, "1234");
         int maxPool = Integer.parseInt(resolve("db.pool.maxSize", "DB_POOL_MAX", props, "10"));
         int minIdle = Integer.parseInt(resolve("db.pool.minIdle", "DB_POOL_MIN_IDLE", props, "2"));
 
@@ -127,4 +127,5 @@ public final class Db {
         }
         return defaultValue;
     }
+
 }

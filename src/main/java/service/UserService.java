@@ -93,4 +93,25 @@ public class UserService {
             userDAO.update(u);
         });
     }
+    /**
+     * Uygulama başlarken çağır: admin kullanıcısı yoksa oluşturur.
+     * @return true => oluşturuldu, false => zaten vardı
+     */
+    public boolean seedAdminIfNotExists() {
+        Optional<User> existing = userDAO.findByUsername("admin");
+        if (existing.isPresent()) {
+            return false; // zaten var
+        }
+        // fullName boş gelirse createUser içinde username'e eşitlenecek
+        createUser("admin", "1234", Role.ADMIN, "Admin User");
+        return true;
+    }
+
+    /**
+     * (İsteğe bağlı) Gerekirse açıkça çağırabileceğin kısa yardımcı.
+     */
+    public Long createAdmin(String rawPassword) {
+        return createUser("admin", rawPassword, Role.ADMIN, "Admin User");
+    }
+
 }
