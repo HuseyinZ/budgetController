@@ -45,6 +45,7 @@ public class TableOrderDialog extends JDialog {
     private final JButton saleButton = new JButton("Satış yap");
     private final PropertyChangeListener listener = this::handleStateChange;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final boolean waiterRole;
 
     private static final List<MenuItem> MENU_ITEMS = IntStream.rangeClosed(1, 12)
             .mapToObj(i -> new MenuItem(i + ". ürün", BigDecimal.valueOf(40 + i * 5L)))
@@ -56,6 +57,7 @@ public class TableOrderDialog extends JDialog {
         this.currentUser = Objects.requireNonNull(user, "user");
         this.tableNo = snapshot.getTableNo();
         this.productCombo = new JComboBox<>(MENU_ITEMS.toArray(new MenuItem[0]));
+        this.waiterRole = user.getRole() == Role.GARSON;
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(12, 12));
@@ -127,9 +129,11 @@ public class TableOrderDialog extends JDialog {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton clearButton = new JButton("Siparişi temizle");
         clearButton.addActionListener(e -> clearOrder());
+        clearButton.setVisible(!waiterRole);
         panel.add(clearButton);
 
         markServedButton.addActionListener(e -> markServed());
+        markServedButton.setVisible(!waiterRole);
         panel.add(markServedButton);
 
         saleButton.addActionListener(e -> performSale());
@@ -277,8 +281,13 @@ public class TableOrderDialog extends JDialog {
         }
         statusLabel.setText(text);
         statusLabel.setForeground(color);
-        markServedButton.setEnabled(status == TableOrderStatus.ORDERED);
-        saleButton.setEnabled(status == TableOrderStatus.SERVED || status == TableOrderStatus.ORDERED);
+        if (waiterRole) {
+            markServedButton.setEnabled(false);
+            saleButton.setEnabled(false);
+        } else {
+            markServedButton.setEnabled(status == TableOrderStatus.ORDERED);
+            saleButton.setEnabled(status == TableOrderStatus.SERVED || status == TableOrderStatus.ORDERED);
+        }
     }
 
     private record MenuItem(String name, BigDecimal price) {
