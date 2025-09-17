@@ -42,6 +42,19 @@ public class App {
     }
 
     private static void onLogin(User user) {
+        Role role = user.getRole();
+
+        if (role == Role.ADMIN) {
+            new SaleView().open();
+            new AllSalesView().open();
+            new AdminView().open();
+            new SettingView().open();
+            return;
+        }
+
+        if (role == Role.KASIYER) {
+            new AllSalesView().open();
+
         AppState state = AppState.getInstance();
         Role role = user.getRole();
 
