@@ -9,6 +9,9 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -17,6 +20,11 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class ExpensesPanel extends JPanel {
     private final AppState appState;
@@ -58,6 +66,10 @@ public class ExpensesPanel extends JPanel {
         JButton refreshButton = new JButton("Listele");
         refreshButton.addActionListener(e -> refreshTable());
         panel.add(refreshButton);
+
+        JButton exportButton = new JButton("Excel'e aktar");
+        exportButton.addActionListener(e -> exportToExcel());
+        panel.add(exportButton);
         return panel;
     }
 
@@ -138,6 +150,49 @@ public class ExpensesPanel extends JPanel {
     private LocalDate convertToDate(JSpinner spinner) {
         Date date = (Date) spinner.getValue();
         return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private void exportToExcel() {
+        LocalDate date = convertToDate(filterDateSpinner);
+        List<ExpenseRecord> records = appState.getExpensesOn(date);
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setSelectedFile(new File("giderler-" + date + ".xlsx"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File file = chooser.getSelectedFile();
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Giderler");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("Tarih");
+            header.createCell(1).setCellValue("Açıklama");
+            header.createCell(2).setCellValue("Tutar");
+            header.createCell(3).setCellValue("Kullanıcı");
+            header.createCell(4).setCellValue("Kayıt Zamanı");
+
+            int rowIndex = 1;
+            for (ExpenseRecord record : records) {
+                Row row = sheet.createRow(rowIndex++);
+                row.createCell(0).setCellValue(record.getExpenseDate().toString());
+                row.createCell(1).setCellValue(record.getDescription());
+                row.createCell(2).setCellValue(record.getAmount().doubleValue());
+                row.createCell(3).setCellValue(record.getPerformedBy());
+                row.createCell(4).setCellValue(record.getCreatedAt().toString());
+            }
+
+            for (int i = 0; i < 5; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                workbook.write(out);
+            }
+            JOptionPane.showMessageDialog(this, "Excel dosyası kaydedildi", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Excel kaydedilemedi: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     @Override

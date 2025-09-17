@@ -74,13 +74,18 @@ public class LoginPanel extends JPanel {
         User user = userService.login(username, password);
         if (user == null) {
             showError("Giriş başarısız");
-        } else {
-            showInfo("Hoş geldiniz, " + user.getFullName());
+            return;
+        }
+
+        showInfo("Hoş geldiniz, " + user.getFullName());
+
+        try {
+            loginListener.accept(user);
+        } finally {
             Window window = SwingUtilities.getWindowAncestor(this);
             if (window != null) {
                 window.dispose();
             }
-            loginListener.accept(user);
         }
     }
 
