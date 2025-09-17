@@ -15,6 +15,7 @@ import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -61,7 +62,9 @@ public class RestaurantTablesPanel extends JPanel {
 
                 JPanel grid = new JPanel(new GridLayout(2, 5, 8, 8));
                 grid.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-                for (Integer tableNo : area.getTableNumbers()) {
+                List<Integer> tableNumbers = new ArrayList<>(area.getTableNumbers());
+                Collections.sort(tableNumbers);
+                for (Integer tableNo : tableNumbers) {
                     JButton button = createTableButton(tableNo);
                     grid.add(button);
                 }

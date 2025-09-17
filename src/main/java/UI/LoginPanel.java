@@ -81,6 +81,16 @@ public class LoginPanel extends JPanel {
 
         try {
             loginListener.accept(user);
+        } catch (Exception ex) {
+            showError("Kontrol paneli açılırken hata: " + ex.getMessage());
+            ex.printStackTrace();
+            return;
+        }
+
+        Window window = SwingUtilities.getWindowAncestor(this);
+        if (window != null) {
+            window.dispose();
+
         } finally {
             Window window = SwingUtilities.getWindowAncestor(this);
             if (window != null) {

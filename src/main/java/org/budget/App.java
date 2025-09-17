@@ -8,8 +8,12 @@ import service.UserService;
 import state.AppState;
 
 import javax.swing.*;
+import java.util.Objects;
 
 public class App {
+    private static final AppState APP_STATE = AppState.getInstance();
+
+
     public static void main(String[] args) {
         UserService userService = new UserService();
 
@@ -20,17 +24,19 @@ public class App {
             System.out.println("ℹ Admin zaten var, oluşturma atlandı.");
         }
 
-
         SwingUtilities.invokeLater(() -> {
             FlatLightLaf.setup();
             LoginView loginView = new LoginView();
             loginView.setLoginListener(App::onLogin);
             loginView.open();
         });
-
     }
 
     private static void onLogin(User user) {
+        User authenticated = Objects.requireNonNull(user, "user");
+        DashboardView dashboard = new DashboardView(APP_STATE, authenticated);
+        dashboard.open();
+
         AppState state = AppState.getInstance();
         new DashboardView(state, user).open();
     }

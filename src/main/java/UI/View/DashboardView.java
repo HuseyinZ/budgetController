@@ -93,6 +93,11 @@ public class DashboardView extends JFrame {
     }
 
     public void open() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            setVisible(true);
+        } else {
+            SwingUtilities.invokeLater(() -> setVisible(true));
+        }
         SwingUtilities.invokeLater(() -> setVisible(true));
     }
 
