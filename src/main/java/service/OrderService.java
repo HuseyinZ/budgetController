@@ -176,7 +176,9 @@ public class OrderService {
             ProductDAO txProduct = productDaoFactory.apply(conn);
 
             OrderItem item = txItems.findById(orderItemId).orElseThrow();
-            txProduct.updateStock(item.getProductId(), quantity);
+            if (item.getProductId() != null) {
+                txProduct.updateStock(item.getProductId(), quantity);
+            }
             txItems.decrementOrRemove(orderItemId, quantity);
             return null;
         });
@@ -189,7 +191,9 @@ public class OrderService {
 
             List<OrderItem> items = txItems.findByOrderId(orderId);
             for (OrderItem it : items) {
-                txProduct.updateStock(it.getProductId(), it.getQuantity());
+                if (it.getProductId() != null) {
+                    txProduct.updateStock(it.getProductId(), it.getQuantity());
+                }
             }
             txItems.removeAllForOrder(orderId);
             return null;
@@ -230,5 +234,13 @@ public class OrderService {
             txOrders.updateTotals(orderId, subtotal, taxTotal, BigDecimal.ZERO, total);
             return null;
         });
+    }
+
+    public List<OrderItem> getItemsForOrder(Long orderId) {
+        return orderItemsDAO.findByOrderId(orderId);
+    }
+
+    public void updateOrderStatus(Long orderId, OrderStatus status) {
+        orderDAO.updateStatus(orderId, status);
     }
 }
