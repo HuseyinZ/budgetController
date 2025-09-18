@@ -189,7 +189,12 @@ public class AppState {
         Long tableId = ensureTableExists(tableNo);
         Optional<Order> optOrder = orderService.getOpenOrderByTable(tableId);
 
-        TableOrderStatus status = TableOrderStatus.EMPTY;
+        TableStatus tableStatus = tableService.getTableById(tableId)
+                .map(RestaurantTable::getStatus)
+                .orElse(TableStatus.EMPTY);
+        TableOrderStatus tableOrderStatus = mapTableStatus(tableStatus);
+
+        TableOrderStatus status = tableOrderStatus;
         List<OrderLine> lines = List.of();
         List<OrderLogEntry> history = List.of();
         BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -204,13 +209,8 @@ public class AppState {
                     .map(OrderLine::getLineTotal)
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
-            status = mapOrderStatus(order.getStatus());
+            status = mergeStatuses(mapOrderStatus(order.getStatus()), tableOrderStatus);
             history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
-        } else {
-            TableStatus tableStatus = tableService.getByTableNo(tableNo)
-                    .map(RestaurantTable::getStatus)
-                    .orElse(TableStatus.EMPTY);
-            status = mapTableStatus(tableStatus);
         }
 
         return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
@@ -669,6 +669,22 @@ public class AppState {
             case RESERVED -> TableOrderStatus.SERVED;
             case OCCUPIED -> TableOrderStatus.ORDERED;
         };
+    }
+
+    private TableOrderStatus mergeStatuses(TableOrderStatus orderStatus, TableOrderStatus tableStatus) {
+        TableOrderStatus safeOrderStatus = orderStatus == null ? TableOrderStatus.EMPTY : orderStatus;
+        TableOrderStatus safeTableStatus = tableStatus == null ? TableOrderStatus.EMPTY : tableStatus;
+
+        if (safeOrderStatus == TableOrderStatus.SERVED) {
+            return TableOrderStatus.SERVED;
+        }
+        if (safeOrderStatus == TableOrderStatus.EMPTY) {
+            return safeTableStatus;
+        }
+        if (safeOrderStatus == TableOrderStatus.ORDERED && safeTableStatus == TableOrderStatus.SERVED) {
+            return TableOrderStatus.SERVED;
+        }
+        return safeOrderStatus;
     }
 
     private SaleRecord toSaleRecord(Payment payment) {
