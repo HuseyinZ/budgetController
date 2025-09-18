@@ -68,6 +68,10 @@ public class RestaurantTableService {
         tableDAO.updateStatus(tableId, newStatus);
     }
 
+    public void markTableReserved(Long tableId) {
+        tableDAO.updateStatus(tableId, TableStatus.RESERVED);
+    }
+
     public void updateTableNote(Long tableId, String note) {
         tableDAO.setNote(tableId, note);
     }
