@@ -71,6 +71,13 @@
             <version>${gson.version}</version>
         </dependency>
 
+        <!-- JetBrains annotations for null-safety hints -->
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>24.1.0</version>
+        </dependency>
+
         <!-- Excel: Apache POI (XLSX) -->
         <dependency>
             <groupId>org.apache.poi</groupId>

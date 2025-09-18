@@ -7,6 +7,7 @@ import model.Expense;
 import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -68,21 +69,24 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         expense.setAmount(rs.getBigDecimal("amount"));
         expense.setDescription(readDescription(rs));
 
-
-        expense.setDescription(rs.getString("description"));
-
-        java.sql.Date expenseDate = rs.getDate("expense_date");
-        if (expenseDate != null) {
-            expense.setExpenseDate(expenseDate.toLocalDate());
-        }
-        Object user = null;
         try {
-            user = rs.getObject("user_id");
+            Date expenseDate = rs.getDate("expense_date");
+            if (expenseDate != null) {
+                expense.setExpenseDate(expenseDate.toLocalDate());
+            }
         } catch (SQLException ignore) {
+            // optional column
         }
-        if (user != null) {
-            expense.setUserId(((Number) user).longValue());
+
+        try {
+            Object user = rs.getObject("user_id");
+            if (user instanceof Number number) {
+                expense.setUserId(number.longValue());
+            }
+        } catch (SQLException ignore) {
+            // optional column
         }
+
         try {
             Timestamp created = rs.getTimestamp("created_at");
             Timestamp updated = rs.getTimestamp("updated_at");
@@ -93,6 +97,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 expense.setUpdatedAt(updated.toLocalDateTime());
             }
         } catch (SQLException ignore) {
+            // optional columns
         }
         return expense;
     }
@@ -101,9 +106,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return amount == null ? BigDecimal.ZERO : amount;
     }
 
-    private java.sql.Date sqlDate(LocalDate date) {
+    private Date sqlDate(LocalDate date) {
         LocalDate effective = date == null ? LocalDate.now() : date;
-        return java.sql.Date.valueOf(effective);
+        return Date.valueOf(effective);
     }
 
     private String readDescription(ResultSet rs) throws SQLException {
@@ -126,10 +131,6 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             return createWithoutDescription(expense);
         }
 
-
-    @Override
-    public Long create(Expense expense) {
-
         final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
@@ -138,11 +139,6 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
-
-
-                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -172,12 +168,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             updateWithoutDescription(expense);
             return;
         }
+
         final String sql =
                 "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
-
-
-        final String sql = "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
-
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -185,12 +178,6 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
-
-
-                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
-
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -278,7 +265,6 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setDate(1, sqlDate(date));
-                ps.setDate(1, java.sql.Date.valueOf(date));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         out.add(map(rs));
@@ -295,7 +281,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public List<Expense> findBetween(LocalDate startInclusive, LocalDate endExclusive) {
-        final String sql = "SELECT * FROM expenses WHERE expense_date >= ? AND expense_date < ? ORDER BY expense_date, id";
+        final String sql =
+                "SELECT * FROM expenses WHERE expense_date >= ? AND expense_date < ? ORDER BY expense_date, id";
         List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
@@ -306,10 +293,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 if (end == null || !end.isAfter(start)) {
                     end = start.plusDays(1);
                 }
-                ps.setDate(1, java.sql.Date.valueOf(start));
-                ps.setDate(2, java.sql.Date.valueOf(end));
-                ps.setDate(1, java.sql.Date.valueOf(startInclusive));
-                ps.setDate(2, java.sql.Date.valueOf(endExclusive));
+                ps.setDate(1, Date.valueOf(start));
+                ps.setDate(2, Date.valueOf(end));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         out.add(map(rs));
@@ -332,16 +317,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             synchronized (schemaLock) {
                 if (!descriptionColumnMissing) {
                     descriptionColumnMissing = true;
-                    String message = "Gider tablosunda 'description' sütunu bulunamadı. "
-                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage();
-                    System.err.println(message);
-
-
-                    String message = "Gider tablosunda 'description' sütunu bulunamadı. "
-                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage();
-                    System.err.println(message);
-                    System.err.println("Gider tablosunda 'description' sütunu bulunamadı. Açıklamalar kaydedilmeyecek. Ayrıntı: "
-                            + ex.getMessage());
+                    System.err.println("Gider tablosunda 'description' sütunu bulunamadı. "
+                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
                 }
             }
         }
@@ -421,5 +398,4 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             close(connection);
         }
     }
-
 }
