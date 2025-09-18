@@ -4,12 +4,8 @@ import DataConnection.Db;
 import dao.ExpenseDAO;
 import model.Expense;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import javax.sql.DataSource;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -20,35 +16,10 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 public class ExpenseJdbcDAO implements ExpenseDAO {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(ExpenseJdbcDAO.class);
-
-    private static final String INSERT_SQL =
-            "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
-    private static final String INSERT_WITHOUT_DESCRIPTION_SQL =
-            "INSERT INTO expenses (amount, expense_date, user_id) VALUES (?,?,?)";
-    private static final String UPDATE_SQL =
-            "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
-    private static final String UPDATE_WITHOUT_DESCRIPTION_SQL =
-            "UPDATE expenses SET amount=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
-    private static final String DELETE_SQL = "DELETE FROM expenses WHERE id=?";
-    private static final String SELECT_BY_ID_SQL =
-            "SELECT id, amount, description, expense_date, user_id, created_at, updated_at FROM expenses WHERE id=?";
-    private static final String SELECT_ALL_SQL =
-            "SELECT id, amount, description, expense_date, user_id, created_at, updated_at "
-                    + "FROM expenses ORDER BY expense_date DESC, id DESC LIMIT ? OFFSET ?";
-    private static final String SELECT_BY_DATE_SQL =
-            "SELECT id, amount, description, expense_date, user_id, created_at, updated_at "
-                    + "FROM expenses WHERE expense_date=? ORDER BY id DESC";
-    private static final String SELECT_BETWEEN_SQL =
-            "SELECT id, amount, description, expense_date, user_id, created_at, updated_at "
-                    + "FROM expenses WHERE expense_date >= ? AND expense_date < ? ORDER BY expense_date, id";
 
     private final DataSource dataSource;
     private final Connection externalConnection;
@@ -68,7 +39,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private ExpenseJdbcDAO(DataSource dataSource, Connection externalConnection) {
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        this.dataSource = dataSource;
         this.externalConnection = externalConnection;
     }
 
@@ -95,7 +66,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     private Expense map(ResultSet rs) throws SQLException {
         Expense expense = new Expense();
         expense.setId(rs.getLong("id"));
-        expense.setAmount(normalizeReadAmount(rs.getBigDecimal("amount")));
+        expense.setAmount(rs.getBigDecimal("amount"));
         expense.setDescription(readDescription(rs));
 
         try {
@@ -132,12 +103,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private BigDecimal safeAmount(BigDecimal amount) {
-        BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
-        return value.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal normalizeReadAmount(BigDecimal amount) {
-        return amount == null ? null : amount.setScale(2, RoundingMode.HALF_UP);
+        return amount == null ? BigDecimal.ZERO : amount;
     }
 
     private Date sqlDate(LocalDate date) {
@@ -165,22 +131,23 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             return createWithoutDescription(expense);
         }
 
-        Objects.requireNonNull(expense, "expense");
-
+        final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(INSERT_SQL, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                bindDescription(ps, 2, expense.getDescription());
+                ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                bindUser(ps, 4, expense.getUserId());
+                if (expense.getUserId() == null) {
+                    ps.setNull(4, Types.BIGINT);
+                } else {
+                    ps.setLong(4, expense.getUserId());
+                }
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
                     if (rs.next()) {
-                        long id = rs.getLong(1);
-                        expense.setId(id);
-                        return id;
+                        return rs.getLong(1);
                     }
                 }
                 throw new SQLException("No generated key for expenses");
@@ -202,19 +169,20 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             return;
         }
 
-        Objects.requireNonNull(expense, "expense");
-        if (expense.getId() == null) {
-            throw new IllegalArgumentException("Expense id is required for update");
-        }
-
+        final String sql =
+                "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(UPDATE_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                bindDescription(ps, 2, expense.getDescription());
+                ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                bindUser(ps, 4, expense.getUserId());
+                if (expense.getUserId() == null) {
+                    ps.setNull(4, Types.BIGINT);
+                } else {
+                    ps.setLong(4, expense.getUserId());
+                }
                 ps.setLong(5, expense.getId());
                 ps.executeUpdate();
             }
@@ -234,7 +202,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(DELETE_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM expenses WHERE id=?")) {
                 ps.setLong(1, id);
                 ps.executeUpdate();
             }
@@ -247,10 +215,11 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public Optional<Expense> findById(Long id) {
+        final String sql = "SELECT * FROM expenses WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(SELECT_BY_ID_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setLong(1, id);
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? Optional.of(map(rs)) : Optional.empty();
@@ -265,18 +234,14 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public List<Expense> findAll(int offset, int limit) {
-        if (limit <= 0) {
-            return Collections.emptyList();
-        }
-        int safeOffset = Math.max(0, offset);
-
+        final String sql = "SELECT * FROM expenses ORDER BY expense_date DESC, id DESC LIMIT ? OFFSET ?";
         List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(SELECT_ALL_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setInt(1, limit);
-                ps.setInt(2, safeOffset);
+                ps.setInt(2, offset);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         out.add(map(rs));
@@ -293,11 +258,12 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public List<Expense> findByDate(LocalDate date) {
+        final String sql = "SELECT * FROM expenses WHERE expense_date=? ORDER BY id DESC";
         List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(SELECT_BY_DATE_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setDate(1, sqlDate(date));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
@@ -315,11 +281,13 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public List<Expense> findBetween(LocalDate startInclusive, LocalDate endExclusive) {
+        final String sql =
+                "SELECT * FROM expenses WHERE expense_date >= ? AND expense_date < ? ORDER BY expense_date, id";
         List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(SELECT_BETWEEN_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 LocalDate start = startInclusive == null ? LocalDate.now() : startInclusive;
                 LocalDate end = endExclusive;
                 if (end == null || !end.isAfter(start)) {
@@ -349,8 +317,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             synchronized (schemaLock) {
                 if (!descriptionColumnMissing) {
                     descriptionColumnMissing = true;
-                    LOGGER.warn("Gider tablosunda 'description' sütunu bulunamadı. Açıklamalar kaydedilmeyecek. Ayrıntı: {}",
-                            ex.getMessage());
+                    System.err.println("Gider tablosunda 'description' sütunu bulunamadı. "
+                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
                 }
             }
         }
@@ -361,7 +329,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         SQLException current = ex;
         while (current != null) {
             String state = current.getSQLState();
-            if ("42S22".equals(state) || "42703".equals(state)) {
+            if ("42S22".equals(state)) {
                 return true;
             }
             if (messageRefersMissingDescription(current.getMessage())) {
@@ -377,26 +345,26 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             return false;
         }
         String lower = message.toLowerCase();
-        boolean unknown = lower.contains("unknown column")
-                || lower.contains("no such column")
-                || lower.contains("column") && lower.contains("does not exist");
-        return unknown && lower.contains("description");
+        return lower.contains("unknown column") && lower.contains("description");
     }
 
     private Long createWithoutDescription(Expense expense) {
+        final String sql = "INSERT INTO expenses (amount, expense_date, user_id) VALUES (?,?,?)";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(INSERT_WITHOUT_DESCRIPTION_SQL, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setDate(2, sqlDate(expense.getExpenseDate()));
-                bindUser(ps, 3, expense.getUserId());
+                if (expense.getUserId() == null) {
+                    ps.setNull(3, Types.BIGINT);
+                } else {
+                    ps.setLong(3, expense.getUserId());
+                }
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
                     if (rs.next()) {
-                        long id = rs.getLong(1);
-                        expense.setId(id);
-                        return id;
+                        return rs.getLong(1);
                     }
                 }
                 throw new SQLException("No generated key for expenses");
@@ -409,13 +377,18 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private void updateWithoutDescription(Expense expense) {
+        final String sql = "UPDATE expenses SET amount=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(UPDATE_WITHOUT_DESCRIPTION_SQL)) {
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setDate(2, sqlDate(expense.getExpenseDate()));
-                bindUser(ps, 3, expense.getUserId());
+                if (expense.getUserId() == null) {
+                    ps.setNull(3, Types.BIGINT);
+                } else {
+                    ps.setLong(3, expense.getUserId());
+                }
                 ps.setLong(4, expense.getId());
                 ps.executeUpdate();
             }
@@ -424,30 +397,5 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         } finally {
             close(connection);
         }
-    }
-
-    private void bindDescription(PreparedStatement ps, int index, String description) throws SQLException {
-        String normalized = normalizeDescription(description);
-        if (normalized == null) {
-            ps.setNull(index, Types.VARCHAR);
-        } else {
-            ps.setString(index, normalized);
-        }
-    }
-
-    private void bindUser(PreparedStatement ps, int index, Long userId) throws SQLException {
-        if (userId == null) {
-            ps.setNull(index, Types.BIGINT);
-        } else {
-            ps.setLong(index, userId);
-        }
-    }
-
-    private String normalizeDescription(String description) {
-        if (description == null) {
-            return null;
-        }
-        String trimmed = description.trim();
-        return trimmed.isEmpty() ? null : trimmed;
     }
 }

@@ -28,7 +28,6 @@
         <junit.version>5.10.2</junit.version>
         <poi.version>5.2.5</poi.version>
         <jbcrypt.version>0.4</jbcrypt.version>
-        <jetbrains.annotations.version>24.1.0</jetbrains.annotations.version>
     </properties>
 
     <dependencies>
@@ -76,7 +75,7 @@
         <dependency>
             <groupId>org.jetbrains</groupId>
             <artifactId>annotations</artifactId>
-            <version>${jetbrains.annotations.version}</version>
+            <version>24.1.0</version>
         </dependency>
 
         <!-- Excel: Apache POI (XLSX) -->
