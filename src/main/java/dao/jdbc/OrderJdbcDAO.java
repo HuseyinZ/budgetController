@@ -31,6 +31,9 @@ public class OrderJdbcDAO implements OrderDAO {
     private final Set<String> unknownStatusValues = new HashSet<>();
     private volatile boolean statusOrdinalMode;
     private volatile boolean statusModeDetermined;
+    private final Object timestampColumnLock = new Object();
+    private volatile boolean missingCreatedAtColumn;
+    private volatile boolean missingUpdatedAtColumn;
 
     public OrderJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -89,16 +92,86 @@ public class OrderJdbcDAO implements OrderDAO {
         Timestamp ca = rs.getTimestamp("closed_at");
         if (ca != null) o.setClosedAt(ca.toLocalDateTime());
 
+        Timestamp createdAt = null;
+        Timestamp updatedAt = null;
         try {
-            Timestamp cr = rs.getTimestamp("created_at");
-            Timestamp up = rs.getTimestamp("updated_at");
-            if (cr != null) o.setCreatedAt(cr.toLocalDateTime());
-            if (up != null) o.setUpdatedAt(up.toLocalDateTime());
-        } catch (SQLException ignore) {
-            // optional columns
+            createdAt = rs.getTimestamp("created_at");
+        } catch (SQLException ex) {
+            if (!handleMissingTimestampColumn("created_at", ex)) {
+                throw ex;
+            }
+        }
+        try {
+            updatedAt = rs.getTimestamp("updated_at");
+        } catch (SQLException ex) {
+            if (!handleMissingTimestampColumn("updated_at", ex)) {
+                throw ex;
+            }
+        }
+        if (createdAt != null) {
+            o.setCreatedAt(createdAt.toLocalDateTime());
+        } else if (o.getOrderDate() != null) {
+            o.setCreatedAt(o.getOrderDate());
+        }
+        if (updatedAt != null) {
+            o.setUpdatedAt(updatedAt.toLocalDateTime());
+        } else if (o.getCreatedAt() != null) {
+            o.setUpdatedAt(o.getCreatedAt());
+        } else if (o.getOrderDate() != null) {
+            o.setUpdatedAt(o.getOrderDate());
         }
 
         return o;
+    }
+
+    private boolean handleMissingTimestampColumn(String column, SQLException ex) {
+        if (!isMissingColumn(ex, column)) {
+            return false;
+        }
+        synchronized (timestampColumnLock) {
+            if ("created_at".equalsIgnoreCase(column)) {
+                if (!missingCreatedAtColumn) {
+                    missingCreatedAtColumn = true;
+                    System.err.println("Sipariş tablosunda 'created_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Ayrıntı: "
+                            + ex.getMessage());
+                }
+            } else if ("updated_at".equalsIgnoreCase(column)) {
+                if (!missingUpdatedAtColumn) {
+                    missingUpdatedAtColumn = true;
+                    System.err.println("Sipariş tablosunda 'updated_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Ayrıntı: "
+                            + ex.getMessage());
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isMissingColumn(SQLException ex, String column) {
+        if (column == null || column.isBlank()) {
+            return false;
+        }
+        String target = column.toLowerCase();
+        SQLException current = ex;
+        while (current != null) {
+            String state = current.getSQLState();
+            if ("42S22".equals(state) || "S0022".equals(state)) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                if (lower.contains("unknown column") && lower.contains(target)) {
+                    return true;
+                }
+                if (lower.contains("column") && lower.contains(target)
+                        && (lower.contains("not found") || lower.contains("doesn't exist")
+                        || lower.contains("does not exist"))) {
+                    return true;
+                }
+            }
+            current = current.getNextException();
+        }
+        return false;
     }
 
     private OrderStatus parseStatus(Object value) {
