@@ -1,33 +1,41 @@
 package dao.jdbc;
 
 import DataConnection.Db;
-import dao.ProductDAO;
-import model.Product;
+import dao.ExpenseDAO;
+import model.Expense;
 
 import javax.sql.DataSource;
-import java.sql.*;
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-public class ProductJdbcDAO implements ProductDAO {
+public class ExpenseJdbcDAO implements ExpenseDAO {
 
     private final DataSource dataSource;
     private final Connection externalConnection;
 
-    public ProductJdbcDAO() {
+    public ExpenseJdbcDAO() {
         this(Db.getDataSource(), null);
     }
 
-    public ProductJdbcDAO(DataSource dataSource) {
+    public ExpenseJdbcDAO(DataSource dataSource) {
         this(dataSource, null);
     }
 
-    public ProductJdbcDAO(Connection connection) {
+    public ExpenseJdbcDAO(Connection connection) {
         this(Db.getDataSource(), connection);
     }
 
-    private ProductJdbcDAO(DataSource dataSource, Connection externalConnection) {
+    private ExpenseJdbcDAO(DataSource dataSource, Connection externalConnection) {
         this.dataSource = dataSource;
         this.externalConnection = externalConnection;
     }
@@ -37,7 +45,7 @@ public class ProductJdbcDAO implements ProductDAO {
             return externalConnection;
         }
         if (dataSource == null) {
-            throw new IllegalStateException("No DataSource configured for ProductJdbcDAO");
+            throw new IllegalStateException("No DataSource configured for ExpenseJdbcDAO");
         }
         return dataSource.getConnection();
     }
@@ -52,69 +60,59 @@ public class ProductJdbcDAO implements ProductDAO {
         }
     }
 
-    private Product map(ResultSet rs) throws SQLException {
-        Product p = new Product();
-        p.setId(rs.getLong("id"));
-        p.setName(rs.getString("name"));
-        p.setUnitPrice(rs.getBigDecimal("unit_price"));
-
-        int stockValue = rs.getInt("stock");
-        if (!rs.wasNull()) {
-            p.setStock(stockValue);
-        } else {
-            p.setStock(null);
+    private Expense map(ResultSet rs) throws SQLException {
+        Expense expense = new Expense();
+        expense.setId(rs.getLong("id"));
+        expense.setAmount(rs.getBigDecimal("amount"));
+        expense.setDescription(rs.getString("description"));
+        java.sql.Date expenseDate = rs.getDate("expense_date");
+        if (expenseDate != null) {
+            expense.setExpenseDate(expenseDate.toLocalDate());
         }
-
-        long categoryValue = rs.getLong("category_id");
-        if (!rs.wasNull()) {
-            p.setCategoryId(categoryValue);
-        } else {
-            p.setCategoryId(null);
+        Object user = null;
+        try {
+            user = rs.getObject("user_id");
+        } catch (SQLException ignore) {
         }
-
+        if (user != null) {
+            expense.setUserId(((Number) user).longValue());
+        }
         try {
             Timestamp created = rs.getTimestamp("created_at");
             Timestamp updated = rs.getTimestamp("updated_at");
             if (created != null) {
-                p.setCreatedAt(created.toLocalDateTime());
+                expense.setCreatedAt(created.toLocalDateTime());
             }
             if (updated != null) {
-                p.setUpdatedAt(updated.toLocalDateTime());
+                expense.setUpdatedAt(updated.toLocalDateTime());
             }
         } catch (SQLException ignore) {
-            // optional columns
         }
-
-        return p;
+        return expense;
     }
 
     @Override
-    public Long create(Product e) {
-        final String sql = "INSERT INTO products (name, unit_price, stock, category_id) VALUES (?,?,?,?)";
+    public Long create(Expense expense) {
+        final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setString(1, e.getName());
-                ps.setBigDecimal(2, e.getUnitPrice());
-                if (e.getStock() == null) {
-                    ps.setNull(3, Types.INTEGER);
-                } else {
-                    ps.setInt(3, e.getStock());
-                }
-                if (e.getCategoryId() == null) {
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
+                if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
-                    ps.setLong(4, e.getCategoryId());
+                    ps.setLong(4, expense.getUserId());
                 }
-
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
                     if (rs.next()) {
                         return rs.getLong(1);
                     }
                 }
-                throw new SQLException("No generated key for products");
+                throw new SQLException("No generated key for expenses");
             }
         } catch (SQLException ex) {
             throw new RuntimeException(ex);
@@ -124,25 +122,21 @@ public class ProductJdbcDAO implements ProductDAO {
     }
 
     @Override
-    public void update(Product e) {
-        final String sql = "UPDATE products SET name=?, unit_price=?, stock=?, category_id=?, updated_at=NOW() WHERE id=?";
+    public void update(Expense expense) {
+        final String sql = "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, e.getName());
-                ps.setBigDecimal(2, e.getUnitPrice());
-                if (e.getStock() == null) {
-                    ps.setNull(3, Types.INTEGER);
-                } else {
-                    ps.setInt(3, e.getStock());
-                }
-                if (e.getCategoryId() == null) {
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
+                if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
-                    ps.setLong(4, e.getCategoryId());
+                    ps.setLong(4, expense.getUserId());
                 }
-                ps.setLong(5, e.getId());
+                ps.setLong(5, expense.getId());
                 ps.executeUpdate();
             }
         } catch (SQLException ex) {
@@ -157,7 +151,7 @@ public class ProductJdbcDAO implements ProductDAO {
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM products WHERE id=?")) {
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM expenses WHERE id=?")) {
                 ps.setLong(1, id);
                 ps.executeUpdate();
             }
@@ -169,8 +163,8 @@ public class ProductJdbcDAO implements ProductDAO {
     }
 
     @Override
-    public Optional<Product> findById(Long id) {
-        final String sql = "SELECT * FROM products WHERE id=?";
+    public Optional<Expense> findById(Long id) {
+        final String sql = "SELECT * FROM expenses WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -188,9 +182,9 @@ public class ProductJdbcDAO implements ProductDAO {
     }
 
     @Override
-    public List<Product> findAll(int offset, int limit) {
-        final String sql = "SELECT * FROM products ORDER BY id DESC LIMIT ? OFFSET ?";
-        List<Product> list = new ArrayList<>();
+    public List<Expense> findAll(int offset, int limit) {
+        final String sql = "SELECT * FROM expenses ORDER BY expense_date DESC, id DESC LIMIT ? OFFSET ?";
+        List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -199,7 +193,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 ps.setInt(2, offset);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        list.add(map(rs));
+                        out.add(map(rs));
                     }
                 }
             }
@@ -208,22 +202,21 @@ public class ProductJdbcDAO implements ProductDAO {
         } finally {
             close(connection);
         }
-        return list;
+        return out;
     }
 
     @Override
-    public List<Product> searchByName(String q, int limit) {
-        final String sql = "SELECT * FROM products WHERE name LIKE ? ORDER BY name LIMIT ?";
-        List<Product> list = new ArrayList<>();
+    public List<Expense> findByDate(LocalDate date) {
+        final String sql = "SELECT * FROM expenses WHERE expense_date=? ORDER BY id DESC";
+        List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, "%" + q + "%");
-                ps.setInt(2, limit);
+                ps.setDate(1, java.sql.Date.valueOf(date));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        list.add(map(rs));
+                        out.add(map(rs));
                     }
                 }
             }
@@ -232,23 +225,22 @@ public class ProductJdbcDAO implements ProductDAO {
         } finally {
             close(connection);
         }
-        return list;
+        return out;
     }
 
     @Override
-    public List<Product> findByCategory(Long categoryId, int offset, int limit) {
-        final String sql = "SELECT * FROM products WHERE category_id=? ORDER BY id DESC LIMIT ? OFFSET ?";
-        List<Product> list = new ArrayList<>();
+    public List<Expense> findBetween(LocalDate startInclusive, LocalDate endExclusive) {
+        final String sql = "SELECT * FROM expenses WHERE expense_date >= ? AND expense_date < ? ORDER BY expense_date, id";
+        List<Expense> out = new ArrayList<>();
         Connection connection = null;
         try {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setLong(1, categoryId);
-                ps.setInt(2, limit);
-                ps.setInt(3, offset);
+                ps.setDate(1, java.sql.Date.valueOf(startInclusive));
+                ps.setDate(2, java.sql.Date.valueOf(endExclusive));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        list.add(map(rs));
+                        out.add(map(rs));
                     }
                 }
             }
@@ -257,43 +249,6 @@ public class ProductJdbcDAO implements ProductDAO {
         } finally {
             close(connection);
         }
-        return list;
-    }
-
-    @Override
-    public void updateStock(Long productId, int delta) {
-        final String sql = "UPDATE products SET stock = COALESCE(stock, 0) + ?, updated_at=NOW() WHERE id=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setInt(1, delta);
-                ps.setLong(2, productId);
-                ps.executeUpdate();
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
-        }
-    }
-
-    @Override
-    public Optional<Product> findByName(String name) {
-        final String sql = "SELECT * FROM products WHERE name=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, name);
-                try (ResultSet rs = ps.executeQuery()) {
-                    return rs.next() ? Optional.of(map(rs)) : Optional.empty();
-                }
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
-        }
+        return out;
     }
 }
