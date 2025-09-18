@@ -6,6 +6,7 @@ import model.Product;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public class ProductService {
     private final ProductDAO productDAO;
@@ -47,5 +48,9 @@ public class ProductService {
     public void decreaseProductStock(Long productId, int amount) {
         if (amount <= 0) throw new IllegalArgumentException("amount > 0 olmalı");
         productDAO.updateStock(productId, -amount);
+    }
+
+    public Optional<Product> findByName(String name) {
+        return productDAO.findByName(name);
     }
 }
