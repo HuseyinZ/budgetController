@@ -25,6 +25,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     private final Connection externalConnection;
     private final Object schemaLock = new Object();
     private volatile boolean descriptionColumnMissing;
+    private volatile boolean userIdColumnMissing;
 
     public ExpenseJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -78,13 +79,15 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             // optional column
         }
 
-        try {
-            Object user = rs.getObject("user_id");
-            if (user instanceof Number number) {
-                expense.setUserId(number.longValue());
+        if (!userIdColumnMissing) {
+            try {
+                Object user = rs.getObject("user_id");
+                if (user instanceof Number number) {
+                    expense.setUserId(number.longValue());
+                }
+            } catch (SQLException ex) {
+                handleMissingUserId(ex);
             }
-        } catch (SQLException ignore) {
-            // optional column
         }
 
         try {
@@ -128,7 +131,12 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     @Override
     public Long create(Expense expense) {
         if (descriptionColumnMissing) {
-            return createWithoutDescription(expense);
+            return userIdColumnMissing
+                    ? createWithoutDescriptionAndUser(expense)
+                    : createWithoutDescription(expense);
+        }
+        if (userIdColumnMissing) {
+            return createWithoutUser(expense);
         }
 
         final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
@@ -156,6 +164,11 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             if (handleMissingDescription(ex)) {
                 return createWithoutDescription(expense);
             }
+            if (handleMissingUserId(ex)) {
+                return descriptionColumnMissing
+                        ? createWithoutDescriptionAndUser(expense)
+                        : createWithoutUser(expense);
+            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
@@ -166,6 +179,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     public void update(Expense expense) {
         if (descriptionColumnMissing) {
             updateWithoutDescription(expense);
+            return;
+        }
+        if (userIdColumnMissing) {
+            updateWithoutUser(expense);
             return;
         }
 
@@ -189,6 +206,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         } catch (SQLException ex) {
             if (handleMissingDescription(ex)) {
                 updateWithoutDescription(expense);
+                return;
+            }
+            if (handleMissingUserId(ex)) {
+                updateWithoutUser(expense);
                 return;
             }
             throw new RuntimeException(ex);
@@ -348,7 +369,49 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return lower.contains("unknown column") && lower.contains("description");
     }
 
+    private boolean handleMissingUserId(SQLException ex) {
+        if (!isMissingUserId(ex)) {
+            return false;
+        }
+        if (!userIdColumnMissing) {
+            synchronized (schemaLock) {
+                if (!userIdColumnMissing) {
+                    userIdColumnMissing = true;
+                    System.err.println("Gider tablosunda 'user_id' sütunu bulunamadı. "
+                            + "Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isMissingUserId(SQLException ex) {
+        SQLException current = ex;
+        while (current != null) {
+            String state = current.getSQLState();
+            if ("42S22".equals(state)) {
+                return true;
+            }
+            if (messageRefersMissingUserId(current.getMessage())) {
+                return true;
+            }
+            current = current.getNextException();
+        }
+        return false;
+    }
+
+    private boolean messageRefersMissingUserId(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("unknown column") && lower.contains("user_id");
+    }
+
     private Long createWithoutDescription(Expense expense) {
+        if (userIdColumnMissing) {
+            return createWithoutDescriptionAndUser(expense);
+        }
         final String sql = "INSERT INTO expenses (amount, expense_date, user_id) VALUES (?,?,?)";
         Connection connection = null;
         try {
@@ -370,6 +433,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 throw new SQLException("No generated key for expenses");
             }
         } catch (SQLException ex) {
+            if (handleMissingUserId(ex)) {
+                return createWithoutDescriptionAndUser(expense);
+            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
@@ -377,6 +443,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private void updateWithoutDescription(Expense expense) {
+        if (userIdColumnMissing) {
+            updateWithoutDescriptionAndUser(expense);
+            return;
+        }
         final String sql = "UPDATE expenses SET amount=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
@@ -390,6 +460,94 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                     ps.setLong(3, expense.getUserId());
                 }
                 ps.setLong(4, expense.getId());
+                ps.executeUpdate();
+            }
+        } catch (SQLException ex) {
+            if (handleMissingUserId(ex)) {
+                updateWithoutDescriptionAndUser(expense);
+                return;
+            }
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    private Long createWithoutUser(Expense expense) {
+        final String sql = "INSERT INTO expenses (amount, description, expense_date) VALUES (?,?,?)";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, sqlDate(expense.getExpenseDate()));
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return rs.getLong(1);
+                    }
+                }
+                throw new SQLException("No generated key for expenses");
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    private void updateWithoutUser(Expense expense) {
+        final String sql = "UPDATE expenses SET amount=?, description=?, expense_date=?, updated_at=NOW() WHERE id=?";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, sqlDate(expense.getExpenseDate()));
+                ps.setLong(4, expense.getId());
+                ps.executeUpdate();
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    private Long createWithoutDescriptionAndUser(Expense expense) {
+        final String sql = "INSERT INTO expenses (amount, expense_date) VALUES (?,?)";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
+                ps.setDate(2, sqlDate(expense.getExpenseDate()));
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return rs.getLong(1);
+                    }
+                }
+                throw new SQLException("No generated key for expenses");
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    private void updateWithoutDescriptionAndUser(Expense expense) {
+        final String sql = "UPDATE expenses SET amount=?, expense_date=?, updated_at=NOW() WHERE id=?";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
+                ps.setDate(2, sqlDate(expense.getExpenseDate()));
+                ps.setLong(3, expense.getId());
                 ps.executeUpdate();
             }
         } catch (SQLException ex) {

@@ -5,6 +5,7 @@ import dao.ProductDAO;
 import model.Product;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,8 @@ public class ProductJdbcDAO implements ProductDAO {
 
     private final DataSource dataSource;
     private final Connection externalConnection;
+    private final Object priceColumnLock = new Object();
+    private volatile boolean legacyPriceColumn;
 
     public ProductJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -56,7 +59,10 @@ public class ProductJdbcDAO implements ProductDAO {
         Product p = new Product();
         p.setId(rs.getLong("id"));
         p.setName(rs.getString("name"));
-        p.setUnitPrice(rs.getBigDecimal("unit_price"));
+        BigDecimal price = readUnitPrice(rs);
+        if (price != null) {
+            p.setUnitPrice(price);
+        }
 
         int stockValue = rs.getInt("stock");
         if (!rs.wasNull()) {
@@ -90,66 +96,81 @@ public class ProductJdbcDAO implements ProductDAO {
 
     @Override
     public Long create(Product e) {
-        final String sql = "INSERT INTO products (name, unit_price, stock, category_id) VALUES (?,?,?,?)";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setString(1, e.getName());
-                ps.setBigDecimal(2, e.getUnitPrice());
-                if (e.getStock() == null) {
-                    ps.setNull(3, Types.INTEGER);
-                } else {
-                    ps.setInt(3, e.getStock());
-                }
-                if (e.getCategoryId() == null) {
-                    ps.setNull(4, Types.BIGINT);
-                } else {
-                    ps.setLong(4, e.getCategoryId());
-                }
-
-                ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        return rs.getLong(1);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Connection connection = null;
+            try {
+                connection = acquireConnection();
+                final String sql = "INSERT INTO products (name, " + priceColumn()
+                        + ", stock, category_id) VALUES (?,?,?,?)";
+                try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, e.getName());
+                    ps.setBigDecimal(2, e.getUnitPrice());
+                    if (e.getStock() == null) {
+                        ps.setNull(3, Types.INTEGER);
+                    } else {
+                        ps.setInt(3, e.getStock());
                     }
+                    if (e.getCategoryId() == null) {
+                        ps.setNull(4, Types.BIGINT);
+                    } else {
+                        ps.setLong(4, e.getCategoryId());
+                    }
+
+                    ps.executeUpdate();
+                    try (ResultSet rs = ps.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            return rs.getLong(1);
+                        }
+                    }
+                    throw new SQLException("No generated key for products");
                 }
-                throw new SQLException("No generated key for products");
+            } catch (SQLException ex) {
+                if (!legacyPriceColumn && handleMissingUnitPrice(ex)) {
+                    continue;
+                }
+                throw new RuntimeException(ex);
+            } finally {
+                close(connection);
             }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
         }
+        throw new IllegalStateException("Ürün fiyat sütunu bulunamadı");
     }
 
     @Override
     public void update(Product e) {
-        final String sql = "UPDATE products SET name=?, unit_price=?, stock=?, category_id=?, updated_at=NOW() WHERE id=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, e.getName());
-                ps.setBigDecimal(2, e.getUnitPrice());
-                if (e.getStock() == null) {
-                    ps.setNull(3, Types.INTEGER);
-                } else {
-                    ps.setInt(3, e.getStock());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Connection connection = null;
+            try {
+                connection = acquireConnection();
+                final String sql = "UPDATE products SET name=?, " + priceColumn()
+                        + "=?, stock=?, category_id=?, updated_at=NOW() WHERE id=?";
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setString(1, e.getName());
+                    ps.setBigDecimal(2, e.getUnitPrice());
+                    if (e.getStock() == null) {
+                        ps.setNull(3, Types.INTEGER);
+                    } else {
+                        ps.setInt(3, e.getStock());
+                    }
+                    if (e.getCategoryId() == null) {
+                        ps.setNull(4, Types.BIGINT);
+                    } else {
+                        ps.setLong(4, e.getCategoryId());
+                    }
+                    ps.setLong(5, e.getId());
+                    ps.executeUpdate();
+                    return;
                 }
-                if (e.getCategoryId() == null) {
-                    ps.setNull(4, Types.BIGINT);
-                } else {
-                    ps.setLong(4, e.getCategoryId());
+            } catch (SQLException ex) {
+                if (!legacyPriceColumn && handleMissingUnitPrice(ex)) {
+                    continue;
                 }
-                ps.setLong(5, e.getId());
-                ps.executeUpdate();
+                throw new RuntimeException(ex);
+            } finally {
+                close(connection);
             }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
         }
+        throw new IllegalStateException("Ürün fiyat sütunu bulunamadı");
     }
 
     @Override
@@ -295,5 +316,57 @@ public class ProductJdbcDAO implements ProductDAO {
         } finally {
             close(connection);
         }
+    }
+
+    private String priceColumn() {
+        return legacyPriceColumn ? "price" : "unit_price";
+    }
+
+    private BigDecimal readUnitPrice(ResultSet rs) throws SQLException {
+        try {
+            return rs.getBigDecimal(priceColumn());
+        } catch (SQLException ex) {
+            if (!legacyPriceColumn && handleMissingUnitPrice(ex)) {
+                return rs.getBigDecimal(priceColumn());
+            }
+            throw ex;
+        }
+    }
+
+    private boolean handleMissingUnitPrice(SQLException ex) {
+        if (!isMissingUnitPrice(ex)) {
+            return false;
+        }
+        synchronized (priceColumnLock) {
+            if (!legacyPriceColumn) {
+                legacyPriceColumn = true;
+                System.err.println("Ürün tablosunda 'unit_price' sütunu bulunamadı. 'price' sütunu kullanılacak. Ayrıntı: "
+                        + ex.getMessage());
+            }
+        }
+        return true;
+    }
+
+    private boolean isMissingUnitPrice(SQLException ex) {
+        SQLException current = ex;
+        while (current != null) {
+            String state = current.getSQLState();
+            if ("42S22".equals(state)) {
+                return true;
+            }
+            if (messageRefersMissingUnitPrice(current.getMessage())) {
+                return true;
+            }
+            current = current.getNextException();
+        }
+        return false;
+    }
+
+    private boolean messageRefersMissingUnitPrice(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("unknown column") && lower.contains("unit_price");
     }
 }
