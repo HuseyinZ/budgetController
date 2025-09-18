@@ -61,7 +61,7 @@ public class ProductJdbcDAO implements ProductDAO {
     private Product map(ResultSet rs) throws SQLException {
         Product p = new Product();
         p.setId(rs.getLong("id"));
-        p.setName(rs.getString("name"));
+        applyProductName(p, rs);
         BigDecimal price = readUnitPrice(rs);
         if (price != null) {
             p.setUnitPrice(price);
@@ -99,6 +99,36 @@ public class ProductJdbcDAO implements ProductDAO {
         }
 
         return p;
+    }
+
+    private void applyProductName(Product product, ResultSet rs) throws SQLException {
+        String rawName = rs.getString("name");
+        try {
+            product.setName(rawName);
+        } catch (IllegalArgumentException ex) {
+            String fallback = fallbackProductName(product.getId(), rawName);
+            System.err.println("Ürün adı geçersiz ('" + (rawName == null ? "" : rawName.trim())
+                    + "'). '" + fallback + "' kullanılacak.");
+            product.setName(fallback);
+        }
+    }
+
+    private String fallbackProductName(Long id, String rawName) {
+        if (rawName != null) {
+            String trimmed = rawName.trim();
+            if (!trimmed.isEmpty()) {
+                if (trimmed.length() > Product.NAME_MAX) {
+                    return trimmed.substring(0, Product.NAME_MAX);
+                }
+                return trimmed;
+            }
+        }
+        String suffix = (id == null || id <= 0) ? "?" : Long.toString(id);
+        String fallback = "Ürün #" + suffix;
+        if (fallback.length() > Product.NAME_MAX) {
+            return fallback.substring(0, Product.NAME_MAX);
+        }
+        return fallback;
     }
 
     @Override
