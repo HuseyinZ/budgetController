@@ -232,6 +232,16 @@ public class AppState {
         if (item == null) {
             return;
         }
+
+        }
+        }
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId)
+                .orElseThrow(() -> new IllegalArgumentException("Aktif sipariş bulunamadı: " + tableNo));
+        OrderItem item = findOrderItem(order.getId(), productName);
+        if (item == null) {
+            return;
+        }
         orderService.decrementItem(item.getId(), quantity);
         if (item.getProductId() != null) {
             productService.decreaseProductStock(item.getProductId(), quantity);
@@ -265,9 +275,57 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
+        }
+        orderService.recomputeTotals(order.getId());
+        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+        }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
+
+    public synchronized void clearTable(int tableNo, User user) {
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (order == null) {
+            tableService.markTableOccupied(tableId, false);
+            refreshTableSignature(tableNo);
+            notifyTableChanged(tableNo);
+            return;
+        }
+        List<OrderItem> items = orderService.getItemsForOrder(order.getId());
+        orderService.clearItems(order.getId());
+        for (OrderItem item : items) {
+            if (item.getProductId() != null && item.getQuantity() > 0) {
+                productService.decreaseProductStock(item.getProductId(), item.getQuantity());
+            }
+        }
+        orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
+        orderService.reassignTable(order.getId(), null);
+        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
+
+
+        }
+        OrderItem item = findOrderItem(order.getId(), productName);
+        if (item == null) {
+            return;
+        }
+        int qty = item.getQuantity();
+        orderService.decrementItem(item.getId(), qty);
+        if (item.getProductId() != null && qty > 0) {
+            productService.decreaseProductStock(item.getProductId(), qty);
+        }
+        orderService.recomputeTotals(order.getId());
+        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+        }
+ 
+        refreshTableSignature(tableNo);
+        notifyTableChanged(tableNo);
+    }
+
 
     public synchronized void clearTable(int tableNo, User user) {
         Long tableId = ensureTableExists(tableNo);
@@ -525,6 +583,9 @@ public class AppState {
             case EMPTY -> TableOrderStatus.EMPTY;
             case RESERVED -> TableOrderStatus.SERVED;
             case OCCUPIED -> TableOrderStatus.ORDERED;
+
+
+            case OCCUPIED, RESERVED -> TableOrderStatus.ORDERED;
         };
     }
 

@@ -67,6 +67,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         expense.setId(rs.getLong("id"));
         expense.setAmount(rs.getBigDecimal("amount"));
         expense.setDescription(readDescription(rs));
+
+
+        expense.setDescription(rs.getString("description"));
+
         java.sql.Date expenseDate = rs.getDate("expense_date");
         if (expenseDate != null) {
             expense.setExpenseDate(expenseDate.toLocalDate());
@@ -121,6 +125,11 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         if (descriptionColumnMissing) {
             return createWithoutDescription(expense);
         }
+
+
+    @Override
+    public Long create(Expense expense) {
+
         final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
@@ -129,6 +138,11 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
+
+
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -160,6 +174,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         }
         final String sql =
                 "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
+
+
+        final String sql = "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
+
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -167,6 +185,12 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
+
+
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
+
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -254,6 +278,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 ps.setDate(1, sqlDate(date));
+                ps.setDate(1, java.sql.Date.valueOf(date));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         out.add(map(rs));
@@ -283,6 +308,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 }
                 ps.setDate(1, java.sql.Date.valueOf(start));
                 ps.setDate(2, java.sql.Date.valueOf(end));
+                ps.setDate(1, java.sql.Date.valueOf(startInclusive));
+                ps.setDate(2, java.sql.Date.valueOf(endExclusive));
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         out.add(map(rs));
@@ -308,6 +335,13 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                     String message = "Gider tablosunda 'description' sütunu bulunamadı. "
                             + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage();
                     System.err.println(message);
+
+
+                    String message = "Gider tablosunda 'description' sütunu bulunamadı. "
+                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage();
+                    System.err.println(message);
+                    System.err.println("Gider tablosunda 'description' sütunu bulunamadı. Açıklamalar kaydedilmeyecek. Ayrıntı: "
+                            + ex.getMessage());
                 }
             }
         }
@@ -387,4 +421,5 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             close(connection);
         }
     }
+
 }

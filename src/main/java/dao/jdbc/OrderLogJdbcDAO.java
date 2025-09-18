@@ -113,6 +113,7 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
             if (handleMissingTable(ex)) {
                 return List.of();
             }
+
             throw new RuntimeException(ex);
         } finally {
             close(connection);
