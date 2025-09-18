@@ -99,6 +99,7 @@ public class AppState {
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
     private final ScheduledExecutorService poller;
+    private boolean tableReserveUnsupported;
 
     private AppState() {
         this.tableService = new RestaurantTableService();
@@ -264,6 +265,22 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
+
+        }
+        OrderItem item = findOrderItem(order.getId(), productName);
+        if (item == null) {
+            return;
+        }
+        int qty = item.getQuantity();
+        orderService.decrementItem(item.getId(), qty);
+        if (item.getProductId() != null && qty > 0) {
+            productService.decreaseProductStock(item.getProductId(), qty);
+        }
+        orderService.recomputeTotals(order.getId());
+        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+        }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -298,6 +315,18 @@ public class AppState {
             return;
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.READY);
+        if (tableReserveUnsupported) {
+            tableService.markTableOccupied(tableId, true);
+        } else {
+            try {
+                tableService.markTableReserved(tableId);
+            } catch (RuntimeException ex) {
+                tableReserveUnsupported = true;
+                System.err.println("Masa durumu 'RESERVED' olarak işaretlenemedi. 'OCCUPIED' kullanılacak. Ayrıntı: "
+                        + ex.getMessage());
+                tableService.markTableOccupied(tableId, true);
+            }
+        }
         orderLogService.append(order.getId(), actor(user) + " siparişi servis etti");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
@@ -510,6 +539,8 @@ public class AppState {
         }
         return switch (status) {
             case EMPTY -> TableOrderStatus.EMPTY;
+            case RESERVED -> TableOrderStatus.SERVED;
+            case OCCUPIED -> TableOrderStatus.ORDERED;
             case OCCUPIED, RESERVED -> TableOrderStatus.ORDERED;
         };
     }
