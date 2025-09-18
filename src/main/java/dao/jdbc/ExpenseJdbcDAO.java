@@ -67,6 +67,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         expense.setId(rs.getLong("id"));
         expense.setAmount(rs.getBigDecimal("amount"));
         expense.setDescription(readDescription(rs));
+        expense.setDescription(rs.getString("description"));
         java.sql.Date expenseDate = rs.getDate("expense_date");
         if (expenseDate != null) {
             expense.setExpenseDate(expenseDate.toLocalDate());
@@ -121,6 +122,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         if (descriptionColumnMissing) {
             return createWithoutDescription(expense);
         }
+    @Override
+    public Long create(Expense expense) {
         final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
@@ -129,6 +132,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -166,6 +172,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                 ps.setBigDecimal(1, safeAmount(expense.getAmount()));
                 ps.setString(2, expense.getDescription());
                 ps.setDate(3, sqlDate(expense.getExpenseDate()));
+                ps.setBigDecimal(1, expense.getAmount() == null ? BigDecimal.ZERO : expense.getAmount());
+                ps.setString(2, expense.getDescription());
+                ps.setDate(3, java.sql.Date.valueOf(expense.getExpenseDate()));
                 if (expense.getUserId() == null) {
                     ps.setNull(4, Types.BIGINT);
                 } else {
@@ -380,4 +389,5 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             close(connection);
         }
     }
+
 }

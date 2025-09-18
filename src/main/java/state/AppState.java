@@ -265,6 +265,22 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
+
+        }
+        OrderItem item = findOrderItem(order.getId(), productName);
+        if (item == null) {
+            return;
+        }
+        int qty = item.getQuantity();
+        orderService.decrementItem(item.getId(), qty);
+        if (item.getProductId() != null && qty > 0) {
+            productService.decreaseProductStock(item.getProductId(), qty);
+        }
+        orderService.recomputeTotals(order.getId());
+        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+        }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -525,6 +541,7 @@ public class AppState {
             case EMPTY -> TableOrderStatus.EMPTY;
             case RESERVED -> TableOrderStatus.SERVED;
             case OCCUPIED -> TableOrderStatus.ORDERED;
+            case OCCUPIED, RESERVED -> TableOrderStatus.ORDERED;
         };
     }
 
