@@ -277,4 +277,23 @@ public class ProductJdbcDAO implements ProductDAO {
             close(connection);
         }
     }
+
+    @Override
+    public Optional<Product> findByName(String name) {
+        final String sql = "SELECT * FROM products WHERE name=?";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, name);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+                }
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
 }

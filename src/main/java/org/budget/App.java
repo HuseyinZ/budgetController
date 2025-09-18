@@ -36,8 +36,5 @@ public class App {
         User authenticated = Objects.requireNonNull(user, "user");
         DashboardView dashboard = new DashboardView(APP_STATE, authenticated);
         dashboard.open();
-
-        AppState state = AppState.getInstance();
-        new DashboardView(state, user).open();
     }
 }

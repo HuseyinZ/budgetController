@@ -10,13 +10,19 @@ import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public class OrderJdbcDAO implements OrderDAO {
 
     private final DataSource dataSource;
     private final Connection externalConnection;
+    private final Object statusLock = new Object();
+    private final Set<OrderStatus> unsupportedStatuses = EnumSet.noneOf(OrderStatus.class);
+    private final Set<String> unknownStatusValues = new HashSet<>();
 
     public OrderJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -58,7 +64,7 @@ public class OrderJdbcDAO implements OrderDAO {
     private Order map(ResultSet rs) throws SQLException {
         Long tableId = (rs.getObject("table_id") == null) ? null : rs.getLong("table_id");
         Long waiterId = (rs.getObject("waiter_id") == null) ? null : rs.getLong("waiter_id");
-        OrderStatus status = OrderStatus.valueOf(rs.getString("status"));
+        OrderStatus status = parseStatus(rs.getString("status"));
 
         Order o = new Order(tableId, waiterId, status);
         o.setId(rs.getLong("id"));
@@ -85,6 +91,23 @@ public class OrderJdbcDAO implements OrderDAO {
         }
 
         return o;
+    }
+
+    private OrderStatus parseStatus(String value) {
+        if (value == null) {
+            return OrderStatus.PENDING;
+        }
+        try {
+            return OrderStatus.valueOf(value);
+        } catch (IllegalArgumentException ex) {
+            synchronized (statusLock) {
+                if (unknownStatusValues.add(value)) {
+                    System.err.println("Bilinmeyen sipariş durumu değeri ('" + value
+                            + "'). 'PENDING' varsayıldı.");
+                }
+            }
+            return OrderStatus.PENDING;
+        }
     }
 
     @Override
@@ -233,20 +256,98 @@ public class OrderJdbcDAO implements OrderDAO {
 
     @Override
     public void updateStatus(Long orderId, OrderStatus status) {
+        updateStatusInternal(orderId, status, true);
+    }
+
+    private void updateStatusInternal(Long orderId, OrderStatus status, boolean allowFallback) {
+        OrderStatus normalized = normalize(status);
+        if (unsupportedStatuses.contains(normalized)) {
+            OrderStatus fallback = fallback(normalized);
+            if (fallback != null) {
+                updateStatusInternal(orderId, fallback, false);
+            }
+            return;
+        }
+
         final String sql = "UPDATE orders SET status=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, status.name());
+                ps.setString(1, normalized.name());
                 ps.setLong(2, orderId);
                 ps.executeUpdate();
             }
         } catch (SQLException ex) {
+            if (allowFallback && handleUnsupportedStatus(normalized, ex)) {
+                OrderStatus fallback = fallback(normalized);
+                if (fallback != null) {
+                    updateStatusInternal(orderId, fallback, false);
+                    return;
+                }
+            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
         }
+    }
+
+    private OrderStatus normalize(OrderStatus status) {
+        return status == null ? OrderStatus.PENDING : status;
+    }
+
+    private OrderStatus fallback(OrderStatus status) {
+        return switch (status) {
+            case READY -> OrderStatus.IN_PROGRESS;
+            case CANCELLED -> OrderStatus.PENDING;
+            default -> null;
+        };
+    }
+
+    private boolean handleUnsupportedStatus(OrderStatus status, SQLException ex) {
+        if (!isUnsupportedStatus(ex)) {
+            return false;
+        }
+        OrderStatus fallback = fallback(status);
+        if (fallback == null) {
+            return false;
+        }
+        synchronized (statusLock) {
+            if (unsupportedStatuses.add(status)) {
+                System.err.println("Sipariş durumu '" + status.name()
+                        + "' veritabanında desteklenmiyor. '" + fallback.name()
+                        + "' kullanılacak. Ayrıntı: " + ex.getMessage());
+            }
+        }
+        return true;
+    }
+
+    private boolean isUnsupportedStatus(SQLException ex) {
+        SQLException current = ex;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                if (lower.contains("data truncated") && lower.contains("status")) {
+                    return true;
+                }
+                if (lower.contains("incorrect") && lower.contains("enum") && lower.contains("status")) {
+                    return true;
+                }
+                if (lower.contains("unknown column") && lower.contains("status")) {
+                    return true;
+                }
+            }
+            String state = current.getSQLState();
+            if (state != null && (state.equals("01000") || state.equals("22001") || state.equals("HY000"))) {
+                String msg = current.getMessage();
+                if (msg != null && msg.toLowerCase().contains("status")) {
+                    return true;
+                }
+            }
+            current = current.getNextException();
+        }
+        return false;
     }
 
     @Override
