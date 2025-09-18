@@ -19,6 +19,8 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     private final DataSource dataSource;
     private final Connection externalConnection;
+    private final Object schemaLock = new Object();
+    private volatile boolean tableMissing;
 
     public OrderLogJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -59,6 +61,9 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     @Override
     public void append(Long orderId, String message) {
+        if (tableMissing) {
+            return;
+        }
         final String sql = "INSERT INTO order_logs (order_id, event_time, message) VALUES (?,?,?)";
         Connection connection = null;
         try {
@@ -74,6 +79,9 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                 ps.executeUpdate();
             }
         } catch (SQLException ex) {
+            if (handleMissingTable(ex)) {
+                return;
+            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
@@ -82,6 +90,9 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     @Override
     public List<OrderLogEntry> findRecentByOrder(Long orderId, int limit) {
+        if (tableMissing) {
+            return List.of();
+        }
         final String sql = "SELECT event_time, message FROM order_logs WHERE order_id=? ORDER BY event_time DESC, id DESC LIMIT ?";
         List<OrderLogEntry> out = new ArrayList<>();
         Connection connection = null;
@@ -99,10 +110,50 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                 }
             }
         } catch (SQLException ex) {
+            if (handleMissingTable(ex)) {
+                return List.of();
+            }
+
             throw new RuntimeException(ex);
         } finally {
             close(connection);
         }
         return out;
+    }
+
+    private boolean handleMissingTable(SQLException ex) {
+        if (isMissingTable(ex)) {
+            if (!tableMissing) {
+                synchronized (schemaLock) {
+                    if (!tableMissing) {
+                        tableMissing = true;
+                        System.err.println("Sipariş geçmişi tablosu (order_logs) bulunamadı. Günlükleme devre dışı bırakıldı. Ayrıntı: "
+                                + ex.getMessage());
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isMissingTable(SQLException ex) {
+        SQLException current = ex;
+        while (current != null) {
+            String state = current.getSQLState();
+            if ("42S02".equals(state) || messageRefersMissingTable(current.getMessage())) {
+                return true;
+            }
+            current = current.getNextException();
+        }
+        return false;
+    }
+
+    private boolean messageRefersMissingTable(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return (lower.contains("doesn't exist") || lower.contains("does not exist")) && lower.contains("order_logs");
     }
 }
