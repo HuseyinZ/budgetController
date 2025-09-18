@@ -98,7 +98,6 @@ public class DashboardView extends JFrame {
         } else {
             SwingUtilities.invokeLater(() -> setVisible(true));
         }
-        SwingUtilities.invokeLater(() -> setVisible(true));
     }
 
     private record CardConfig(String card, String label, Supplier<JComponent> component, Predicate<Role> visible) {

@@ -232,6 +232,8 @@ public class AppState {
         if (item == null) {
             return;
         }
+
+        }
         }
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId)
@@ -273,6 +275,12 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
+        }
+        orderService.recomputeTotals(order.getId());
+        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+        }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -297,6 +305,7 @@ public class AppState {
         orderService.reassignTable(order.getId(), null);
         orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
 
+
         }
         OrderItem item = findOrderItem(order.getId(), productName);
         if (item == null) {
@@ -312,9 +321,11 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
+ 
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
+
 
     public synchronized void clearTable(int tableNo, User user) {
         Long tableId = ensureTableExists(tableNo);
@@ -572,6 +583,7 @@ public class AppState {
             case EMPTY -> TableOrderStatus.EMPTY;
             case RESERVED -> TableOrderStatus.SERVED;
             case OCCUPIED -> TableOrderStatus.ORDERED;
+
 
             case OCCUPIED, RESERVED -> TableOrderStatus.ORDERED;
         };
