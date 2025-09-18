@@ -104,12 +104,15 @@ public class AppState {
     private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
+    private final Map<Integer, ServedOverride> servedOverrides = new ConcurrentHashMap<>();
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
     private final AtomicReference<Long> defaultCategoryId = new AtomicReference<>();
     private final Object categoryLock = new Object();
     private final ScheduledExecutorService poller;
     private boolean tableReserveUnsupported;
+    private volatile boolean orderReadyUnsupported;
+    private volatile boolean orderInProgressUnsupported;
 
     private AppState() {
         this.tableService = new RestaurantTableService();
@@ -210,6 +213,10 @@ public class AppState {
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
             status = mergeStatuses(mapOrderStatus(order.getStatus()), tableOrderStatus);
+            status = applyServedOverride(tableNo, order, status, total);
+            history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
+        } else {
+            clearServedOverride(tableNo);
             history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
         }
 
@@ -259,6 +266,7 @@ public class AppState {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId)
                 .orElseGet(() -> orderService.createOrder(tableId, user == null ? null : user.getId()));
+        clearServedOverride(tableNo);
         boolean restockApplied = false;
         try {
             productService.increaseProductStock(productId, quantity, "virtual-restock");
@@ -274,7 +282,7 @@ public class AppState {
             }
             throw ex;
         }
-        orderService.updateOrderStatus(order.getId(), OrderStatus.IN_PROGRESS);
+        order = updateOrderStatus(order, OrderStatus.IN_PROGRESS);
         orderService.recomputeTotals(order.getId());
         tableService.markTableOccupied(tableId, true);
         String productLabel = safeProductName(resolved);
@@ -298,6 +306,7 @@ public class AppState {
             return;
         }
         orderService.decrementItem(item.getId(), quantity);
+        clearServedOverride(tableNo);
         if (item.getProductId() != null) {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
@@ -322,6 +331,7 @@ public class AppState {
         }
         int qty = item.getQuantity();
         orderService.decrementItem(item.getId(), qty);
+        clearServedOverride(tableNo);
         if (item.getProductId() != null && qty > 0) {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
@@ -336,6 +346,7 @@ public class AppState {
 
     public synchronized void clearTable(int tableNo, User user) {
         Long tableId = ensureTableExists(tableNo);
+        clearServedOverride(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
         if (order == null) {
             tableService.markTableOccupied(tableId, false);
@@ -361,9 +372,12 @@ public class AppState {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
         if (order == null) {
+            clearServedOverride(tableNo);
             return;
         }
-        orderService.updateOrderStatus(order.getId(), OrderStatus.READY);
+        order = updateOrderStatus(order, OrderStatus.READY);
+        BigDecimal total = computeOrderTotal(order.getId());
+        rememberServedState(tableNo, order, total);
         if (tableReserveUnsupported) {
             tableService.markTableOccupied(tableId, true);
         } else {
@@ -385,6 +399,7 @@ public class AppState {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
         if (order == null) {
+            clearServedOverride(tableNo);
             return;
         }
         List<OrderItem> items = orderService.getItemsForOrder(order.getId());
@@ -396,6 +411,7 @@ public class AppState {
         orderService.checkoutAndClose(order.getId(), cashierId, method);
         orderLogService.append(order.getId(), actor(user) + " satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name()));
+        clearServedOverride(tableNo);
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
         notifySalesChanged();
@@ -784,9 +800,123 @@ public class AppState {
         return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
+    private void clearServedOverride(int tableNo) {
+        servedOverrides.remove(tableNo);
+    }
+
+    private void rememberServedState(int tableNo, Order order, BigDecimal total) {
+        if (order == null || order.getId() == null) {
+            clearServedOverride(tableNo);
+            return;
+        }
+        BigDecimal normalizedTotal = normalizeCurrency(total);
+        ServedOverride override = new ServedOverride(order.getId(), orderTimestamp(order), normalizedTotal);
+        servedOverrides.put(tableNo, override);
+    }
+
+    private TableOrderStatus applyServedOverride(int tableNo,
+                                                 Order order,
+                                                 TableOrderStatus currentStatus,
+                                                 BigDecimal total) {
+        ServedOverride override = servedOverrides.get(tableNo);
+        if (override == null) {
+            return currentStatus;
+        }
+        if (!isServedOverrideValid(override, order, total)) {
+            servedOverrides.remove(tableNo, override);
+            return currentStatus;
+        }
+        return TableOrderStatus.SERVED;
+    }
+
+    private boolean isServedOverrideValid(ServedOverride override, Order order, BigDecimal total) {
+        if (override == null || order == null || order.getId() == null) {
+            return false;
+        }
+        if (!Objects.equals(override.orderId(), order.getId())) {
+            return false;
+        }
+        BigDecimal normalizedTotal = normalizeCurrency(total);
+        if (override.total() != null && override.total().compareTo(normalizedTotal) != 0) {
+            return false;
+        }
+        LocalDateTime currentTimestamp = orderTimestamp(order);
+        LocalDateTime storedTimestamp = override.orderTimestamp();
+        return storedTimestamp == null || currentTimestamp == null || storedTimestamp.equals(currentTimestamp);
+    }
+
+    private LocalDateTime orderTimestamp(Order order) {
+        if (order == null) {
+            return null;
+        }
+        LocalDateTime timestamp = order.getUpdatedAt();
+        if (timestamp == null) {
+            timestamp = order.getOrderDate();
+        }
+        if (timestamp == null) {
+            timestamp = order.getCreatedAt();
+        }
+        return timestamp;
+    }
+
+    private BigDecimal normalizeCurrency(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal computeOrderTotal(Long orderId) {
+        if (orderId == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return orderService.getItemsForOrder(orderId).stream()
+                .map(this::lineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private Order updateOrderStatus(Order order, OrderStatus desiredStatus) {
+        if (order == null || order.getId() == null || desiredStatus == null) {
+            return order;
+        }
+        boolean skipUpdate = (desiredStatus == OrderStatus.READY && orderReadyUnsupported)
+                || (desiredStatus == OrderStatus.IN_PROGRESS && orderInProgressUnsupported);
+        if (!skipUpdate) {
+            orderService.updateOrderStatus(order.getId(), desiredStatus);
+        }
+        Order persisted = orderService.getOrderById(order.getId()).orElse(order);
+        if (!skipUpdate) {
+            OrderStatus persistedStatus = persisted.getStatus();
+            if (desiredStatus == OrderStatus.READY && persistedStatus != OrderStatus.READY) {
+                if (persistedStatus == OrderStatus.PENDING || persistedStatus == OrderStatus.IN_PROGRESS) {
+                    orderReadyUnsupported = true;
+                }
+            } else if (desiredStatus == OrderStatus.IN_PROGRESS && persistedStatus != OrderStatus.IN_PROGRESS) {
+                if (persistedStatus == OrderStatus.PENDING) {
+                    orderInProgressUnsupported = true;
+                }
+            }
+        }
+        return persisted;
+    }
+
+    private void reconcileServedOverride(int tableNo, TableSignature previous, TableSignature current) {
+        ServedOverride override = servedOverrides.get(tableNo);
+        if (override == null) {
+            return;
+        }
+        Long currentOrderId = current == null ? null : current.orderId();
+        if (!Objects.equals(override.orderId(), currentOrderId)) {
+            servedOverrides.remove(tableNo);
+        }
+    }
+
     private void refreshTableSignature(int tableNo) {
         try {
-            tableSignatures.put(tableNo, captureSignature(tableNo));
+            TableSignature newSignature = captureSignature(tableNo);
+            TableSignature previous = tableSignatures.put(tableNo, newSignature);
+            reconcileServedOverride(tableNo, previous, newSignature);
         } catch (RuntimeException ex) {
             System.err.println("Masa durumu güncellenemedi: " + tableNo + " - " + ex.getMessage());
         }
@@ -814,6 +944,7 @@ public class AppState {
         for (Integer tableNo : layouts.keySet()) {
             TableSignature newSignature = captureSignature(tableNo);
             TableSignature old = tableSignatures.put(tableNo, newSignature);
+            reconcileServedOverride(tableNo, old, newSignature);
             if (!Objects.equals(old, newSignature)) {
                 notifyTableChanged(tableNo);
             }
@@ -857,6 +988,9 @@ public class AppState {
     }
 
     private record TableSignature(Long orderId, LocalDateTime updatedAt, TableStatus tableStatus) {
+    }
+
+    private record ServedOverride(Long orderId, LocalDateTime orderTimestamp, BigDecimal total) {
     }
 
     private record SalesSignature(int count, long maxId, LocalDateTime latestPaidAt) {
