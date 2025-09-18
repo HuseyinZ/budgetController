@@ -1,6 +1,7 @@
 package UI;
 
 import model.PaymentMethod;
+import model.Product;
 import model.Role;
 import model.User;
 import state.AppState;
@@ -10,6 +11,7 @@ import state.TableOrderStatus;
 import state.TableSnapshot;
 
 import javax.swing.*;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
@@ -23,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class TableOrderDialog extends JDialog {
     private final AppState appState;
@@ -41,22 +42,19 @@ public class TableOrderDialog extends JDialog {
     private final JLabel statusLabel = new JLabel(" ");
     private final JComboBox<MenuItem> productCombo;
     private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
+    private final JButton addButton = new JButton("Ekle");
     private final JButton markServedButton = new JButton("Sipariş hazır");
     private final JButton saleButton = new JButton("Satış yap");
     private final PropertyChangeListener listener = this::handleStateChange;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
 
-    private static final List<MenuItem> MENU_ITEMS = IntStream.rangeClosed(1, 12)
-            .mapToObj(i -> new MenuItem(i + ". ürün", BigDecimal.valueOf(40 + i * 5L)))
-            .collect(Collectors.toList());
-
     public TableOrderDialog(Window owner, AppState appState, TableSnapshot snapshot, User user) {
         super(owner, "Masa " + snapshot.getTableNo(), ModalityType.APPLICATION_MODAL);
         this.appState = Objects.requireNonNull(appState, "appState");
         this.currentUser = Objects.requireNonNull(user, "user");
         this.tableNo = snapshot.getTableNo();
-        this.productCombo = new JComboBox<>(MENU_ITEMS.toArray(new MenuItem[0]));
+        this.productCombo = new JComboBox<>();
         this.waiterRole = user.getRole() == Role.GARSON;
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -67,6 +65,7 @@ public class TableOrderDialog extends JDialog {
         add(buildCenter(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
+        reloadProducts();
         updateFromSnapshot(snapshot);
         appState.addPropertyChangeListener(listener);
         addWindowListener(new WindowAdapter() {
@@ -92,6 +91,44 @@ public class TableOrderDialog extends JDialog {
         return panel;
     }
 
+    private void reloadProducts() {
+        List<Product> products;
+        try {
+            products = appState.getAvailableProducts();
+        } catch (RuntimeException ex) {
+            System.err.println("Ürünler yüklenemedi: " + ex.getMessage());
+            products = List.of();
+        }
+        MenuItem[] items = products.stream()
+                .map(this::toMenuItem)
+                .toArray(MenuItem[]::new);
+        productCombo.setModel(new DefaultComboBoxModel<>(items));
+        boolean hasItems = items.length > 0;
+        productCombo.setEnabled(hasItems);
+        addButton.setEnabled(hasItems);
+        quantitySpinner.setEnabled(hasItems);
+        if (hasItems) {
+            productCombo.setSelectedIndex(0);
+        }
+    }
+
+    private MenuItem toMenuItem(Product product) {
+        if (product == null) {
+            return new MenuItem(null, "Ürün", BigDecimal.ZERO);
+        }
+        String name = product.getName();
+        if (name == null || name.isBlank()) {
+            name = "Ürün";
+        } else {
+            name = name.trim();
+        }
+        BigDecimal price = product.getUnitPrice();
+        if (price == null) {
+            price = BigDecimal.ZERO;
+        }
+        return new MenuItem(product.getId(), name, price);
+    }
+
     private JComponent buildCenter() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 
@@ -100,7 +137,6 @@ public class TableOrderDialog extends JDialog {
         controls.add(productCombo);
         controls.add(new JLabel("Adet"));
         controls.add(quantitySpinner);
-        JButton addButton = new JButton("Ekle");
         addButton.addActionListener(e -> addSelectedItem());
         controls.add(addButton);
         JButton decreaseButton = new JButton("Azalt");
@@ -160,10 +196,27 @@ public class TableOrderDialog extends JDialog {
     private void addSelectedItem() {
         MenuItem item = (MenuItem) productCombo.getSelectedItem();
         int qty = (int) quantitySpinner.getValue();
-        if (item == null || qty <= 0) {
+        if (item == null) {
+            JOptionPane.showMessageDialog(this, "Eklemek için ürün seçin", "Uyarı", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        appState.addItem(tableNo, item.name, item.price, qty, currentUser);
+        if (qty <= 0) {
+            JOptionPane.showMessageDialog(this, "Adet sıfır olamaz", "Uyarı", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        try {
+            if (item.id() != null && item.id() > 0) {
+                appState.addItem(tableNo, item.id(), qty, currentUser);
+            } else {
+                appState.addItem(tableNo, item.name(), item.price(), qty, currentUser);
+            }
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage();
+            if (message == null || message.isBlank()) {
+                message = "Ürün eklenemedi.";
+            }
+            JOptionPane.showMessageDialog(this, message, "Hata", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void decrementSelected() {
@@ -290,10 +343,12 @@ public class TableOrderDialog extends JDialog {
         }
     }
 
-    private record MenuItem(String name, BigDecimal price) {
+    private record MenuItem(Long id, String name, BigDecimal price) {
         @Override
         public String toString() {
-            return name + " - " + NumberFormat.getCurrencyInstance(new Locale("tr", "TR")).format(price);
+            String label = (name == null || name.isBlank()) ? "Ürün" : name;
+            BigDecimal displayPrice = price == null ? BigDecimal.ZERO : price;
+            return label + " - " + NumberFormat.getCurrencyInstance(new Locale("tr", "TR")).format(displayPrice);
         }
     }
 }

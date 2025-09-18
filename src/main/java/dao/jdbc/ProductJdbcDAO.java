@@ -89,6 +89,15 @@ public class ProductJdbcDAO implements ProductDAO {
             // optional columns
         }
 
+        try {
+            boolean active = rs.getBoolean("is_active");
+            if (!rs.wasNull()) {
+                p.setActive(active);
+            }
+        } catch (SQLException ignore) {
+            // optional column
+        }
+
         return p;
     }
 
