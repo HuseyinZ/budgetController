@@ -26,7 +26,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     private final Object schemaLock = new Object();
     private volatile boolean descriptionColumnMissing;
     private volatile boolean expenseNameColumnMissing;
+    private volatile boolean noteColumnMissing;
     private volatile boolean userIdColumnMissing;
+    private volatile boolean createdByColumnMissing;
 
     public ExpenseJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -80,15 +82,9 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             // optional column
         }
 
-        if (!userIdColumnMissing) {
-            try {
-                Object user = rs.getObject("user_id");
-                if (user instanceof Number number) {
-                    expense.setUserId(number.longValue());
-                }
-            } catch (SQLException ex) {
-                handleMissingUserId(ex);
-            }
+        Long userId = readUserId(rs);
+        if (userId != null) {
+            expense.setUserId(userId);
         }
 
         try {
@@ -115,28 +111,106 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return Date.valueOf(effective);
     }
 
+    private String prepareExpenseName(String description) {
+        String value = description == null ? "" : description.trim();
+        if (value.isEmpty()) {
+            value = "Gider";
+        }
+        if (value.length() > 150) {
+            value = value.substring(0, 150);
+        }
+        return value;
+    }
+
+    private String prepareExpenseNote(String description) {
+        if (description == null) {
+            return null;
+        }
+        String value = description.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        if (value.length() > 255) {
+            value = value.substring(0, 255);
+        }
+        return value;
+    }
+
     private String readDescription(ResultSet rs) throws SQLException {
-        if (!descriptionColumnMissing) {
+        String column = resolvedExpenseNameColumn();
+        if (column != null) {
             try {
-                return rs.getString("description");
+                String value = rs.getString(column);
+                if (value != null) {
+                    return value;
+                }
             } catch (SQLException ex) {
-                if (!handleMissingDescription(ex)) {
+                if (!handleMissingDescriptionColumn(column, ex)) {
+                    throw ex;
+                }
+                return readDescription(rs);
+            }
+        }
+
+        if (!noteColumnMissing) {
+            try {
+                String note = rs.getString("note");
+                if (note != null) {
+                    return note;
+                }
+            } catch (SQLException ex) {
+                if (!handleMissingNote(ex)) {
                     throw ex;
                 }
             }
         }
 
-        if (!expenseNameColumnMissing) {
-            try {
-                return rs.getString("expense_name");
-            } catch (SQLException ex) {
-                if (handleMissingExpenseName(ex)) {
-                    return null;
-                }
-                throw ex;
-            }
-        }
+        return null;
+    }
 
+    private String resolvedExpenseNameColumn() {
+        if (!expenseNameColumnMissing) {
+            return "expense_name";
+        }
+        if (!descriptionColumnMissing) {
+            return "description";
+        }
+        return null;
+    }
+
+    private String resolvedNoteColumn() {
+        if (!noteColumnMissing) {
+            return "note";
+        }
+        return null;
+    }
+
+    private String resolvedUserColumn() {
+        if (!createdByColumnMissing) {
+            return "created_by";
+        }
+        if (!userIdColumnMissing) {
+            return "user_id";
+        }
+        return null;
+    }
+
+    private Long readUserId(ResultSet rs) throws SQLException {
+        String column = resolvedUserColumn();
+        if (column == null) {
+            return null;
+        }
+        try {
+            Object user = rs.getObject(column);
+            if (user instanceof Number number) {
+                return number.longValue();
+            }
+        } catch (SQLException ex) {
+            if (handleMissingUserColumn(column, ex)) {
+                return readUserId(rs);
+            }
+            throw ex;
+        }
         return null;
     }
 
@@ -308,64 +382,58 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return out;
     }
 
-    private boolean handleMissingDescription(SQLException ex) {
-        if (!isMissingDescription(ex)) {
+    private boolean handleMissingDescriptionColumn(String column, SQLException ex) {
+        if (!isMissingColumn(ex, column)) {
             return false;
         }
-        if (!descriptionColumnMissing) {
+        String normalized = column == null ? "" : column.toLowerCase();
+        synchronized (schemaLock) {
+            if ("expense_name".equals(normalized) && !expenseNameColumnMissing) {
+                expenseNameColumnMissing = true;
+                System.err.println("Gider tablosunda 'expense_name' sütunu bulunamadı."
+                        + " 'description' veya 'note' sütunları kullanılacak. Ayrıntı: " + ex.getMessage());
+            } else if ("description".equals(normalized) && !descriptionColumnMissing) {
+                descriptionColumnMissing = true;
+                System.err.println("Gider tablosunda 'description' sütunu bulunamadı."
+                        + " Kayıtlar 'expense_name' sütununda saklanacak. Ayrıntı: " + ex.getMessage());
+            }
+        }
+        return true;
+    }
+
+    private boolean handleMissingNote(SQLException ex) {
+        if (!isMissingColumn(ex, "note")) {
+            return false;
+        }
+        if (!noteColumnMissing) {
             synchronized (schemaLock) {
-                if (!descriptionColumnMissing) {
-                    descriptionColumnMissing = true;
-                    System.err.println("Gider tablosunda 'description' sütunu bulunamadı. "
-                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                if (!noteColumnMissing) {
+                    noteColumnMissing = true;
+                    System.err.println("Gider tablosunda 'note' sütunu bulunamadı."
+                            + " Not bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
                 }
             }
         }
         return true;
     }
 
-    private boolean handleMissingExpenseName(SQLException ex) {
-        if (!isMissingExpenseName(ex)) {
+    private boolean handleMissingUserColumn(String column, SQLException ex) {
+        if (!isMissingColumn(ex, column)) {
             return false;
         }
-        if (!expenseNameColumnMissing) {
-            synchronized (schemaLock) {
-                if (!expenseNameColumnMissing) {
-                    expenseNameColumnMissing = true;
-                    System.err.println("Gider tablosunda 'expense_name' sütunu bulunamadı. "
-                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
-                }
+        String normalized = column == null ? "" : column.toLowerCase();
+        synchronized (schemaLock) {
+            if ("created_by".equals(normalized) && !createdByColumnMissing) {
+                createdByColumnMissing = true;
+                System.err.println("Gider tablosunda 'created_by' sütunu bulunamadı."
+                        + " Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+            } else if ("user_id".equals(normalized) && !userIdColumnMissing) {
+                userIdColumnMissing = true;
+                System.err.println("Gider tablosunda 'user_id' sütunu bulunamadı."
+                        + " Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
             }
         }
         return true;
-    }
-
-    private boolean handleMissingUserId(SQLException ex) {
-        if (!isMissingUserId(ex)) {
-            return false;
-        }
-        if (!userIdColumnMissing) {
-            synchronized (schemaLock) {
-                if (!userIdColumnMissing) {
-                    userIdColumnMissing = true;
-                    System.err.println("Gider tablosunda 'user_id' sütunu bulunamadı. "
-                            + "Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
-                }
-            }
-        }
-        return true;
-    }
-
-    private boolean isMissingDescription(SQLException ex) {
-        return isMissingColumn(ex, "description");
-    }
-
-    private boolean isMissingExpenseName(SQLException ex) {
-        return isMissingColumn(ex, "expense_name");
-    }
-
-    private boolean isMissingUserId(SQLException ex) {
-        return isMissingColumn(ex, "user_id");
     }
 
     private boolean isMissingColumn(SQLException ex, String columnName) {
@@ -393,26 +461,22 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     private boolean adjustColumnStates(SQLException ex) {
         boolean adjusted = false;
-        if (handleMissingDescription(ex)) {
+        if (handleMissingDescriptionColumn("expense_name", ex)) {
             adjusted = true;
         }
-        if (handleMissingExpenseName(ex)) {
+        if (handleMissingDescriptionColumn("description", ex)) {
             adjusted = true;
         }
-        if (handleMissingUserId(ex)) {
+        if (handleMissingNote(ex)) {
+            adjusted = true;
+        }
+        if (handleMissingUserColumn("created_by", ex)) {
+            adjusted = true;
+        }
+        if (handleMissingUserColumn("user_id", ex)) {
             adjusted = true;
         }
         return adjusted;
-    }
-
-    private String resolvedDescriptionColumn() {
-        if (!descriptionColumnMissing) {
-            return "description";
-        }
-        if (!expenseNameColumnMissing) {
-            return "expense_name";
-        }
-        return null;
     }
 
     private InsertPlan buildInsertPlan() {
@@ -422,17 +486,31 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         columns.add("amount");
         binders.add((ps, index, expense) -> ps.setBigDecimal(index, safeAmount(expense.getAmount())));
 
-        String descriptionColumn = resolvedDescriptionColumn();
-        if (descriptionColumn != null) {
-            columns.add(descriptionColumn);
-            binders.add((ps, index, expense) -> ps.setString(index, expense.getDescription()));
+        String expenseNameColumn = resolvedExpenseNameColumn();
+        if (expenseNameColumn != null) {
+            columns.add(expenseNameColumn);
+            binders.add((ps, index, expense) -> ps.setString(index, prepareExpenseName(expense.getDescription())));
+        }
+
+        String noteColumn = resolvedNoteColumn();
+        if (noteColumn != null) {
+            columns.add(noteColumn);
+            binders.add((ps, index, expense) -> {
+                String note = prepareExpenseNote(expense.getDescription());
+                if (note == null) {
+                    ps.setNull(index, Types.VARCHAR);
+                } else {
+                    ps.setString(index, note);
+                }
+            });
         }
 
         columns.add("expense_date");
         binders.add((ps, index, expense) -> ps.setDate(index, sqlDate(expense.getExpenseDate())));
 
-        if (!userIdColumnMissing) {
-            columns.add("user_id");
+        String userColumn = resolvedUserColumn();
+        if (userColumn != null) {
+            columns.add(userColumn);
             binders.add((ps, index, expense) -> {
                 if (expense.getUserId() == null) {
                     ps.setNull(index, Types.BIGINT);
@@ -469,17 +547,31 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         first = appendAssignment(sql, binders, first, "amount",
                 (ps, index, expense) -> ps.setBigDecimal(index, safeAmount(expense.getAmount())));
 
-        String descriptionColumn = resolvedDescriptionColumn();
-        if (descriptionColumn != null) {
-            first = appendAssignment(sql, binders, first, descriptionColumn,
-                    (ps, index, expense) -> ps.setString(index, expense.getDescription()));
+        String expenseNameColumn = resolvedExpenseNameColumn();
+        if (expenseNameColumn != null) {
+            first = appendAssignment(sql, binders, first, expenseNameColumn,
+                    (ps, index, expense) -> ps.setString(index, prepareExpenseName(expense.getDescription())));
+        }
+
+        String noteColumn = resolvedNoteColumn();
+        if (noteColumn != null) {
+            first = appendAssignment(sql, binders, first, noteColumn,
+                    (ps, index, expense) -> {
+                        String note = prepareExpenseNote(expense.getDescription());
+                        if (note == null) {
+                            ps.setNull(index, Types.VARCHAR);
+                        } else {
+                            ps.setString(index, note);
+                        }
+                    });
         }
 
         first = appendAssignment(sql, binders, first, "expense_date",
                 (ps, index, expense) -> ps.setDate(index, sqlDate(expense.getExpenseDate())));
 
-        if (!userIdColumnMissing) {
-            first = appendAssignment(sql, binders, first, "user_id", (ps, index, expense) -> {
+        String userColumn = resolvedUserColumn();
+        if (userColumn != null) {
+            first = appendAssignment(sql, binders, first, userColumn, (ps, index, expense) -> {
                 if (expense.getUserId() == null) {
                     ps.setNull(index, Types.BIGINT);
                 } else {

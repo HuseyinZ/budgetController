@@ -103,4 +103,24 @@ public class CategoryJdbcDAO implements CategoryDAO {
         } catch (SQLException ex) { throw new RuntimeException(ex); }
         return list;
     }
+
+    @Override
+    public Optional<Category> findByName(String name) {
+        if (name == null) {
+            return Optional.empty();
+        }
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+        final String sql = "SELECT * FROM categories WHERE name=? LIMIT 1";
+        try (Connection c = Db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, trimmed);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
 }
