@@ -4,6 +4,7 @@ import UI.View.LoginView;
 import UI.View.DashboardView;
 import com.formdev.flatlaf.FlatLightLaf;
 import model.User;
+import org.jetbrains.annotations.NotNull;
 import service.UserService;
 import state.AppState;
 
@@ -32,7 +33,7 @@ public class App {
         });
     }
 
-    private static void onLogin(User user) {
+    private static void onLogin(@NotNull User user) {
         User authenticated = Objects.requireNonNull(user, "user");
         DashboardView dashboard = new DashboardView(APP_STATE, authenticated);
         dashboard.open();

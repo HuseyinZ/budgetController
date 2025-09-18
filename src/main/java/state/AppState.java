@@ -18,6 +18,9 @@ import service.ProductService;
 import service.RestaurantTableService;
 import service.UserService;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.math.BigDecimal;
@@ -78,7 +81,7 @@ public class AppState {
         private static final AppState INSTANCE = new AppState();
     }
 
-    public static AppState getInstance() {
+    public static @NotNull AppState getInstance() {
         return Holder.INSTANCE;
     }
 
@@ -232,16 +235,6 @@ public class AppState {
         if (item == null) {
             return;
         }
-
-        }
-        }
-        Long tableId = ensureTableExists(tableNo);
-        Order order = orderService.getOpenOrderByTable(tableId)
-                .orElseThrow(() -> new IllegalArgumentException("Aktif sipariş bulunamadı: " + tableNo));
-        OrderItem item = findOrderItem(order.getId(), productName);
-        if (item == null) {
-            return;
-        }
         orderService.decrementItem(item.getId(), quantity);
         if (item.getProductId() != null) {
             productService.decreaseProductStock(item.getProductId(), quantity);
@@ -275,57 +268,9 @@ public class AppState {
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
-        }
-        orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
-        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
-            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
-        }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
-
-    public synchronized void clearTable(int tableNo, User user) {
-        Long tableId = ensureTableExists(tableNo);
-        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
-        if (order == null) {
-            tableService.markTableOccupied(tableId, false);
-            refreshTableSignature(tableNo);
-            notifyTableChanged(tableNo);
-            return;
-        }
-        List<OrderItem> items = orderService.getItemsForOrder(order.getId());
-        orderService.clearItems(order.getId());
-        for (OrderItem item : items) {
-            if (item.getProductId() != null && item.getQuantity() > 0) {
-                productService.decreaseProductStock(item.getProductId(), item.getQuantity());
-            }
-        }
-        orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
-        orderService.reassignTable(order.getId(), null);
-        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
-
-
-        }
-        OrderItem item = findOrderItem(order.getId(), productName);
-        if (item == null) {
-            return;
-        }
-        int qty = item.getQuantity();
-        orderService.decrementItem(item.getId(), qty);
-        if (item.getProductId() != null && qty > 0) {
-            productService.decreaseProductStock(item.getProductId(), qty);
-        }
-        orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
-        if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
-            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
-        }
- 
-        refreshTableSignature(tableNo);
-        notifyTableChanged(tableNo);
-    }
-
 
     public synchronized void clearTable(int tableNo, User user) {
         Long tableId = ensureTableExists(tableNo);
@@ -583,9 +528,6 @@ public class AppState {
             case EMPTY -> TableOrderStatus.EMPTY;
             case RESERVED -> TableOrderStatus.SERVED;
             case OCCUPIED -> TableOrderStatus.ORDERED;
-
-
-            case OCCUPIED, RESERVED -> TableOrderStatus.ORDERED;
         };
     }
 
@@ -599,16 +541,10 @@ public class AppState {
                 Order order = optOrder.get();
                 Long tableId = order.getTableId();
                 if (tableId != null) {
-                    tableService.getTableById(tableId).ifPresent(table -> {
-                        TableLayout layout = layouts.get(table.getTableNo());
-                        if (layout != null) {
-                            tableIds.put(table.getTableNo(), table.getId());
-                        }
-                    });
-                    Optional<RestaurantTable> optTable = tableService.getTableById(tableId);
-                    if (optTable.isPresent()) {
-                        RestaurantTable table = optTable.get();
+                    RestaurantTable table = tableService.getTableById(tableId).orElse(null);
+                    if (table != null) {
                         tableNo = table.getTableNo();
+                        tableIds.put(tableNo, table.getId());
                         TableLayout layout = layouts.get(tableNo);
                         if (layout != null) {
                             building = layout.building();
@@ -618,9 +554,7 @@ public class AppState {
                 }
             }
         }
-        String performer = actor(payment.getCashierId() == null
-                ? null
-                : userService.getUserById(payment.getCashierId()).orElse(null));
+        String performer = actor(payment.getCashierId());
         LocalDateTime timestamp = payment.getPaidAt();
         if (timestamp == null) {
             timestamp = payment.getCreatedAt();
@@ -665,7 +599,7 @@ public class AppState {
         return total.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String actor(User user) {
+    private String actor(@Nullable User user) {
         if (user == null) {
             return "Sistem";
         }
@@ -676,11 +610,11 @@ public class AppState {
         return Objects.toString(user.getUsername(), "Sistem");
     }
 
-    private String actor(Optional<User> user) {
+    private String actor(@NotNull Optional<User> user) {
         return actor(user.orElse(null));
     }
 
-    private String actor(Long userId) {
+    private String actor(@Nullable Long userId) {
         if (userId == null) {
             return "Sistem";
         }
