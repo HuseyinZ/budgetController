@@ -25,6 +25,7 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     private final Connection externalConnection;
     private final Object schemaLock = new Object();
     private volatile boolean descriptionColumnMissing;
+    private volatile boolean expenseNameColumnMissing;
     private volatile boolean userIdColumnMissing;
 
     public ExpenseJdbcDAO() {
@@ -115,60 +116,54 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private String readDescription(ResultSet rs) throws SQLException {
-        if (descriptionColumnMissing) {
-            return null;
-        }
-        try {
-            return rs.getString("description");
-        } catch (SQLException ex) {
-            if (handleMissingDescription(ex)) {
-                return null;
+        if (!descriptionColumnMissing) {
+            try {
+                return rs.getString("description");
+            } catch (SQLException ex) {
+                if (!handleMissingDescription(ex)) {
+                    throw ex;
+                }
             }
-            throw ex;
         }
+
+        if (!expenseNameColumnMissing) {
+            try {
+                return rs.getString("expense_name");
+            } catch (SQLException ex) {
+                if (handleMissingExpenseName(ex)) {
+                    return null;
+                }
+                throw ex;
+            }
+        }
+
+        return null;
     }
 
     @Override
     public Long create(Expense expense) {
-        if (descriptionColumnMissing) {
-            return userIdColumnMissing
-                    ? createWithoutDescriptionAndUser(expense)
-                    : createWithoutDescription(expense);
-        }
-        if (userIdColumnMissing) {
-            return createWithoutUser(expense);
-        }
-
-        final String sql = "INSERT INTO expenses (amount, description, expense_date, user_id) VALUES (?,?,?,?)";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                if (expense.getUserId() == null) {
-                    ps.setNull(4, Types.BIGINT);
-                } else {
-                    ps.setLong(4, expense.getUserId());
-                }
-                ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        return rs.getLong(1);
+            while (true) {
+                InsertPlan plan = buildInsertPlan();
+                try (PreparedStatement ps = connection.prepareStatement(plan.sql(), Statement.RETURN_GENERATED_KEYS)) {
+                    plan.bind(ps, expense);
+                    ps.executeUpdate();
+                    try (ResultSet rs = ps.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            return rs.getLong(1);
+                        }
                     }
+                    throw new SQLException("No generated key for expenses");
+                } catch (SQLException ex) {
+                    if (adjustColumnStates(ex)) {
+                        continue;
+                    }
+                    throw new RuntimeException(ex);
                 }
-                throw new SQLException("No generated key for expenses");
             }
         } catch (SQLException ex) {
-            if (handleMissingDescription(ex)) {
-                return createWithoutDescription(expense);
-            }
-            if (handleMissingUserId(ex)) {
-                return descriptionColumnMissing
-                        ? createWithoutDescriptionAndUser(expense)
-                        : createWithoutUser(expense);
-            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
@@ -177,41 +172,24 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
 
     @Override
     public void update(Expense expense) {
-        if (descriptionColumnMissing) {
-            updateWithoutDescription(expense);
-            return;
-        }
-        if (userIdColumnMissing) {
-            updateWithoutUser(expense);
-            return;
-        }
-
-        final String sql =
-                "UPDATE expenses SET amount=?, description=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                if (expense.getUserId() == null) {
-                    ps.setNull(4, Types.BIGINT);
-                } else {
-                    ps.setLong(4, expense.getUserId());
+            while (true) {
+                UpdatePlan plan = buildUpdatePlan();
+                try (PreparedStatement ps = connection.prepareStatement(plan.sql())) {
+                    int index = plan.bind(ps, expense);
+                    ps.setLong(index, expense.getId());
+                    ps.executeUpdate();
+                    return;
+                } catch (SQLException ex) {
+                    if (adjustColumnStates(ex)) {
+                        continue;
+                    }
+                    throw new RuntimeException(ex);
                 }
-                ps.setLong(5, expense.getId());
-                ps.executeUpdate();
             }
         } catch (SQLException ex) {
-            if (handleMissingDescription(ex)) {
-                updateWithoutDescription(expense);
-                return;
-            }
-            if (handleMissingUserId(ex)) {
-                updateWithoutUser(expense);
-                return;
-            }
             throw new RuntimeException(ex);
         } finally {
             close(connection);
@@ -346,27 +324,20 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return true;
     }
 
-    private boolean isMissingDescription(SQLException ex) {
-        SQLException current = ex;
-        while (current != null) {
-            String state = current.getSQLState();
-            if ("42S22".equals(state)) {
-                return true;
-            }
-            if (messageRefersMissingDescription(current.getMessage())) {
-                return true;
-            }
-            current = current.getNextException();
-        }
-        return false;
-    }
-
-    private boolean messageRefersMissingDescription(String message) {
-        if (message == null) {
+    private boolean handleMissingExpenseName(SQLException ex) {
+        if (!isMissingExpenseName(ex)) {
             return false;
         }
-        String lower = message.toLowerCase();
-        return lower.contains("unknown column") && lower.contains("description");
+        if (!expenseNameColumnMissing) {
+            synchronized (schemaLock) {
+                if (!expenseNameColumnMissing) {
+                    expenseNameColumnMissing = true;
+                    System.err.println("Gider tablosunda 'expense_name' sütunu bulunamadı. "
+                            + "Açıklamalar kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                }
+            }
+        }
+        return true;
     }
 
     private boolean handleMissingUserId(SQLException ex) {
@@ -385,14 +356,26 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return true;
     }
 
+    private boolean isMissingDescription(SQLException ex) {
+        return isMissingColumn(ex, "description");
+    }
+
+    private boolean isMissingExpenseName(SQLException ex) {
+        return isMissingColumn(ex, "expense_name");
+    }
+
     private boolean isMissingUserId(SQLException ex) {
+        return isMissingColumn(ex, "user_id");
+    }
+
+    private boolean isMissingColumn(SQLException ex, String columnName) {
         SQLException current = ex;
         while (current != null) {
             String state = current.getSQLState();
             if ("42S22".equals(state)) {
                 return true;
             }
-            if (messageRefersMissingUserId(current.getMessage())) {
+            if (messageRefersMissingColumn(current.getMessage(), columnName)) {
                 return true;
             }
             current = current.getNextException();
@@ -400,160 +383,148 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         return false;
     }
 
-    private boolean messageRefersMissingUserId(String message) {
+    private boolean messageRefersMissingColumn(String message, String columnName) {
         if (message == null) {
             return false;
         }
         String lower = message.toLowerCase();
-        return lower.contains("unknown column") && lower.contains("user_id");
+        return lower.contains("unknown column") && lower.contains(columnName.toLowerCase());
     }
 
-    private Long createWithoutDescription(Expense expense) {
-        if (userIdColumnMissing) {
-            return createWithoutDescriptionAndUser(expense);
+    private boolean adjustColumnStates(SQLException ex) {
+        boolean adjusted = false;
+        if (handleMissingDescription(ex)) {
+            adjusted = true;
         }
-        final String sql = "INSERT INTO expenses (amount, expense_date, user_id) VALUES (?,?,?)";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setDate(2, sqlDate(expense.getExpenseDate()));
+        if (handleMissingExpenseName(ex)) {
+            adjusted = true;
+        }
+        if (handleMissingUserId(ex)) {
+            adjusted = true;
+        }
+        return adjusted;
+    }
+
+    private String resolvedDescriptionColumn() {
+        if (!descriptionColumnMissing) {
+            return "description";
+        }
+        if (!expenseNameColumnMissing) {
+            return "expense_name";
+        }
+        return null;
+    }
+
+    private InsertPlan buildInsertPlan() {
+        List<ParameterBinder> binders = new ArrayList<>();
+        List<String> columns = new ArrayList<>();
+
+        columns.add("amount");
+        binders.add((ps, index, expense) -> ps.setBigDecimal(index, safeAmount(expense.getAmount())));
+
+        String descriptionColumn = resolvedDescriptionColumn();
+        if (descriptionColumn != null) {
+            columns.add(descriptionColumn);
+            binders.add((ps, index, expense) -> ps.setString(index, expense.getDescription()));
+        }
+
+        columns.add("expense_date");
+        binders.add((ps, index, expense) -> ps.setDate(index, sqlDate(expense.getExpenseDate())));
+
+        if (!userIdColumnMissing) {
+            columns.add("user_id");
+            binders.add((ps, index, expense) -> {
                 if (expense.getUserId() == null) {
-                    ps.setNull(3, Types.BIGINT);
+                    ps.setNull(index, Types.BIGINT);
                 } else {
-                    ps.setLong(3, expense.getUserId());
+                    ps.setLong(index, expense.getUserId());
                 }
-                ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        return rs.getLong(1);
-                    }
-                }
-                throw new SQLException("No generated key for expenses");
-            }
-        } catch (SQLException ex) {
-            if (handleMissingUserId(ex)) {
-                return createWithoutDescriptionAndUser(expense);
-            }
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
+            });
         }
+
+        StringBuilder sql = new StringBuilder("INSERT INTO expenses (");
+        for (int i = 0; i < columns.size(); i++) {
+            if (i > 0) {
+                sql.append(", ");
+            }
+            sql.append(columns.get(i));
+        }
+        sql.append(") VALUES (");
+        for (int i = 0; i < columns.size(); i++) {
+            if (i > 0) {
+                sql.append(", ");
+            }
+            sql.append("?");
+        }
+        sql.append(")");
+
+        return new InsertPlan(sql.toString(), binders);
     }
 
-    private void updateWithoutDescription(Expense expense) {
-        if (userIdColumnMissing) {
-            updateWithoutDescriptionAndUser(expense);
-            return;
+    private UpdatePlan buildUpdatePlan() {
+        List<ParameterBinder> binders = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("UPDATE expenses SET ");
+        boolean first = true;
+
+        first = appendAssignment(sql, binders, first, "amount",
+                (ps, index, expense) -> ps.setBigDecimal(index, safeAmount(expense.getAmount())));
+
+        String descriptionColumn = resolvedDescriptionColumn();
+        if (descriptionColumn != null) {
+            first = appendAssignment(sql, binders, first, descriptionColumn,
+                    (ps, index, expense) -> ps.setString(index, expense.getDescription()));
         }
-        final String sql = "UPDATE expenses SET amount=?, expense_date=?, user_id=?, updated_at=NOW() WHERE id=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setDate(2, sqlDate(expense.getExpenseDate()));
+
+        first = appendAssignment(sql, binders, first, "expense_date",
+                (ps, index, expense) -> ps.setDate(index, sqlDate(expense.getExpenseDate())));
+
+        if (!userIdColumnMissing) {
+            first = appendAssignment(sql, binders, first, "user_id", (ps, index, expense) -> {
                 if (expense.getUserId() == null) {
-                    ps.setNull(3, Types.BIGINT);
+                    ps.setNull(index, Types.BIGINT);
                 } else {
-                    ps.setLong(3, expense.getUserId());
+                    ps.setLong(index, expense.getUserId());
                 }
-                ps.setLong(4, expense.getId());
-                ps.executeUpdate();
+            });
+        }
+
+        if (!first) {
+            sql.append(", ");
+        }
+        sql.append("updated_at=NOW() WHERE id=?");
+
+        return new UpdatePlan(sql.toString(), binders);
+    }
+
+    private boolean appendAssignment(StringBuilder sql, List<ParameterBinder> binders, boolean first,
+                                     String column, ParameterBinder binder) {
+        if (!first) {
+            sql.append(", ");
+        }
+        sql.append(column).append("=?");
+        binders.add(binder);
+        return false;
+    }
+
+    private interface ParameterBinder {
+        void bind(PreparedStatement ps, int index, Expense expense) throws SQLException;
+    }
+
+    private record InsertPlan(String sql, List<ParameterBinder> binders) {
+        void bind(PreparedStatement ps, Expense expense) throws SQLException {
+            for (int i = 0; i < binders.size(); i++) {
+                binders.get(i).bind(ps, i + 1, expense);
             }
-        } catch (SQLException ex) {
-            if (handleMissingUserId(ex)) {
-                updateWithoutDescriptionAndUser(expense);
-                return;
-            }
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
         }
     }
 
-    private Long createWithoutUser(Expense expense) {
-        final String sql = "INSERT INTO expenses (amount, description, expense_date) VALUES (?,?,?)";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        return rs.getLong(1);
-                    }
-                }
-                throw new SQLException("No generated key for expenses");
+    private record UpdatePlan(String sql, List<ParameterBinder> binders) {
+        int bind(PreparedStatement ps, Expense expense) throws SQLException {
+            int index = 1;
+            for (ParameterBinder binder : binders) {
+                binder.bind(ps, index++, expense);
             }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
-        }
-    }
-
-    private void updateWithoutUser(Expense expense) {
-        final String sql = "UPDATE expenses SET amount=?, description=?, expense_date=?, updated_at=NOW() WHERE id=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setString(2, expense.getDescription());
-                ps.setDate(3, sqlDate(expense.getExpenseDate()));
-                ps.setLong(4, expense.getId());
-                ps.executeUpdate();
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
-        }
-    }
-
-    private Long createWithoutDescriptionAndUser(Expense expense) {
-        final String sql = "INSERT INTO expenses (amount, expense_date) VALUES (?,?)";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setDate(2, sqlDate(expense.getExpenseDate()));
-                ps.executeUpdate();
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        return rs.getLong(1);
-                    }
-                }
-                throw new SQLException("No generated key for expenses");
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
-        }
-    }
-
-    private void updateWithoutDescriptionAndUser(Expense expense) {
-        final String sql = "UPDATE expenses SET amount=?, expense_date=?, updated_at=NOW() WHERE id=?";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setBigDecimal(1, safeAmount(expense.getAmount()));
-                ps.setDate(2, sqlDate(expense.getExpenseDate()));
-                ps.setLong(3, expense.getId());
-                ps.executeUpdate();
-            }
-        } catch (SQLException ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
+            return index;
         }
     }
 }
