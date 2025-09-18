@@ -1,5 +1,6 @@
 package state;
 
+import model.Category;
 import model.Expense;
 import model.Order;
 import model.OrderItem;
@@ -10,6 +11,7 @@ import model.Product;
 import model.RestaurantTable;
 import model.TableStatus;
 import model.User;
+import service.CategoryService;
 import service.ExpenseService;
 import service.OrderLogService;
 import service.OrderService;
@@ -30,6 +32,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,7 @@ public class AppState {
     public static final String EVENT_SALES = "sales";
     public static final String EVENT_EXPENSES = "expenses";
     private static final int HISTORY_LIMIT = 50;
+    private static final String DEFAULT_CATEGORY_NAME = "Genel";
 
     public static final class AreaDefinition {
         private final String building;
@@ -92,6 +96,7 @@ public class AppState {
     private final OrderService orderService;
     private final PaymentService paymentService;
     private final ProductService productService;
+    private final CategoryService categoryService;
     private final UserService userService;
     private final ExpenseService expenseService;
     private final OrderLogService orderLogService;
@@ -101,6 +106,8 @@ public class AppState {
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
+    private final AtomicReference<Long> defaultCategoryId = new AtomicReference<>();
+    private final Object categoryLock = new Object();
     private final ScheduledExecutorService poller;
     private boolean tableReserveUnsupported;
 
@@ -109,6 +116,7 @@ public class AppState {
         this.orderService = new OrderService();
         this.paymentService = new PaymentService();
         this.productService = new ProductService();
+        this.categoryService = new CategoryService();
         this.userService = new UserService();
         this.expenseService = new ExpenseService();
         this.orderLogService = new OrderLogService();
@@ -156,6 +164,16 @@ public class AppState {
 
     public List<AreaDefinition> getAreas() {
         return areas;
+    }
+
+    public synchronized List<Product> getAvailableProducts() {
+        Comparator<Product> byName = Comparator.comparing(this::safeProductName, String.CASE_INSENSITIVE_ORDER);
+        return productService.getAllProducts().stream()
+                .filter(Objects::nonNull)
+                .filter(Product::isActive)
+                .filter(p -> !safeProductName(p).isEmpty())
+                .sorted(byName)
+                .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
     }
 
     public void addPropertyChangeListener(PropertyChangeListener listener) {
@@ -206,20 +224,64 @@ public class AppState {
         return snapshot(tableNo).getStatus();
     }
 
+    public synchronized void addItem(int tableNo, Long productId, int quantity, User user) {
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("Geçersiz ürün");
+        }
+        Product product = productService.getProductById(productId);
+        if (product == null) {
+            throw new IllegalArgumentException("Ürün bulunamadı: " + productId);
+        }
+        addItemInternal(tableNo, product, quantity, user);
+    }
+
     public synchronized void addItem(int tableNo, String productName, BigDecimal price, int quantity, User user) {
+        Product product = ensureProduct(productName, price);
+        addItemInternal(tableNo, product, quantity, user);
+    }
+
+    private void addItemInternal(int tableNo, Product product, int quantity, User user) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Adet sıfır olamaz");
+        }
+        if (product == null) {
+            throw new IllegalArgumentException("Ürün bulunamadı");
+        }
+        Product resolved = product;
+        Long productId = resolved.getId();
+        if (productId == null || productId <= 0) {
+            resolved = ensureProduct(resolved.getName(), resolved.getUnitPrice());
+            productId = resolved.getId();
+        }
+        if (productId == null || productId <= 0) {
+            throw new IllegalStateException("Ürün kaydedilemedi: " + safeProductName(resolved));
         }
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId)
                 .orElseGet(() -> orderService.createOrder(tableId, user == null ? null : user.getId()));
-        Product product = ensureProduct(productName, price);
-        orderService.addItemToOrder(order.getId(), product.getId(), quantity);
-        productService.increaseProductStock(product.getId(), quantity, "virtual-restock");
+        boolean restockApplied = false;
+        try {
+            productService.increaseProductStock(productId, quantity, "virtual-restock");
+            restockApplied = true;
+            orderService.addItemToOrder(order.getId(), productId, quantity);
+        } catch (RuntimeException ex) {
+            if (restockApplied) {
+                try {
+                    productService.decreaseProductStock(productId, quantity);
+                } catch (RuntimeException rollbackEx) {
+                    System.err.println("Ürün stok güncellemesi geri alınamadı: " + rollbackEx.getMessage());
+                }
+            }
+            throw ex;
+        }
         orderService.updateOrderStatus(order.getId(), OrderStatus.IN_PROGRESS);
         orderService.recomputeTotals(order.getId());
         tableService.markTableOccupied(tableId, true);
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productName + " ekledi");
+        String productLabel = safeProductName(resolved);
+        if (productLabel.isEmpty()) {
+            productLabel = "Ürün";
+        }
+        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productLabel + " ekledi");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -436,11 +498,24 @@ public class AppState {
             throw new IllegalArgumentException("Ürün adı boş");
         }
         BigDecimal unitPrice = price == null ? BigDecimal.ZERO : price.setScale(2, RoundingMode.HALF_UP);
+        Long categoryId = ensureDefaultCategoryId();
         Optional<Product> existing = productService.findByName(trimmed);
         if (existing.isPresent()) {
             Product product = existing.get();
+            boolean dirty = false;
             if (product.getUnitPrice() == null || product.getUnitPrice().compareTo(unitPrice) != 0) {
                 product.setUnitPrice(unitPrice);
+                dirty = true;
+            }
+            if ((product.getCategoryId() == null || product.getCategoryId() <= 0) && categoryId != null) {
+                product.setCategoryId(categoryId);
+                dirty = true;
+            }
+            if (product.getStock() == null) {
+                product.setStock(0);
+                dirty = true;
+            }
+            if (dirty) {
                 productService.updateProduct(product);
             }
             return product;
@@ -449,10 +524,74 @@ public class AppState {
         product.setName(trimmed);
         product.setUnitPrice(unitPrice);
         product.setVatRate(Product.DEFAULT_VAT);
-        product.setStock(null);
+        product.setStock(0);
+        product.setCategoryId(categoryId);
         Long id = productService.createProduct(product);
         product.setId(id);
         return product;
+    }
+
+    private Long ensureDefaultCategoryId() {
+        Long cached = defaultCategoryId.get();
+        if (cached != null && cached > 0) {
+            return cached;
+        }
+        synchronized (categoryLock) {
+            cached = defaultCategoryId.get();
+            if (cached != null && cached > 0) {
+                return cached;
+            }
+            Category category = categoryService.findByName(DEFAULT_CATEGORY_NAME)
+                    .orElseGet(this::createDefaultCategory);
+            Long categoryId = category.getId();
+            if (categoryId == null || categoryId <= 0) {
+                Category fallback = selectFallbackCategory();
+                if (fallback == null || fallback.getId() == null || fallback.getId() <= 0) {
+                    throw new IllegalStateException("Varsayılan kategori oluşturulamadı");
+                }
+                if (!DEFAULT_CATEGORY_NAME.equalsIgnoreCase(optionalName(fallback))) {
+                    System.err.println("Varsayılan kategori '" + DEFAULT_CATEGORY_NAME
+                            + "' bulunamadı. '" + optionalName(fallback) + "' kullanılacak.");
+                }
+                categoryId = fallback.getId();
+            }
+            defaultCategoryId.set(categoryId);
+            return categoryId;
+        }
+    }
+
+    private Category createDefaultCategory() {
+        Category category = new Category();
+        category.setName(DEFAULT_CATEGORY_NAME);
+        category.setActive(true);
+        Long id = categoryService.createCategory(category);
+        category.setId(id);
+        return category;
+    }
+
+    private Category selectFallbackCategory() {
+        List<Category> categories = categoryService.getAllCategories();
+        for (Category category : categories) {
+            if (category != null && category.getId() != null && category.getId() > 0) {
+                return category;
+            }
+        }
+        return null;
+    }
+
+    private String optionalName(Category category) {
+        return category == null ? "" : Optional.ofNullable(category.getName()).orElse("");
+    }
+
+    private String safeProductName(Product product) {
+        if (product == null) {
+            return "";
+        }
+        String name = product.getName();
+        if (name == null) {
+            return "";
+        }
+        return name.trim();
     }
 
     private OrderItem findOrderItem(Long orderId, String productName) {
@@ -514,7 +653,7 @@ public class AppState {
             return TableOrderStatus.ORDERED;
         }
         return switch (status) {
-            case READY -> TableOrderStatus.SERVED;
+            case READY, COMPLETED -> TableOrderStatus.SERVED;
             case PENDING, IN_PROGRESS -> TableOrderStatus.ORDERED;
             default -> TableOrderStatus.EMPTY;
         };

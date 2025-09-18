@@ -19,6 +19,7 @@ public class ProductJdbcDAO implements ProductDAO {
     private final Object stockColumnLock = new Object();
     private volatile boolean legacyPriceColumn;
     private volatile boolean legacyStockColumn;
+    private volatile String stockColumnName = "stock";
 
     public ProductJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -88,6 +89,15 @@ public class ProductJdbcDAO implements ProductDAO {
             // optional columns
         }
 
+        try {
+            boolean active = rs.getBoolean("is_active");
+            if (!rs.wasNull()) {
+                p.setActive(active);
+            }
+        } catch (SQLException ignore) {
+            // optional column
+        }
+
         return p;
     }
 
@@ -101,7 +111,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 final String sql;
                 if (includeStock) {
                     sql = "INSERT INTO products (name, " + priceColumn()
-                            + ", stock, category_id) VALUES (?,?,?,?)";
+                            + ", " + stockColumn() + ", category_id) VALUES (?,?,?,?)";
                 } else {
                     sql = "INSERT INTO products (name, " + priceColumn()
                             + ", category_id) VALUES (?,?,?)";
@@ -111,11 +121,8 @@ public class ProductJdbcDAO implements ProductDAO {
                     ps.setBigDecimal(2, e.getUnitPrice());
                     int paramIndex = 3;
                     if (includeStock) {
-                        if (e.getStock() == null) {
-                            ps.setNull(paramIndex, Types.INTEGER);
-                        } else {
-                            ps.setInt(paramIndex, e.getStock());
-                        }
+                        int stock = e.getStock() == null ? 0 : Math.max(0, e.getStock());
+                        ps.setInt(paramIndex, stock);
                         paramIndex++;
                     }
                     if (e.getCategoryId() == null) {
@@ -137,7 +144,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 if (!legacyPriceColumn && handleMissingUnitPrice(ex)) {
                     handled = true;
                 }
-                if (!legacyStockColumn && handleMissingStock(ex)) {
+                if (!legacyStockColumn && handleMissingStock(ex, connection)) {
                     handled = true;
                 }
                 if (handled) {
@@ -161,7 +168,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 final String sql;
                 if (includeStock) {
                     sql = "UPDATE products SET name=?, " + priceColumn()
-                            + "=?, stock=?, category_id=?, updated_at=NOW() WHERE id=?";
+                            + "=?, " + stockColumn() + "=?, category_id=?, updated_at=NOW() WHERE id=?";
                 } else {
                     sql = "UPDATE products SET name=?, " + priceColumn()
                             + "=?, category_id=?, updated_at=NOW() WHERE id=?";
@@ -171,11 +178,8 @@ public class ProductJdbcDAO implements ProductDAO {
                     ps.setBigDecimal(2, e.getUnitPrice());
                     int paramIndex = 3;
                     if (includeStock) {
-                        if (e.getStock() == null) {
-                            ps.setNull(paramIndex, Types.INTEGER);
-                        } else {
-                            ps.setInt(paramIndex, e.getStock());
-                        }
+                        int stock = e.getStock() == null ? 0 : Math.max(0, e.getStock());
+                        ps.setInt(paramIndex, stock);
                         paramIndex++;
                     }
                     if (e.getCategoryId() == null) {
@@ -193,7 +197,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 if (!legacyPriceColumn && handleMissingUnitPrice(ex)) {
                     handled = true;
                 }
-                if (!legacyStockColumn && handleMissingStock(ex)) {
+                if (!legacyStockColumn && handleMissingStock(ex, connection)) {
                     handled = true;
                 }
                 if (handled) {
@@ -320,7 +324,8 @@ public class ProductJdbcDAO implements ProductDAO {
         if (legacyStockColumn) {
             return;
         }
-        final String sql = "UPDATE products SET stock = COALESCE(stock, 0) + ?, updated_at=NOW() WHERE id=?";
+        final String sql = "UPDATE products SET " + stockColumn()
+                + " = COALESCE(" + stockColumn() + ", 0) + ?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -330,7 +335,7 @@ public class ProductJdbcDAO implements ProductDAO {
                 ps.executeUpdate();
             }
         } catch (SQLException ex) {
-            if (!legacyStockColumn && handleMissingStock(ex)) {
+            if (!legacyStockColumn && handleMissingStock(ex, connection)) {
                 return;
             }
             throw new RuntimeException(ex);
@@ -362,6 +367,10 @@ public class ProductJdbcDAO implements ProductDAO {
         return legacyPriceColumn ? "price" : "unit_price";
     }
 
+    private String stockColumn() {
+        return stockColumnName;
+    }
+
     private BigDecimal readUnitPrice(ResultSet rs) throws SQLException {
         try {
             return rs.getBigDecimal(priceColumn());
@@ -378,13 +387,13 @@ public class ProductJdbcDAO implements ProductDAO {
             return null;
         }
         try {
-            int stockValue = rs.getInt("stock");
+            int stockValue = rs.getInt(stockColumn());
             if (rs.wasNull()) {
                 return null;
             }
             return stockValue;
         } catch (SQLException ex) {
-            if (!legacyStockColumn && handleMissingStock(ex)) {
+            if (!legacyStockColumn && handleMissingStock(ex, null)) {
                 return null;
             }
             throw ex;
@@ -405,15 +414,25 @@ public class ProductJdbcDAO implements ProductDAO {
         return true;
     }
 
-    private boolean handleMissingStock(SQLException ex) {
+    private boolean handleMissingStock(SQLException ex, Connection contextConnection) {
         if (!isMissingStock(ex)) {
             return false;
         }
         synchronized (stockColumnLock) {
+            if (legacyStockColumn) {
+                return true;
+            }
+            String missingColumn = stockColumnName;
+            if (trySwitchStockColumn(missingColumn, "stock_qty", contextConnection, ex)) {
+                return true;
+            }
+            if (trySwitchStockColumn(missingColumn, "stock", contextConnection, ex)) {
+                return true;
+            }
             if (!legacyStockColumn) {
                 legacyStockColumn = true;
-                System.err.println("Ürün tablosunda 'stock' sütunu bulunamadı. Stok değerleri yok sayılacak. Ayrıntı: "
-                        + ex.getMessage());
+                System.err.println("Ürün tablosunda '" + missingColumn
+                        + "' sütunu bulunamadı. Stok değerleri yok sayılacak. Ayrıntı: " + ex.getMessage());
             }
         }
         return true;
@@ -447,6 +466,116 @@ public class ProductJdbcDAO implements ProductDAO {
             current = current.getNextException();
         }
         return false;
+    }
+
+    private boolean trySwitchStockColumn(String missingColumn,
+                                         String candidate,
+                                         Connection contextConnection,
+                                         SQLException detail) {
+        if (candidate == null || candidate.equalsIgnoreCase(missingColumn)) {
+            return false;
+        }
+        if (!hasColumn(candidate, contextConnection)) {
+            return false;
+        }
+        stockColumnName = candidate;
+        legacyStockColumn = false;
+        System.err.println("Ürün tablosunda '" + missingColumn + "' sütunu bulunamadı. '"
+                + candidate + "' sütunu kullanılacak. Ayrıntı: " + detail.getMessage());
+        return true;
+    }
+
+    private boolean hasColumn(String columnName, Connection contextConnection) {
+        if (columnName == null || columnName.isBlank()) {
+            return false;
+        }
+        Connection connection = contextConnection;
+        boolean close = false;
+        if (connection == null) {
+            if (externalConnection != null) {
+                connection = externalConnection;
+            } else if (dataSource != null) {
+                try {
+                    connection = dataSource.getConnection();
+                    close = true;
+                } catch (SQLException ex) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        try {
+            DatabaseMetaData meta = connection.getMetaData();
+            String catalog = safeCatalog(connection);
+            String schema = safeSchema(connection);
+            if (columnExists(meta, catalog, schema, "products", columnName)) {
+                return true;
+            }
+            if (columnExists(meta, catalog, schema, "PRODUCTS", columnName)) {
+                return true;
+            }
+            String upper = columnName.toUpperCase();
+            if (!upper.equals(columnName)) {
+                if (columnExists(meta, catalog, schema, "products", upper)
+                        || columnExists(meta, catalog, schema, "PRODUCTS", upper)) {
+                    return true;
+                }
+            }
+            String lower = columnName.toLowerCase();
+            if (!lower.equals(columnName)) {
+                if (columnExists(meta, catalog, schema, "products", lower)
+                        || columnExists(meta, catalog, schema, "PRODUCTS", lower)) {
+                    return true;
+                }
+            }
+        } catch (SQLException ignore) {
+            return false;
+        } finally {
+            if (close && connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException ignore) {
+                    // ignore
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean columnExists(DatabaseMetaData meta,
+                                 String catalog,
+                                 String schema,
+                                 String table,
+                                 String column) throws SQLException {
+        if (meta == null || column == null) {
+            return false;
+        }
+        try (ResultSet rs = meta.getColumns(catalog, schema, table, column)) {
+            return rs.next();
+        }
+    }
+
+    private String safeCatalog(Connection connection) {
+        if (connection == null) {
+            return null;
+        }
+        try {
+            return connection.getCatalog();
+        } catch (SQLException ex) {
+            return null;
+        }
+    }
+
+    private String safeSchema(Connection connection) {
+        if (connection == null) {
+            return null;
+        }
+        try {
+            return connection.getSchema();
+        } catch (SQLException | AbstractMethodError ex) {
+            return null;
+        }
     }
 
     private boolean messageRefersMissingUnitPrice(String message) {

@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -332,17 +333,19 @@ public class OrderJdbcDAO implements OrderDAO {
 
     @Override
     public void updateStatus(Long orderId, OrderStatus status) {
-        updateStatusInternal(orderId, status, true);
+        updateStatusInternal(orderId, status, EnumSet.noneOf(OrderStatus.class));
     }
 
-    private void updateStatusInternal(Long orderId, OrderStatus status, boolean allowFallback) {
+    private void updateStatusInternal(Long orderId, OrderStatus status, EnumSet<OrderStatus> visited) {
         OrderStatus normalized = normalize(status);
+        if (!visited.add(normalized)) {
+            return;
+        }
+
         if (isStatusMarkedUnsupported(normalized)) {
-            if (allowFallback) {
-                OrderStatus fallbackStatus = fallback(normalized);
-                if (fallbackStatus != null && fallbackStatus != normalized) {
-                    updateStatusInternal(orderId, fallbackStatus, false);
-                }
+            OrderStatus fallbackStatus = fallback(normalized, visited);
+            if (fallbackStatus != null && fallbackStatus != normalized) {
+                updateStatusInternal(orderId, fallbackStatus, visited);
             }
             return;
         }
@@ -353,13 +356,11 @@ public class OrderJdbcDAO implements OrderDAO {
                 connection = acquireConnection();
                 detectStatusMode(connection);
                 if (isStatusMarkedUnsupported(normalized)) {
-                    if (allowFallback) {
-                        OrderStatus fallbackStatus = fallback(normalized);
-                        if (fallbackStatus != null && fallbackStatus != normalized) {
-                            close(connection);
-                            connection = null;
-                            updateStatusInternal(orderId, fallbackStatus, false);
-                        }
+                    OrderStatus fallbackStatus = fallback(normalized, visited);
+                    if (fallbackStatus != null && fallbackStatus != normalized) {
+                        close(connection);
+                        connection = null;
+                        updateStatusInternal(orderId, fallbackStatus, visited);
                     }
                     return;
                 }
@@ -374,10 +375,10 @@ public class OrderJdbcDAO implements OrderDAO {
                 if (!statusOrdinalMode && handleStatusWriteIncompatibility(ex, connection)) {
                     continue;
                 }
-                if (allowFallback && handleUnsupportedStatus(normalized, ex)) {
-                    OrderStatus fallbackStatus = fallback(normalized);
+                if (handleUnsupportedStatus(normalized, ex)) {
+                    OrderStatus fallbackStatus = fallback(normalized, visited);
                     if (fallbackStatus != null && fallbackStatus != normalized) {
-                        updateStatusInternal(orderId, fallbackStatus, false);
+                        updateStatusInternal(orderId, fallbackStatus, visited);
                     }
                     return;
                 }
@@ -394,6 +395,10 @@ public class OrderJdbcDAO implements OrderDAO {
     }
 
     private OrderStatus fallback(OrderStatus status) {
+        return fallback(status, Collections.emptySet());
+    }
+
+    private OrderStatus fallback(OrderStatus status, Set<OrderStatus> excluded) {
         OrderStatus normalized = normalize(status);
         Set<OrderStatus> supportedSnapshot = supportedStatuses;
         Set<OrderStatus> unsupportedSnapshot;
@@ -404,34 +409,48 @@ public class OrderJdbcDAO implements OrderDAO {
                 unsupportedSnapshot = EnumSet.copyOf(unsupportedStatuses);
             }
         }
-        return fallbackWithSnapshots(normalized, supportedSnapshot, unsupportedSnapshot);
+        return fallbackWithSnapshots(normalized, supportedSnapshot, unsupportedSnapshot, excluded);
     }
 
     private OrderStatus fallbackWithSnapshots(OrderStatus status,
                                               Set<OrderStatus> supportedSnapshot,
-                                              Set<OrderStatus> unsupportedSnapshot) {
+                                              Set<OrderStatus> unsupportedSnapshot,
+                                              Set<OrderStatus> excluded) {
         OrderStatus normalized = normalize(status);
-        if (supportedSnapshot.contains(normalized) && !unsupportedSnapshot.contains(normalized)) {
+        if (isCandidateAllowed(normalized, supportedSnapshot, unsupportedSnapshot, excluded)) {
             return normalized;
         }
         for (int i = normalized.ordinal() - 1; i >= 0; i--) {
             OrderStatus candidate = STATUS_VALUES[i];
-            if (supportedSnapshot.contains(candidate) && !unsupportedSnapshot.contains(candidate)) {
+            if (isCandidateAllowed(candidate, supportedSnapshot, unsupportedSnapshot, excluded)) {
                 return candidate;
             }
         }
         for (int i = normalized.ordinal() + 1; i < STATUS_VALUES.length; i++) {
             OrderStatus candidate = STATUS_VALUES[i];
-            if (supportedSnapshot.contains(candidate) && !unsupportedSnapshot.contains(candidate)) {
+            if (isCandidateAllowed(candidate, supportedSnapshot, unsupportedSnapshot, excluded)) {
                 return candidate;
             }
         }
         for (OrderStatus candidate : supportedSnapshot) {
-            if (!unsupportedSnapshot.contains(candidate)) {
+            if (isCandidateAllowed(candidate, supportedSnapshot, unsupportedSnapshot, excluded)) {
                 return candidate;
             }
         }
         return null;
+    }
+
+    private boolean isCandidateAllowed(OrderStatus candidate,
+                                       Set<OrderStatus> supportedSnapshot,
+                                       Set<OrderStatus> unsupportedSnapshot,
+                                       Set<OrderStatus> excluded) {
+        if (!supportedSnapshot.contains(candidate)) {
+            return false;
+        }
+        if (unsupportedSnapshot.contains(candidate)) {
+            return false;
+        }
+        return excluded == null || !excluded.contains(candidate);
     }
 
     private boolean isStatusMarkedUnsupported(OrderStatus status) {

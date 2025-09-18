@@ -39,4 +39,15 @@ public class CategoryService {
     public void deleteCategory(Long categoryId) {
         categoryDAO.deleteById(categoryId);
     }
+
+    public Optional<Category> findByName(String name) {
+        if (name == null) {
+            return Optional.empty();
+        }
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+        return categoryDAO.findByName(trimmed);
+    }
 }
