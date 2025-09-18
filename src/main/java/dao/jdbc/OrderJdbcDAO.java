@@ -25,6 +25,8 @@ public class OrderJdbcDAO implements OrderDAO {
     private final Object statusLock = new Object();
     private final Object statusModeLock = new Object();
     private final Set<OrderStatus> unsupportedStatuses = EnumSet.noneOf(OrderStatus.class);
+    private volatile Set<OrderStatus> supportedStatuses = EnumSet.allOf(OrderStatus.class);
+    private volatile boolean statusValueSetDetermined;
     private final Set<String> unknownStatusValues = new HashSet<>();
     private volatile boolean statusOrdinalMode;
     private volatile boolean statusModeDetermined;
@@ -335,10 +337,12 @@ public class OrderJdbcDAO implements OrderDAO {
 
     private void updateStatusInternal(Long orderId, OrderStatus status, boolean allowFallback) {
         OrderStatus normalized = normalize(status);
-        if (unsupportedStatuses.contains(normalized)) {
-            OrderStatus fallback = fallback(normalized);
-            if (fallback != null) {
-                updateStatusInternal(orderId, fallback, false);
+        if (isStatusMarkedUnsupported(normalized)) {
+            if (allowFallback) {
+                OrderStatus fallbackStatus = fallback(normalized);
+                if (fallbackStatus != null && fallbackStatus != normalized) {
+                    updateStatusInternal(orderId, fallbackStatus, false);
+                }
             }
             return;
         }
@@ -348,6 +352,17 @@ public class OrderJdbcDAO implements OrderDAO {
             try {
                 connection = acquireConnection();
                 detectStatusMode(connection);
+                if (isStatusMarkedUnsupported(normalized)) {
+                    if (allowFallback) {
+                        OrderStatus fallbackStatus = fallback(normalized);
+                        if (fallbackStatus != null && fallbackStatus != normalized) {
+                            close(connection);
+                            connection = null;
+                            updateStatusInternal(orderId, fallbackStatus, false);
+                        }
+                    }
+                    return;
+                }
                 final String sql = "UPDATE orders SET status=?, updated_at=NOW() WHERE id=?";
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     setStatusParameter(ps, 1, normalized);
@@ -360,11 +375,11 @@ public class OrderJdbcDAO implements OrderDAO {
                     continue;
                 }
                 if (allowFallback && handleUnsupportedStatus(normalized, ex)) {
-                    OrderStatus fallback = fallback(normalized);
-                    if (fallback != null) {
-                        updateStatusInternal(orderId, fallback, false);
-                        return;
+                    OrderStatus fallbackStatus = fallback(normalized);
+                    if (fallbackStatus != null && fallbackStatus != normalized) {
+                        updateStatusInternal(orderId, fallbackStatus, false);
                     }
+                    return;
                 }
                 throw new RuntimeException(ex);
             } finally {
@@ -379,28 +394,80 @@ public class OrderJdbcDAO implements OrderDAO {
     }
 
     private OrderStatus fallback(OrderStatus status) {
-        return switch (status) {
-            case READY -> OrderStatus.IN_PROGRESS;
-            case CANCELLED -> OrderStatus.PENDING;
-            default -> null;
-        };
+        OrderStatus normalized = normalize(status);
+        Set<OrderStatus> supportedSnapshot = supportedStatuses;
+        Set<OrderStatus> unsupportedSnapshot;
+        synchronized (statusLock) {
+            if (unsupportedStatuses.isEmpty()) {
+                unsupportedSnapshot = EnumSet.noneOf(OrderStatus.class);
+            } else {
+                unsupportedSnapshot = EnumSet.copyOf(unsupportedStatuses);
+            }
+        }
+        return fallbackWithSnapshots(normalized, supportedSnapshot, unsupportedSnapshot);
+    }
+
+    private OrderStatus fallbackWithSnapshots(OrderStatus status,
+                                              Set<OrderStatus> supportedSnapshot,
+                                              Set<OrderStatus> unsupportedSnapshot) {
+        OrderStatus normalized = normalize(status);
+        if (supportedSnapshot.contains(normalized) && !unsupportedSnapshot.contains(normalized)) {
+            return normalized;
+        }
+        for (int i = normalized.ordinal() - 1; i >= 0; i--) {
+            OrderStatus candidate = STATUS_VALUES[i];
+            if (supportedSnapshot.contains(candidate) && !unsupportedSnapshot.contains(candidate)) {
+                return candidate;
+            }
+        }
+        for (int i = normalized.ordinal() + 1; i < STATUS_VALUES.length; i++) {
+            OrderStatus candidate = STATUS_VALUES[i];
+            if (supportedSnapshot.contains(candidate) && !unsupportedSnapshot.contains(candidate)) {
+                return candidate;
+            }
+        }
+        for (OrderStatus candidate : supportedSnapshot) {
+            if (!unsupportedSnapshot.contains(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean isStatusMarkedUnsupported(OrderStatus status) {
+        synchronized (statusLock) {
+            return unsupportedStatuses.contains(status);
+        }
+    }
+
+    private void warnUnsupportedStatus(OrderStatus status, String detail) {
+        boolean added;
+        synchronized (statusLock) {
+            added = unsupportedStatuses.add(status);
+        }
+        if (!added) {
+            return;
+        }
+        OrderStatus fallback = fallback(status);
+        StringBuilder message = new StringBuilder("Sipariş durumu '")
+                .append(status.name())
+                .append("' veritabanı şemasında desteklenmiyor.");
+        if (fallback != null && fallback != status) {
+            message.append(" '").append(fallback.name()).append("' kullanılacak.");
+        } else {
+            message.append(" Yazma denemeleri atlanacak.");
+        }
+        if (detail != null && !detail.isBlank()) {
+            message.append(" Ayrıntı: ").append(detail);
+        }
+        System.err.println(message);
     }
 
     private boolean handleUnsupportedStatus(OrderStatus status, SQLException ex) {
         if (!isUnsupportedStatus(ex)) {
             return false;
         }
-        OrderStatus fallback = fallback(status);
-        if (fallback == null) {
-            return false;
-        }
-        synchronized (statusLock) {
-            if (unsupportedStatuses.add(status)) {
-                System.err.println("Sipariş durumu '" + status.name()
-                        + "' veritabanında desteklenmiyor. '" + fallback.name()
-                        + "' kullanılacak. Ayrıntı: " + ex.getMessage());
-            }
-        }
+        warnUnsupportedStatus(status, ex.getMessage());
         return true;
     }
 
@@ -521,6 +588,79 @@ public class OrderJdbcDAO implements OrderDAO {
         }
     }
 
+    private void detectSupportedStatusesFromTypeName(String typeName) {
+        if (statusValueSetDetermined || typeName == null) {
+            return;
+        }
+        String trimmed = typeName.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+        String lower = trimmed.toLowerCase();
+        if (!lower.contains("enum")) {
+            return;
+        }
+        int start = trimmed.indexOf('(');
+        int end = trimmed.lastIndexOf(')');
+        if (start < 0 || end <= start) {
+            return;
+        }
+        String inner = trimmed.substring(start + 1, end);
+        if (inner.isBlank()) {
+            return;
+        }
+        Set<OrderStatus> detected = EnumSet.noneOf(OrderStatus.class);
+        String[] tokens = inner.split(",");
+        for (String token : tokens) {
+            String cleaned = unquote(token);
+            if (cleaned == null || cleaned.isBlank()) {
+                continue;
+            }
+            String candidate = cleaned.trim().toUpperCase();
+            try {
+                detected.add(OrderStatus.valueOf(candidate));
+            } catch (IllegalArgumentException ignore) {
+                // skip unknown literals
+            }
+        }
+        applyDetectedSupportedStatuses(detected, trimmed);
+    }
+
+    private void applyDetectedSupportedStatuses(Set<OrderStatus> detected, String detail) {
+        if (detected == null || detected.isEmpty()) {
+            return;
+        }
+        synchronized (statusLock) {
+            if (statusValueSetDetermined) {
+                return;
+            }
+            supportedStatuses = EnumSet.copyOf(detected);
+            statusValueSetDetermined = true;
+        }
+        for (OrderStatus status : STATUS_VALUES) {
+            if (!supportedStatuses.contains(status)) {
+                warnUnsupportedStatus(status, detail);
+            }
+        }
+    }
+
+    private String unquote(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2) {
+            char first = trimmed.charAt(0);
+            char last = trimmed.charAt(trimmed.length() - 1);
+            if ((first == '\'' && last == '\'')
+                    || (first == '"' && last == '"')
+                    || (first == '`' && last == '`')) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
     private Boolean lookupStatusColumnNumeric(Connection connection) {
         if (connection == null) {
             return null;
@@ -533,9 +673,11 @@ public class OrderJdbcDAO implements OrderDAO {
                 return true;
             }
             if (isStringType(type)) {
+                detectSupportedStatusesFromTypeName(meta.getColumnTypeName(1));
                 return false;
             }
             String typeName = meta.getColumnTypeName(1);
+            detectSupportedStatusesFromTypeName(typeName);
             if (typeName != null) {
                 String lower = typeName.toLowerCase();
                 if (lower.contains("enum") || lower.contains("char") || lower.contains("text")) {
@@ -575,10 +717,11 @@ public class OrderJdbcDAO implements OrderDAO {
                 if (isNumericType(dataType)) {
                     return true;
                 }
+                String typeName = rs.getString("TYPE_NAME");
+                detectSupportedStatusesFromTypeName(typeName);
                 if (isStringType(dataType)) {
                     return false;
                 }
-                String typeName = rs.getString("TYPE_NAME");
                 if (typeName != null) {
                     String lower = typeName.toLowerCase();
                     if (lower.contains("enum") || lower.contains("char") || lower.contains("text")) {
@@ -723,7 +866,11 @@ public class OrderJdbcDAO implements OrderDAO {
     }
 
     private void setStatusParameter(PreparedStatement ps, int parameterIndex, OrderStatus status) throws SQLException {
-        OrderStatus effective = normalize(status);
+        OrderStatus normalized = normalize(status);
+        OrderStatus effective = fallback(normalized);
+        if (effective == null) {
+            effective = normalized;
+        }
         if (statusOrdinalMode) {
             ps.setInt(parameterIndex, effective.ordinal());
         } else {
