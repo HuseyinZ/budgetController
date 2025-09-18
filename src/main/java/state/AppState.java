@@ -217,6 +217,7 @@ public class AppState {
             history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
         } else {
             clearServedOverride(tableNo);
+            history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
         }
 
         return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
