@@ -64,7 +64,13 @@ public class PaymentJdbcDAO implements PaymentDAO {
         try { cashierObj = rs.getObject("cashier_id"); } catch (SQLException ignore) {}
         if (cashierObj != null) p.setCashierId(((Number) cashierObj).longValue());
         p.setAmount(rs.getBigDecimal("amount"));
-        p.setMethod(PaymentMethod.valueOf(rs.getString("method")));
+        String methodValue = null;
+        try {
+            methodValue = rs.getString("method");
+        } catch (SQLException ignore) {
+            // legacy schemas might lack the column
+        }
+        p.setMethod(PaymentMethod.fromDatabaseValue(methodValue));
         Timestamp paid = null;
         try { paid = rs.getTimestamp("paid_at"); } catch (SQLException ignore) {}
         if (paid != null) p.setPaidAt(paid.toLocalDateTime());
@@ -77,6 +83,12 @@ public class PaymentJdbcDAO implements PaymentDAO {
         } catch (SQLException ignore) {}
 
         return p;
+    }
+
+    private String methodValueForWrite(Payment payment) {
+        PaymentMethod method = payment == null ? null : payment.getMethod();
+        PaymentMethod effective = method == null ? PaymentMethod.CASH : method.canonical();
+        return effective.getDatabaseValue();
     }
 
     @Override
@@ -94,7 +106,7 @@ public class PaymentJdbcDAO implements PaymentDAO {
                 ps.setLong(i++, e.getOrderId());
                 if (e.getCashierId() == null) ps.setNull(i++, Types.BIGINT); else ps.setLong(i++, e.getCashierId());
                 ps.setBigDecimal(i++, e.getAmount());
-                ps.setString(i++, e.getMethod().name());
+                ps.setString(i++, methodValueForWrite(e));
                 if (withPaidAt) ps.setTimestamp(i++, Timestamp.valueOf(e.getPaidAt()));
 
                 ps.executeUpdate();
@@ -120,7 +132,7 @@ public class PaymentJdbcDAO implements PaymentDAO {
             try (PreparedStatement ps = connection.prepareStatement(sql)) {
                 if (e.getCashierId() == null) ps.setNull(1, Types.BIGINT); else ps.setLong(1, e.getCashierId());
                 ps.setBigDecimal(2, e.getAmount());
-                ps.setString(3, e.getMethod().name());
+                ps.setString(3, methodValueForWrite(e));
                 if (e.getPaidAt() == null) ps.setNull(4, Types.TIMESTAMP);
                 else ps.setTimestamp(4, Timestamp.valueOf(e.getPaidAt()));
                 ps.setLong(5, e.getId());

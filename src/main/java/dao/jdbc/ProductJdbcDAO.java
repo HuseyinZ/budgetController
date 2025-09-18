@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public class ProductJdbcDAO implements ProductDAO {
@@ -61,7 +62,7 @@ public class ProductJdbcDAO implements ProductDAO {
     private Product map(ResultSet rs) throws SQLException {
         Product p = new Product();
         p.setId(rs.getLong("id"));
-        p.setName(rs.getString("name"));
+        applyProductName(p, rs);
         BigDecimal price = readUnitPrice(rs);
         if (price != null) {
             p.setUnitPrice(price);
@@ -99,6 +100,36 @@ public class ProductJdbcDAO implements ProductDAO {
         }
 
         return p;
+    }
+
+    private void applyProductName(Product product, ResultSet rs) throws SQLException {
+        String rawName = rs.getString("name");
+        try {
+            product.setName(rawName);
+        } catch (IllegalArgumentException ex) {
+            String fallback = fallbackProductName(product.getId(), rawName);
+            System.err.println("Ürün adı geçersiz ('" + (rawName == null ? "" : rawName.trim())
+                    + "'). '" + fallback + "' kullanılacak.");
+            product.setName(fallback);
+        }
+    }
+
+    private String fallbackProductName(Long id, String rawName) {
+        if (rawName != null) {
+            String trimmed = rawName.trim();
+            if (!trimmed.isEmpty()) {
+                if (trimmed.length() > Product.NAME_MAX) {
+                    return trimmed.substring(0, Product.NAME_MAX);
+                }
+                return trimmed;
+            }
+        }
+        String suffix = (id == null || id <= 0) ? "?" : Long.toString(id);
+        String fallback = "Ürün #" + suffix;
+        if (fallback.length() > Product.NAME_MAX) {
+            return fallback.substring(0, Product.NAME_MAX);
+        }
+        return fallback;
     }
 
     @Override
@@ -393,7 +424,14 @@ public class ProductJdbcDAO implements ProductDAO {
             }
             return stockValue;
         } catch (SQLException ex) {
-            if (!legacyStockColumn && handleMissingStock(ex, null)) {
+            if (handleMissingStock(ex, null)) {
+                if (!legacyStockColumn) {
+                    int stockValue = rs.getInt(stockColumn());
+                    if (rs.wasNull()) {
+                        return null;
+                    }
+                    return stockValue;
+                }
                 return null;
             }
             throw ex;
@@ -442,7 +480,7 @@ public class ProductJdbcDAO implements ProductDAO {
         SQLException current = ex;
         while (current != null) {
             String state = current.getSQLState();
-            if ("42S22".equals(state)) {
+            if ("42S22".equals(state) || "S0022".equals(state)) {
                 return true;
             }
             if (messageRefersMissingUnitPrice(current.getMessage())) {
@@ -457,7 +495,7 @@ public class ProductJdbcDAO implements ProductDAO {
         SQLException current = ex;
         while (current != null) {
             String state = current.getSQLState();
-            if ("42S22".equals(state)) {
+            if ("42S22".equals(state) || "S0022".equals(state)) {
                 return true;
             }
             if (messageRefersMissingStock(current.getMessage())) {
@@ -582,15 +620,33 @@ public class ProductJdbcDAO implements ProductDAO {
         if (message == null) {
             return false;
         }
-        String lower = message.toLowerCase();
-        return lower.contains("unknown column") && lower.contains("unit_price");
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (!lower.contains("unit_price")) {
+            return false;
+        }
+        if (lower.contains("unknown column")) {
+            return true;
+        }
+        if (lower.contains("not found") || lower.contains("doesn't exist") || lower.contains("does not exist")) {
+            return true;
+        }
+        return lower.contains("bulunamad");
     }
 
     private boolean messageRefersMissingStock(String message) {
         if (message == null) {
             return false;
         }
-        String lower = message.toLowerCase();
-        return lower.contains("unknown column") && lower.contains("stock");
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (!lower.contains("stock")) {
+            return false;
+        }
+        if (lower.contains("unknown column")) {
+            return true;
+        }
+        if (lower.contains("not found") || lower.contains("doesn't exist") || lower.contains("does not exist")) {
+            return true;
+        }
+        return lower.contains("bulunamad");
     }
 }
