@@ -2,6 +2,7 @@ package service;
 
 import dao.ProductDAO;
 import dao.jdbc.ProductJdbcDAO;
+import model.Category;
 import model.Product;
 
 import java.util.List;
@@ -10,24 +11,49 @@ import java.util.Optional;
 
 public class ProductService {
     private final ProductDAO productDAO;
+    private final CategoryService categoryService;
 
     public ProductService() {
-        this(new ProductJdbcDAO());
+        this(new ProductJdbcDAO(), new CategoryService());
+    }
+
+    public ProductService(CategoryService categoryService) {
+        this(new ProductJdbcDAO(), categoryService);
     }
 
     public ProductService(ProductDAO productDAO) {
+        this(productDAO, new CategoryService());
+    }
+
+    public ProductService(ProductDAO productDAO, CategoryService categoryService) {
         this.productDAO = Objects.requireNonNull(productDAO, "productDAO");
+        this.categoryService = Objects.requireNonNull(categoryService, "categoryService");
     }
 
     public List<Product> getAllProducts() {
         return productDAO.findAll(0, Integer.MAX_VALUE);
     }
 
+    public List<Product> getProductsByCategory(Long categoryId, int offset, int limit) {
+        if (categoryId == null) {
+            return List.of();
+        }
+        return productDAO.findByCategory(categoryId, offset, limit);
+    }
+
     public List<Product> getProductsByCategoryName(String categoryName) {
-        if (categoryName == null || categoryName.isBlank()) {
+        if (categoryName == null) {
             return getAllProducts();
         }
-        return productDAO.findByCategoryName(categoryName.trim());
+        String trimmed = categoryName.trim();
+        if (trimmed.isEmpty()) {
+            return getAllProducts();
+        }
+        Optional<Category> category = categoryService.findByName(trimmed);
+        if (category.isEmpty()) {
+            return List.of();
+        }
+        return getProductsByCategory(category.get().getId(), 0, 1_000);
     }
 
     public Product getProductById(Long productId) {

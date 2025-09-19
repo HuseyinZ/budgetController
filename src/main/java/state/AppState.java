@@ -119,8 +119,8 @@ public class AppState {
         this.tableService = new RestaurantTableService();
         this.orderService = new OrderService();
         this.paymentService = new PaymentService();
-        this.productService = new ProductService();
         this.categoryService = new CategoryService();
+        this.productService = new ProductService(this.categoryService);
         this.userService = new UserService();
         this.expenseService = new ExpenseService();
         this.orderLogService = new OrderLogService();
