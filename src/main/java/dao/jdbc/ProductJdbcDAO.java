@@ -351,6 +351,31 @@ public class ProductJdbcDAO implements ProductDAO {
     }
 
     @Override
+    public List<Product> findByCategoryName(String categoryName) {
+        final String sql = "SELECT p.* FROM products p " +
+                "JOIN categories c ON c.id = p.category_id " +
+                "WHERE LOWER(c.name) = LOWER(?) ORDER BY p.name";
+        List<Product> list = new ArrayList<>();
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, categoryName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        list.add(map(rs));
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+        return list;
+    }
+
+    @Override
     public void updateStock(Long productId, int delta) {
         if (legacyStockColumn) {
             return;

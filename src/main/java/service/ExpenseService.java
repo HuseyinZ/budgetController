@@ -43,6 +43,13 @@ public class ExpenseService {
         return expenseDAO.findAll(0, Integer.MAX_VALUE);
     }
 
+    public void deleteExpenseById(Long id) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("Geçersiz gider ID");
+        }
+        expenseDAO.deleteById(id);
+    }
+
     public BigDecimal sumExpensesOn(LocalDate date) {
         return sum(expenseDAO.findByDate(date));
     }

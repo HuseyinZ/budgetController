@@ -11,7 +11,6 @@ import state.TableOrderStatus;
 import state.TableSnapshot;
 
 import javax.swing.*;
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
@@ -40,9 +39,6 @@ public class TableOrderDialog extends JDialog {
     private final JTextArea logArea = new JTextArea(8, 24);
     private final JLabel totalLabel = new JLabel(" ");
     private final JLabel statusLabel = new JLabel(" ");
-    private final JComboBox<MenuItem> productCombo;
-    private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
-    private final JButton addButton = new JButton("Ekle");
     private final JButton markServedButton = new JButton("Sipariş hazır");
     private final JButton saleButton = new JButton("Satış yap");
     private final PropertyChangeListener listener = this::handleStateChange;
@@ -55,7 +51,6 @@ public class TableOrderDialog extends JDialog {
         this.appState = Objects.requireNonNull(appState, "appState");
         this.currentUser = Objects.requireNonNull(user, "user");
         this.tableNo = snapshot.getTableNo();
-        this.productCombo = new JComboBox<>();
         this.waiterRole = user.getRole() == Role.GARSON;
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -66,7 +61,6 @@ public class TableOrderDialog extends JDialog {
         add(buildCenter(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
-        reloadProducts();
         updateFromSnapshot(snapshot);
         appState.addPropertyChangeListener(listener);
         addWindowListener(new WindowAdapter() {
@@ -92,43 +86,6 @@ public class TableOrderDialog extends JDialog {
         return panel;
     }
 
-    private void reloadProducts() {
-        List<Product> products;
-        try {
-            products = appState.getAvailableProducts();
-        } catch (RuntimeException ex) {
-            System.err.println("Ürünler yüklenemedi: " + ex.getMessage());
-            products = List.of();
-        }
-        MenuItem[] items = products.stream()
-                .map(this::toMenuItem)
-                .toArray(MenuItem[]::new);
-        productCombo.setModel(new DefaultComboBoxModel<>(items));
-        boolean hasItems = items.length > 0;
-        productCombo.setEnabled(hasItems);
-        addButton.setEnabled(hasItems);
-        quantitySpinner.setEnabled(hasItems);
-        if (hasItems) {
-            productCombo.setSelectedIndex(0);
-        }
-    }
-
-    private MenuItem toMenuItem(Product product) {
-        if (product == null) {
-            return new MenuItem(null, "Ürün", BigDecimal.ZERO);
-        }
-        String name = product.getName();
-        if (name == null || name.isBlank()) {
-            name = "Ürün";
-        } else {
-            name = name.trim();
-        }
-        BigDecimal price = product.getUnitPrice();
-        if (price == null) {
-            price = BigDecimal.ZERO;
-        }
-        return new MenuItem(product.getId(), name, price);
-    }
     public void setOnReadyListener(java.util.function.Consumer<Integer> l) {
         this.onReadyListener = l;
     }
@@ -136,12 +93,9 @@ public class TableOrderDialog extends JDialog {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        controls.add(new JLabel("Ürün"));
-        controls.add(productCombo);
-        controls.add(new JLabel("Adet"));
-        controls.add(quantitySpinner);
-        addButton.addActionListener(e -> addSelectedItem());
-        controls.add(addButton);
+        JButton productsButton = new JButton("Ürünler...");
+        productsButton.addActionListener(e -> openProductPicker());
+        controls.add(productsButton);
         JButton decreaseButton = new JButton("Azalt");
         decreaseButton.addActionListener(e -> decrementSelected());
         controls.add(decreaseButton);
@@ -162,6 +116,11 @@ public class TableOrderDialog extends JDialog {
         panel.add(logScroll, BorderLayout.EAST);
 
         return panel;
+    }
+
+    private void openProductPicker() {
+        ProductPickerDialog dialog = new ProductPickerDialog(this, appState, currentUser, tableNo);
+        dialog.setVisible(true);
     }
 
     private JComponent buildFooter() {
@@ -193,32 +152,6 @@ public class TableOrderDialog extends JDialog {
         Object newValue = event.getNewValue();
         if (newValue instanceof Integer tableNumber && tableNumber == tableNo) {
             SwingUtilities.invokeLater(() -> updateFromSnapshot(appState.snapshot(tableNo)));
-        }
-    }
-
-    private void addSelectedItem() {
-        MenuItem item = (MenuItem) productCombo.getSelectedItem();
-        int qty = (int) quantitySpinner.getValue();
-        if (item == null) {
-            JOptionPane.showMessageDialog(this, "Eklemek için ürün seçin", "Uyarı", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        if (qty <= 0) {
-            JOptionPane.showMessageDialog(this, "Adet sıfır olamaz", "Uyarı", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        try {
-            if (item.id() != null && item.id() > 0) {
-                appState.addItem(tableNo, item.id(), qty, currentUser);
-            } else {
-                appState.addItem(tableNo, item.name(), item.price(), qty, currentUser);
-            }
-        } catch (RuntimeException ex) {
-            String message = ex.getMessage();
-            if (message == null || message.isBlank()) {
-                message = "Ürün eklenemedi.";
-            }
-            JOptionPane.showMessageDialog(this, message, "Hata", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -348,12 +281,4 @@ public class TableOrderDialog extends JDialog {
         }
     }
 
-    private record MenuItem(Long id, String name, BigDecimal price) {
-        @Override
-        public String toString() {
-            String label = (name == null || name.isBlank()) ? "Ürün" : name;
-            BigDecimal displayPrice = price == null ? BigDecimal.ZERO : price;
-            return label + " - " + NumberFormat.getCurrencyInstance(new Locale("tr", "TR")).format(displayPrice);
-        }
-    }
 }
