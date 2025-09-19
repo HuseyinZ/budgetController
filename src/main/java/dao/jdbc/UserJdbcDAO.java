@@ -160,4 +160,20 @@ public class UserJdbcDAO implements UserDAO {
             throw new RuntimeException(ex);
         }
     }
+
+    @Override
+    public long countByRole(Role role) {
+        final String sql = "SELECT COUNT(*) FROM users WHERE role_id = (SELECT id FROM roles WHERE name=?)";
+        try (Connection c = Db.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, role.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+            return 0L;
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
 }

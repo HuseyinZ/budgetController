@@ -14,16 +14,27 @@ import java.util.Locale;
 
 public class AdminPanel extends JPanel {
     private final UserService userService;
+    private final User currentUser;
     private final DefaultTableModel tableModel;
     private final JTable table;
     private final JLabel statusLabel = new JLabel(" ");
+    private final JButton deleteButton = new JButton("Kullanıcı sil");
 
     public AdminPanel() {
-        this(new UserService());
+        this(new UserService(), null);
     }
 
     public AdminPanel(UserService userService) {
+        this(userService, null);
+    }
+
+    public AdminPanel(User currentUser) {
+        this(new UserService(), currentUser);
+    }
+
+    public AdminPanel(UserService userService, User currentUser) {
         this.userService = Objects.requireNonNull(userService, "userService");
+        this.currentUser = currentUser;
         setLayout(new BorderLayout(8, 8));
 
         tableModel = new DefaultTableModel(new Object[]{"ID", "Kullanıcı", "Ad Soyad", "Rol", "Aktif"}, 0) {
@@ -34,6 +45,7 @@ public class AdminPanel extends JPanel {
         };
         table = new JTable(tableModel);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.getSelectionModel().addListSelectionListener(e -> updateDeleteButtonState());
         add(new JScrollPane(table), BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEADING));
@@ -45,6 +57,8 @@ public class AdminPanel extends JPanel {
         buttons.add(createUserButton);
         buttons.add(toggleActiveButton);
         buttons.add(resetPasswordButton);
+        deleteButton.setEnabled(false);
+        buttons.add(deleteButton);
         add(buttons, BorderLayout.NORTH);
 
         statusLabel.setForeground(Color.DARK_GRAY);
@@ -54,6 +68,7 @@ public class AdminPanel extends JPanel {
         createUserButton.addActionListener(e -> showCreateUserDialog());
         toggleActiveButton.addActionListener(e -> toggleSelectedUser());
         resetPasswordButton.addActionListener(e -> resetPassword());
+        deleteButton.addActionListener(e -> deleteSelectedUser());
 
         refreshUsers();
     }
@@ -71,6 +86,7 @@ public class AdminPanel extends JPanel {
             });
         }
         statusLabel.setText(users.isEmpty() ? "Henüz kullanıcı yok" : users.size() + " kullanıcı yüklendi");
+        updateDeleteButtonState();
     }
 
     private void toggleSelectedUser() {
@@ -105,6 +121,44 @@ public class AdminPanel extends JPanel {
         Long id = (Long) tableModel.getValueAt(row, 0);
         userService.changePassword(id, newPassword.trim());
         showMessage("Parola güncellendi", false);
+    }
+
+    private void deleteSelectedUser() {
+        int viewRow = table.getSelectedRow();
+        if (viewRow < 0) {
+            showMessage("Silmek için kullanıcı seçin", true);
+            return;
+        }
+        int modelRow = table.convertRowIndexToModel(viewRow);
+        Long id = (Long) tableModel.getValueAt(modelRow, 0);
+        String username = (String) tableModel.getValueAt(modelRow, 1);
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                username + " kullanıcısını silmek istiyor musunuz?",
+                "Onay",
+                JOptionPane.YES_NO_OPTION
+        );
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        try {
+            userService.deleteUserById(id, currentUser);
+            showMessage("Kullanıcı silindi", false);
+            refreshUsers();
+            table.clearSelection();
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage();
+            if (message == null || message.isBlank()) {
+                message = "Kullanıcı silinemedi";
+            }
+            showMessage(message, true);
+        } finally {
+            updateDeleteButtonState();
+        }
+    }
+
+    private void updateDeleteButtonState() {
+        deleteButton.setEnabled(table.getSelectedRow() >= 0);
     }
 
     private void showCreateUserDialog() {

@@ -6,18 +6,24 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class ExpenseRecord {
+    private final Long id;
     private final BigDecimal amount;
     private final String description;
     private final String performedBy;
     private final LocalDate expenseDate;
     private final LocalDateTime createdAt;
 
-    public ExpenseRecord(BigDecimal amount, String description, String performedBy, LocalDate expenseDate, LocalDateTime createdAt) {
+    public ExpenseRecord(Long id, BigDecimal amount, String description, String performedBy, LocalDate expenseDate, LocalDateTime createdAt) {
+        this.id = id;
         this.amount = amount == null ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
         this.description = description == null ? "" : description;
         this.performedBy = performedBy == null ? "" : performedBy;
         this.expenseDate = expenseDate == null ? LocalDate.now() : expenseDate;
         this.createdAt = createdAt == null ? LocalDateTime.now() : createdAt;
+    }
+
+    public Long getId() {
+        return id;
     }
 
     public BigDecimal getAmount() {

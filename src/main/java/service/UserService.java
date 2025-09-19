@@ -65,7 +65,29 @@ public class UserService {
     }
 
     public void deleteUser(Long userId) {
-        userDAO.deleteById(userId);
+        deleteUserById(userId, null);
+    }
+
+    public void deleteUserById(Long userId, User actor) {
+        if (userId == null || userId <= 0) {
+            throw new IllegalArgumentException("Geçersiz kullanıcı ID");
+        }
+        if (actor != null && actor.getId() != null && actor.getId().equals(userId)) {
+            throw new IllegalStateException("Kendi hesabınızı silemezsiniz");
+        }
+        User target = userDAO.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Kullanıcı bulunamadı"));
+        if (target.getRole() == Role.ADMIN) {
+            long adminCount = userDAO.countByRole(Role.ADMIN);
+            if (adminCount <= 1) {
+                throw new IllegalStateException("Sistemde en az bir yönetici kalmalıdır");
+            }
+        }
+        try {
+            userDAO.deleteById(userId);
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException(resolveDeleteError(ex), ex);
+        }
     }
 
     public void setUserRole(Long userId, Role role) {
@@ -92,6 +114,20 @@ public class UserService {
             u.setPasswordHash(newHash);
             userDAO.update(u);
         });
+    }
+
+    private String resolveDeleteError(RuntimeException ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            String message = t.getMessage();
+            if (message == null) {
+                continue;
+            }
+            String normalized = message.toLowerCase();
+            if (normalized.contains("foreign") && normalized.contains("key")) {
+                return "Kullanıcı silinemedi. İlişkili kayıtlar mevcut olabilir.";
+            }
+        }
+        return "Kullanıcı silinemedi";
     }
     /**
      * Uygulama başlarken çağır: admin kullanıcısı yoksa oluşturur.

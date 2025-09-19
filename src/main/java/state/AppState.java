@@ -8,6 +8,7 @@ import model.OrderStatus;
 import model.Payment;
 import model.PaymentMethod;
 import model.Product;
+import model.ProductSalesRow;
 import model.RestaurantTable;
 import model.TableStatus;
 import model.User;
@@ -17,6 +18,7 @@ import service.OrderLogService;
 import service.OrderService;
 import service.PaymentService;
 import service.ProductService;
+import service.ReportsService;
 import service.RestaurantTableService;
 import service.UserService;
 
@@ -49,6 +51,7 @@ public class AppState {
     public static final String EVENT_TABLES = "tables";
     public static final String EVENT_SALES = "sales";
     public static final String EVENT_EXPENSES = "expenses";
+    public static final String EVENT_PRODUCTS = "products";
     private static final int HISTORY_LIMIT = 50;
     private static final String DEFAULT_CATEGORY_NAME = "Genel";
 
@@ -100,6 +103,7 @@ public class AppState {
     private final UserService userService;
     private final ExpenseService expenseService;
     private final OrderLogService orderLogService;
+    private final ReportsService reportsService;
 
     private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
@@ -120,6 +124,7 @@ public class AppState {
         this.userService = new UserService();
         this.expenseService = new ExpenseService();
         this.orderLogService = new OrderLogService();
+        this.reportsService = new ReportsService();
         this.areas = createDefaultAreas();
         buildLayouts();
         initializeTables();
@@ -167,13 +172,29 @@ public class AppState {
     }
 
     public synchronized List<Product> getAvailableProducts() {
-        Comparator<Product> byName = Comparator.comparing(this::safeProductName, String.CASE_INSENSITIVE_ORDER);
-        return productService.getAllProducts().stream()
-                .filter(Objects::nonNull)
-                .filter(Product::isActive)
-                .filter(p -> !safeProductName(p).isEmpty())
-                .sorted(byName)
-                .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
+        return filterAndSortProducts(productService.getAllProducts());
+    }
+
+    public synchronized List<Product> getProductsByCategoryName(String categoryName) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return getAvailableProducts();
+        }
+        return filterAndSortProducts(productService.getProductsByCategoryName(categoryName));
+    }
+
+    public synchronized Long createProduct(Product product) {
+        Long id = productService.createProduct(product);
+        notifyProductsChanged();
+        return id;
+    }
+
+    public synchronized void updateProduct(Product product) {
+        productService.updateProduct(product);
+        notifyProductsChanged();
+    }
+
+    public synchronized List<Category> getAllCategories() {
+        return categoryService.getAllCategories();
     }
 
     public void addPropertyChangeListener(PropertyChangeListener listener) {
@@ -413,6 +434,10 @@ public class AppState {
                 .collect(Collectors.toUnmodifiableList());
     }
 
+    public synchronized List<ProductSalesRow> getProductSalesBefore(LocalDateTime threshold) {
+        return reportsService.getProductSalesBefore(threshold);
+    }
+
     public synchronized BigDecimal getSalesTotal(LocalDate date) {
         List<BigDecimal> amounts = paymentService.getPaymentsOn(date).stream()
                 .map(Payment::getAmount)
@@ -435,6 +460,14 @@ public class AppState {
         expense.setExpenseDate(date == null ? LocalDate.now() : date);
         expense.setUserId(user == null ? null : user.getId());
         expenseService.createExpense(expense);
+        notifyExpensesChanged();
+    }
+
+    public synchronized void deleteExpense(Long expenseId) {
+        if (expenseId == null || expenseId <= 0) {
+            throw new IllegalArgumentException("Geçersiz gider ID");
+        }
+        expenseService.deleteExpenseById(expenseId);
         notifyExpensesChanged();
     }
 
@@ -517,6 +550,7 @@ public class AppState {
             }
             if (dirty) {
                 productService.updateProduct(product);
+                notifyProductsChanged();
             }
             return product;
         }
@@ -528,6 +562,7 @@ public class AppState {
         product.setCategoryId(categoryId);
         Long id = productService.createProduct(product);
         product.setId(id);
+        notifyProductsChanged();
         return product;
     }
 
@@ -592,6 +627,16 @@ public class AppState {
             return "";
         }
         return name.trim();
+    }
+
+    private List<Product> filterAndSortProducts(List<Product> products) {
+        Comparator<Product> byName = Comparator.comparing(this::safeProductName, String.CASE_INSENSITIVE_ORDER);
+        return products.stream()
+                .filter(Objects::nonNull)
+                .filter(Product::isActive)
+                .filter(p -> !safeProductName(p).isEmpty())
+                .sorted(byName)
+                .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
     }
 
 
@@ -714,7 +759,7 @@ public class AppState {
         if (created == null) {
             created = LocalDateTime.now();
         }
-        return new ExpenseRecord(expense.getAmount(), expense.getDescription(), performer, expense.getExpenseDate(), created);
+        return new ExpenseRecord(expense.getId(), expense.getAmount(), expense.getDescription(), performer, expense.getExpenseDate(), created);
     }
 
     private void notifyTableChanged(int tableNo) {
@@ -727,6 +772,10 @@ public class AppState {
 
     private void notifyExpensesChanged() {
         pcs.firePropertyChange(EVENT_EXPENSES, null, null);
+    }
+
+    private void notifyProductsChanged() {
+        pcs.firePropertyChange(EVENT_PRODUCTS, null, null);
     }
 
     private BigDecimal sumAmounts(List<BigDecimal> amounts) {

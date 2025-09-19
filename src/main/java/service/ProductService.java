@@ -23,6 +23,13 @@ public class ProductService {
         return productDAO.findAll(0, Integer.MAX_VALUE);
     }
 
+    public List<Product> getProductsByCategoryName(String categoryName) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return getAllProducts();
+        }
+        return productDAO.findByCategoryName(categoryName.trim());
+    }
+
     public Product getProductById(Long productId) {
         return productDAO.findById(productId).orElse(null);
     }

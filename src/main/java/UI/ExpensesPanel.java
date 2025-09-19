@@ -35,7 +35,9 @@ public class ExpensesPanel extends JPanel {
     private final JSpinner amountSpinner = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 1_000_000.0, 5.0));
     private final JSpinner filterDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
     private final JSpinner expenseDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
+    private final JButton deleteButton = new JButton("Gider kaldır");
     private final PropertyChangeListener listener = this::handleStateChange;
+    private List<ExpenseRecord> currentRecords = List.of();
 
     public ExpensesPanel(AppState appState, User currentUser) {
         this.appState = Objects.requireNonNull(appState, "appState");
@@ -50,6 +52,8 @@ public class ExpensesPanel extends JPanel {
         };
         table = new JTable(tableModel);
         table.setRowHeight(22);
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.getSelectionModel().addListSelectionListener(e -> updateDeleteButtonState());
         add(buildFilterPanel(), BorderLayout.NORTH);
         add(new JScrollPane(table), BorderLayout.CENTER);
         add(buildFormPanel(), BorderLayout.SOUTH);
@@ -66,6 +70,10 @@ public class ExpensesPanel extends JPanel {
         JButton refreshButton = new JButton("Listele");
         refreshButton.addActionListener(e -> refreshTable());
         panel.add(refreshButton);
+
+        deleteButton.setEnabled(false);
+        deleteButton.addActionListener(e -> removeSelectedExpense());
+        panel.add(deleteButton);
 
         JButton exportButton = new JButton("Excel'e aktar");
         exportButton.addActionListener(e -> exportToExcel());
@@ -135,6 +143,7 @@ public class ExpensesPanel extends JPanel {
     private void refreshTable() {
         LocalDate date = convertToDate(filterDateSpinner);
         List<ExpenseRecord> records = appState.getExpensesOn(date);
+        currentRecords = List.copyOf(records);
         tableModel.setRowCount(0);
         for (ExpenseRecord record : records) {
             tableModel.addRow(new Object[]{
@@ -145,11 +154,58 @@ public class ExpensesPanel extends JPanel {
                     record.getCreatedAt()
             });
         }
+        updateDeleteButtonState();
     }
 
     private LocalDate convertToDate(JSpinner spinner) {
         Date date = (Date) spinner.getValue();
         return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private void updateDeleteButtonState() {
+        boolean enabled = table.getSelectedRow() >= 0 && table.getSelectedRow() < tableModel.getRowCount();
+        deleteButton.setEnabled(enabled);
+    }
+
+    private void removeSelectedExpense() {
+        int viewRow = table.getSelectedRow();
+        if (viewRow < 0) {
+            return;
+        }
+        int modelRow = table.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= currentRecords.size()) {
+            return;
+        }
+        ExpenseRecord record = currentRecords.get(modelRow);
+        Long id = record.getId();
+        if (id == null || id <= 0) {
+            JOptionPane.showMessageDialog(this, "Seçili gider silinemedi", "Hata", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        String description = record.getDescription();
+        if (description == null || description.isBlank()) {
+            description = "seçili gider";
+        }
+        int confirm = JOptionPane.showConfirmDialog(this,
+                description + " kaydını silmek istiyor musunuz?",
+                "Onay",
+                JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        try {
+            appState.deleteExpense(id);
+            refreshTable();
+            table.clearSelection();
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage();
+            if (message == null || message.isBlank()) {
+                message = "Gider silinemedi.";
+            }
+            JOptionPane.showMessageDialog(this, message, "Hata", JOptionPane.ERROR_MESSAGE);
+        } finally {
+            updateDeleteButtonState();
+        }
     }
 
     private void exportToExcel() {

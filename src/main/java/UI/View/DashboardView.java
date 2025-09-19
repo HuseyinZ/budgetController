@@ -55,7 +55,7 @@ public class DashboardView extends JFrame {
 
         List<CardConfig> configs = new ArrayList<>();
         configs.add(new CardConfig(CARD_FLOORS, "Katlar", () -> new JScrollPane(new RestaurantTablesPanel(appState, currentUser)), r -> true));
-        configs.add(new CardConfig(CARD_USERS, "Kullanıcı İşlemleri", AdminPanel::new, r -> r == Role.ADMIN));
+        configs.add(new CardConfig(CARD_USERS, "Kullanıcı İşlemleri", () -> new AdminPanel(currentUser), r -> r == Role.ADMIN));
         configs.add(new CardConfig(CARD_EXPENSES, "Giderler", () -> new ExpensesPanel(appState, currentUser), r -> r == Role.ADMIN || r == Role.KASIYER));
         configs.add(new CardConfig(CARD_SALES, "Satışlar", () -> new AllSalesPanel(appState), r -> r == Role.ADMIN || r == Role.KASIYER));
         configs.add(new CardConfig(CARD_PROFIT, "Net Kar", () -> new ProfitPanel(appState), r -> r == Role.ADMIN));
