@@ -1,7 +1,6 @@
 package UI;
 
 import model.PaymentMethod;
-import model.Product;
 import model.Role;
 import model.User;
 import state.AppState;
@@ -120,7 +119,12 @@ public class TableOrderDialog extends JDialog {
 
     private void openProductPicker() {
         Window owner = SwingUtilities.getWindowAncestor(this);
-        ProductPickerDialog dialog = new ProductPickerDialog(owner, appState, tableNo, currentUser);
+        ProductPickerDialog dialog = new ProductPickerDialog(owner, tableNo);
+        dialog.setOnSelect(selection -> {
+            if (selection != null) {
+                appState.addItem(tableNo, selection.productId(), selection.quantity(), currentUser);
+            }
+        });
         dialog.setVisible(true);
     }
 

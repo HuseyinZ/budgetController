@@ -1,101 +1,107 @@
 package UI;
 
+import model.Category;
 import model.Product;
-import model.User;
-import state.AppState;
+
+import service.CategoryService;
+import service.ProductService;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 public class ProductPickerDialog extends JDialog {
 
-    private enum CategoryFilter { ALL, FOODS, DRINKS }
+    public record Selection(Long productId, int quantity) {}
 
-    private final AppState appState;
-    private final User currentUser;
-    private final int tableNo;
-    private final JPanel listPanel = new JPanel();
-    private final JLabel messageLabel = new JLabel(" ");
-    private final PropertyChangeListener listener = this::handleEvent;
+    private static final int GRID_COLUMNS = 2;
+    private static final int MAX_QUANTITY = 20;
+    private static final String PLACEHOLDER_RESOURCE = "/images/placeholder.png";
+    private static final String PRODUCT_IMAGE_PATTERN = "/images/products/%d.png";
+
+    private final CategoryService categoryService = new CategoryService();
+    private final ProductService productService = new ProductService(categoryService);
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
-    private CategoryFilter activeFilter = CategoryFilter.ALL;
+    private final JPanel grid = new JPanel(new GridLayout(0, GRID_COLUMNS, 8, 8));
+    private final JLabel messageLabel = new JLabel(" ");
+    private final ButtonGroup filterGroup = new ButtonGroup();
     private final JToggleButton allButton = new JToggleButton("Tümü");
     private final JToggleButton foodsButton = new JToggleButton("Yemekler");
     private final JToggleButton drinksButton = new JToggleButton("İçecekler");
 
-    public ProductPickerDialog(Window owner, AppState appState, int tableNo, User currentUser) {
-        super(owner, "Masa " + tableNo + " - Ürün Seç", ModalityType.APPLICATION_MODAL);
-        this.appState = Objects.requireNonNull(appState, "appState");
-        this.currentUser = currentUser;
-        this.tableNo = tableNo;
+    private Consumer<Selection> onSelect;
+    private String activeCategoryName;
+    private Long foodsCategoryId;
+    private Long drinksCategoryId;
 
+    public ProductPickerDialog(Window owner, int tableNo) {
+        this(owner, tableNo > 0 ? "Masa " + tableNo + " - Ürün Seç" : "Ürün Seç");
+    }
+
+    public ProductPickerDialog(Window owner) {
+        this(owner, "Ürün Seç");
+    }
+
+    private ProductPickerDialog(Window owner, String title) {
+        super(owner, title, ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
-        setPreferredSize(new Dimension(720, 560));
+        setPreferredSize(new Dimension(760, 560));
 
-        add(buildFilters(), BorderLayout.NORTH);
-        add(buildListPanel(), BorderLayout.CENTER);
+        add(buildFilterBar(), BorderLayout.NORTH);
+        add(buildGridPanel(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
-        appState.addPropertyChangeListener(listener);
-        addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosed(WindowEvent e) {
-                appState.removePropertyChangeListener(listener);
-            }
-        });
-
-        clearMessage();
-        loadActiveProducts();
+        loadProducts(null);
         pack();
         setLocationRelativeTo(owner);
     }
 
-    private JComponent buildFilters() {
+    public void setOnSelect(Consumer<Selection> onSelect) {
+        this.onSelect = onSelect;
+    }
+
+    private JComponent buildFilterBar() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
-        ButtonGroup group = new ButtonGroup();
-        configureFilterButton(allButton, CategoryFilter.ALL, group, panel);
-        configureFilterButton(foodsButton, CategoryFilter.FOODS, group, panel);
-        configureFilterButton(drinksButton, CategoryFilter.DRINKS, group, panel);
+        configureFilterButton(panel, allButton, null);
+        configureFilterButton(panel, foodsButton, "Yemekler");
+        configureFilterButton(panel, drinksButton, "İçecekler");
         allButton.setSelected(true);
+        activeCategoryName = null;
         return panel;
     }
 
-    private void configureFilterButton(JToggleButton button, CategoryFilter filter, ButtonGroup group, JPanel panel) {
+    private void configureFilterButton(JPanel panel, JToggleButton button, String categoryName) {
         button.addActionListener(e -> {
-            if (activeFilter != filter) {
-                activeFilter = filter;
+            if (!Objects.equals(activeCategoryName, categoryName)) {
+                activeCategoryName = categoryName;
                 clearMessage();
-                loadActiveProducts();
+                loadProducts(categoryName);
             }
         });
-        group.add(button);
+        filterGroup.add(button);
         panel.add(button);
     }
 
-    private JComponent buildListPanel() {
-        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
-        listPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        JScrollPane scrollPane = new JScrollPane(listPanel);
+    private JComponent buildGridPanel() {
+        grid.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        grid.setOpaque(false);
+        JScrollPane scrollPane = new JScrollPane(grid);
         scrollPane.getVerticalScrollBar().setUnitIncrement(24);
         return scrollPane;
     }
 
     private JComponent buildFooter() {
         JPanel panel = new JPanel(new BorderLayout());
+        messageLabel.setBorder(BorderFactory.createEmptyBorder(4, 12, 4, 12));
         messageLabel.setForeground(Color.DARK_GRAY);
-        messageLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
         panel.add(messageLabel, BorderLayout.CENTER);
         JButton closeButton = new JButton("Kapat");
         closeButton.addActionListener(e -> dispose());
@@ -105,71 +111,91 @@ public class ProductPickerDialog extends JDialog {
         return panel;
     }
 
-    private void handleEvent(PropertyChangeEvent event) {
-        if (AppState.EVENT_PRODUCTS.equals(event.getPropertyName())) {
-            SwingUtilities.invokeLater(this::loadActiveProducts);
-        }
-    }
-
-    private void loadActiveProducts() {
+    private void loadProducts(String categoryName) {
         List<Product> products;
         try {
-            products = switch (activeFilter) {
-                case FOODS -> appState.getProductsByCategoryName("Yemekler");
-                case DRINKS -> appState.getProductsByCategoryName("İçecekler");
-                default -> appState.getAvailableProducts();
-            };
+            if (categoryName == null) {
+                products = productService.getAllProducts();
+            } else {
+                Long categoryId = resolveCategoryId(categoryName);
+                products = categoryId == null
+                        ? List.of()
+                        : productService.getProductsByCategory(categoryId, 0, 200);
+            }
+            clearMessage();
         } catch (RuntimeException ex) {
             products = List.of();
             showMessage("Ürünler yüklenemedi: " + ex.getMessage(), true);
         }
-        reloadProducts(products);
+        renderProducts(products);
     }
 
-    private void reloadProducts(List<Product> data) {
-        listPanel.removeAll();
-        if (data.isEmpty()) {
-            JLabel empty = new JLabel("Bu filtrede ürün bulunamadı");
-            empty.setHorizontalAlignment(SwingConstants.CENTER);
-            empty.setAlignmentX(Component.CENTER_ALIGNMENT);
-            JPanel wrapper = new JPanel(new BorderLayout());
-            wrapper.setOpaque(false);
-            wrapper.add(empty, BorderLayout.CENTER);
-            wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
-            listPanel.add(wrapper);
-        } else {
-            for (int i = 0; i < data.size(); i++) {
-                ProductRowPanel row = new ProductRowPanel(data.get(i));
-                row.setAlignmentX(Component.LEFT_ALIGNMENT);
-                listPanel.add(row);
-                if (i < data.size() - 1) {
-                    listPanel.add(Box.createVerticalStrut(8));
+    private Long resolveCategoryId(String name) {
+        if (name == null) {
+            return null;
+        }
+        String normalized = name.trim();
+        if (normalized.equalsIgnoreCase("Yemekler")) {
+            if (foodsCategoryId == null) {
+                foodsCategoryId = findCategoryId("Yemekler");
+            }
+            return foodsCategoryId;
+        }
+        if (normalized.equalsIgnoreCase("İçecekler") || normalized.equalsIgnoreCase("Icecekler")) {
+            if (drinksCategoryId == null) {
+                drinksCategoryId = findCategoryId("İçecekler");
+            }
+            return drinksCategoryId;
+        }
+        return findCategoryId(normalized);
+    }
+
+    private Long findCategoryId(String name) {
+        Optional<Category> category = categoryService.findByName(name);
+        return category.map(Category::getId).orElse(null);
+    }
+
+    private void renderProducts(List<Product> products) {
+        grid.removeAll();
+        int count = 0;
+        if (products != null) {
+            for (Product product : products) {
+                if (product == null || !product.isActive()) {
+                    continue;
                 }
+                grid.add(new ProductTile(product));
+                count++;
             }
         }
-        listPanel.revalidate();
-        listPanel.repaint();
+        if (count == 0) {
+            grid.add(createEmptyTile());
+        } else if (count % GRID_COLUMNS != 0) {
+            JPanel filler = new JPanel();
+            filler.setOpaque(false);
+            grid.add(filler);
+        }
+        grid.revalidate();
+        grid.repaint();
     }
 
-    private void addProduct(Product product, int quantity) {
-        if (product == null || product.getId() == null) {
-            showMessage("Ürün bilgisi eksik", true);
+    private JPanel createEmptyTile() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(false);
+        JLabel label = new JLabel("Bu kategoride ürün yok.", SwingConstants.CENTER);
+        label.setForeground(Color.DARK_GRAY);
+        panel.add(label, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void handleSelect(Long productId, int quantity) {
+        if (productId == null || quantity <= 0) {
+            showMessage("Ürün seçimi tamamlanamadı", true);
             return;
         }
-        if (quantity <= 0) {
-            showMessage("Adet en az 1 olmalı", true);
-            return;
+        if (onSelect != null) {
+            onSelect.accept(new Selection(productId, quantity));
         }
-        try {
-            appState.addItem(tableNo, product.getId(), quantity, currentUser);
-            showMessage(quantity + " x " + productLabel(product) + " eklendi", false);
-        } catch (RuntimeException ex) {
-            String message = ex.getMessage();
-            if (message == null || message.isBlank()) {
-                message = "Ürün eklenemedi";
-            }
-            showMessage(message, true);
-        }
+        dispose();
     }
 
     private void showMessage(String text, boolean error) {
@@ -182,51 +208,27 @@ public class ProductPickerDialog extends JDialog {
         messageLabel.setText(" ");
     }
 
-    private String tl(BigDecimal amount) {
-        if (amount == null) {
-            amount = BigDecimal.ZERO;
+    private String formatCurrency(BigDecimal price) {
+        if (price == null) {
+            price = BigDecimal.ZERO;
         }
-        return currencyFormat.format(amount);
-    }
-
-    private String safe(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;");
-    }
-
-    private String productLabel(Product product) {
-        if (product == null) {
-            return "Ürün";
-        }
-        String name = product.getName();
-        if (name == null) {
-            return "Ürün";
-        }
-        String trimmed = name.trim();
-        return trimmed.isEmpty() ? "Ürün" : trimmed;
+        return currencyFormat.format(price);
     }
 
     private Icon loadProductIcon(Product product) {
-        Image image = loadImageForSku(resolveSku(product));
+        Long productId = product == null ? null : product.getId();
+        Image image = null;
+        if (productId != null) {
+            image = loadImageFromResource(String.format(Locale.ROOT, PRODUCT_IMAGE_PATTERN, productId));
+        }
         if (image == null) {
-            image = loadImageFromResource("/images/placeholder.png");
+            image = loadImageFromResource(PLACEHOLDER_RESOURCE);
         }
         if (image == null) {
             return UIManager.getIcon("OptionPane.informationIcon");
         }
-        Image scaled = image.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+        Image scaled = image.getScaledInstance(96, 96, Image.SCALE_SMOOTH);
         return new ImageIcon(scaled);
-    }
-
-    private Image loadImageForSku(String sku) {
-        if (sku == null || sku.isBlank()) {
-            return null;
-        }
-        return loadImageFromResource("/images/" + sku.trim() + ".png");
     }
 
     private Image loadImageFromResource(String path) {
@@ -244,64 +246,73 @@ public class ProductPickerDialog extends JDialog {
         }
     }
 
-    private String resolveSku(Product product) {
+    private String productName(Product product) {
         if (product == null) {
-            return null;
+            return "Ürün";
         }
-        try {
-            Method method = product.getClass().getMethod("getSku");
-            Object value = method.invoke(product);
-            if (value instanceof String sku && !sku.isBlank()) {
-                return sku.trim();
-            }
-        } catch (ReflectiveOperationException ignore) {
-            // sku alanı olmayan modellerde placeholder kullanılacak
+        String name = product.getName();
+        if (name == null) {
+            return "Ürün";
         }
-        return null;
+        String trimmed = name.trim();
+        return trimmed.isEmpty() ? "Ürün" : trimmed;
     }
 
-    private class ProductRowPanel extends JPanel {
-        ProductRowPanel(Product product) {
-            super(new BorderLayout(8, 0));
-            setOpaque(false);
-            setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
-            setMaximumSize(new Dimension(Integer.MAX_VALUE, 84));
+    private void adjustSpinnerValue(JSpinner spinner, int delta) {
+        Number value = (Number) spinner.getValue();
+        int current = value == null ? 1 : value.intValue();
+        int updated = Math.max(1, Math.min(MAX_QUANTITY, current + delta));
+        spinner.setValue(updated);
+    }
 
-            JLabel pic = new JLabel(loadProductIcon(product));
-            pic.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
-            add(pic, BorderLayout.WEST);
+    private class ProductTile extends JPanel {
+        ProductTile(Product product) {
+            super(new BorderLayout(8, 8));
+            setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(220, 220, 220)),
+                    BorderFactory.createEmptyBorder(12, 12, 12, 12)));
+            setBackground(Color.WHITE);
 
-            JLabel name = new JLabel("<html><b>" + safe(productLabel(product)) + "</b><br/>" + tl(product.getUnitPrice()) + "</html>");
-            add(name, BorderLayout.CENTER);
+            JLabel iconLabel = new JLabel(loadProductIcon(product));
+            iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            iconLabel.setVerticalAlignment(SwingConstants.CENTER);
+            iconLabel.setPreferredSize(new Dimension(110, 110));
+            add(iconLabel, BorderLayout.WEST);
 
-            JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
-            right.setOpaque(false);
+            JPanel infoPanel = new JPanel();
+            infoPanel.setOpaque(false);
+            infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
+            JLabel nameLabel = new JLabel(productName(product));
+            nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 14f));
+            JLabel priceLabel = new JLabel(formatCurrency(product.getUnitPrice()));
+            priceLabel.setForeground(new Color(0, 102, 153));
+            infoPanel.add(nameLabel);
+            infoPanel.add(Box.createVerticalStrut(6));
+            infoPanel.add(priceLabel);
+            add(infoPanel, BorderLayout.CENTER);
+
+            JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+            controls.setOpaque(false);
             JButton minus = new JButton("-");
-            JSpinner qty = new JSpinner(new SpinnerNumberModel(1, 1, 99, 1));
+            JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_QUANTITY, 1));
+            Dimension preferred = qtySpinner.getPreferredSize();
+            qtySpinner.setPreferredSize(new Dimension(60, preferred.height));
             JButton plus = new JButton("+");
             JButton addButton = new JButton("Ekle");
 
-            minus.addActionListener(e -> {
-                int current = ((Number) qty.getValue()).intValue();
-                qty.setValue(Math.max(1, current - 1));
-            });
-            plus.addActionListener(e -> {
-                int current = ((Number) qty.getValue()).intValue();
-                qty.setValue(Math.min(99, current + 1));
-            });
+            minus.addActionListener(e -> adjustSpinnerValue(qtySpinner, -1));
+            plus.addActionListener(e -> adjustSpinnerValue(qtySpinner, 1));
             addButton.addActionListener(e -> {
-                int quantity = ((Number) qty.getValue()).intValue();
-                addProduct(product, quantity);
+                Number number = (Number) qtySpinner.getValue();
+                int quantity = number == null ? 1 : number.intValue();
+                handleSelect(product.getId(), quantity);
             });
 
-            Dimension spinnerSize = qty.getPreferredSize();
-            qty.setPreferredSize(new Dimension(48, spinnerSize.height));
-
-            right.add(minus);
-            right.add(qty);
-            right.add(plus);
-            right.add(addButton);
-            add(right, BorderLayout.EAST);
+            controls.add(minus);
+            controls.add(qtySpinner);
+            controls.add(plus);
+            controls.add(addButton);
+            add(controls, BorderLayout.SOUTH);
         }
     }
 }
