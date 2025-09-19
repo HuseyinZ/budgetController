@@ -93,7 +93,7 @@ public class TableOrderDialog extends JDialog {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton productsButton = new JButton("Ürünler...");
+        JButton productsButton = new JButton("Ürünler");
         productsButton.addActionListener(e -> openProductPicker());
         controls.add(productsButton);
         JButton decreaseButton = new JButton("Azalt");
@@ -119,7 +119,8 @@ public class TableOrderDialog extends JDialog {
     }
 
     private void openProductPicker() {
-        ProductPickerDialog dialog = new ProductPickerDialog(this, appState, currentUser, tableNo);
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        ProductPickerDialog dialog = new ProductPickerDialog(owner, appState, tableNo, currentUser);
         dialog.setVisible(true);
     }
 
@@ -240,7 +241,7 @@ public class TableOrderDialog extends JDialog {
     }
 
     private String formatLog(OrderLogEntry entry) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
         return entry.getTimestamp().format(formatter) + " - " + entry.getMessage();
     }
 

@@ -4,12 +4,14 @@ import model.Product;
 import model.User;
 import state.AppState;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.List;
@@ -18,27 +20,32 @@ import java.util.Objects;
 
 public class ProductPickerDialog extends JDialog {
 
+    private enum CategoryFilter { ALL, FOODS, DRINKS }
+
     private final AppState appState;
     private final User currentUser;
     private final int tableNo;
-    private final JPanel gridPanel = new JPanel(new GridLayout(0, 3, 12, 12));
+    private final JPanel listPanel = new JPanel();
     private final JLabel messageLabel = new JLabel(" ");
     private final PropertyChangeListener listener = this::handleEvent;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
-    private String activeCategory;
-    private List<Product> currentProducts = List.of();
+    private CategoryFilter activeFilter = CategoryFilter.ALL;
+    private final JToggleButton allButton = new JToggleButton("Tümü");
+    private final JToggleButton foodsButton = new JToggleButton("Yemekler");
+    private final JToggleButton drinksButton = new JToggleButton("İçecekler");
 
-    public ProductPickerDialog(Window owner, AppState appState, User currentUser, int tableNo) {
-        super(owner, "Ürün Seçici", ModalityType.APPLICATION_MODAL);
+    public ProductPickerDialog(Window owner, AppState appState, int tableNo, User currentUser) {
+        super(owner, "Masa " + tableNo + " - Ürün Seç", ModalityType.APPLICATION_MODAL);
         this.appState = Objects.requireNonNull(appState, "appState");
         this.currentUser = currentUser;
         this.tableNo = tableNo;
 
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
-        setPreferredSize(new Dimension(720, 520));
+        setPreferredSize(new Dimension(720, 560));
 
         add(buildFilters(), BorderLayout.NORTH);
-        add(buildGrid(), BorderLayout.CENTER);
+        add(buildListPanel(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
         appState.addPropertyChangeListener(listener);
@@ -49,50 +56,40 @@ public class ProductPickerDialog extends JDialog {
             }
         });
 
-        reloadProducts();
+        clearMessage();
+        loadActiveProducts();
         pack();
         setLocationRelativeTo(owner);
     }
 
     private JComponent buildFilters() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         ButtonGroup group = new ButtonGroup();
-
-        JToggleButton allButton = new JToggleButton("Tüm Ürünler");
+        configureFilterButton(allButton, CategoryFilter.ALL, group, panel);
+        configureFilterButton(foodsButton, CategoryFilter.FOODS, group, panel);
+        configureFilterButton(drinksButton, CategoryFilter.DRINKS, group, panel);
         allButton.setSelected(true);
-        allButton.addActionListener(e -> {
-            activeCategory = null;
-            reloadProducts();
-        });
-
-        JToggleButton foodsButton = new JToggleButton("Yemekler");
-        foodsButton.addActionListener(e -> {
-            activeCategory = "Yemekler";
-            reloadProducts();
-        });
-
-        JToggleButton drinksButton = new JToggleButton("İçecekler");
-        drinksButton.addActionListener(e -> {
-            activeCategory = "İçecekler";
-            reloadProducts();
-        });
-
-        group.add(allButton);
-        group.add(foodsButton);
-        group.add(drinksButton);
-
-        panel.add(allButton);
-        panel.add(foodsButton);
-        panel.add(drinksButton);
         return panel;
     }
 
-    private JComponent buildGrid() {
-        JPanel wrapper = new JPanel(new BorderLayout());
-        gridPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        JScrollPane scrollPane = new JScrollPane(gridPanel);
-        wrapper.add(scrollPane, BorderLayout.CENTER);
-        return wrapper;
+    private void configureFilterButton(JToggleButton button, CategoryFilter filter, ButtonGroup group, JPanel panel) {
+        button.addActionListener(e -> {
+            if (activeFilter != filter) {
+                activeFilter = filter;
+                clearMessage();
+                loadActiveProducts();
+            }
+        });
+        group.add(button);
+        panel.add(button);
+    }
+
+    private JComponent buildListPanel() {
+        listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
+        listPanel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+        JScrollPane scrollPane = new JScrollPane(listPanel);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(24);
+        return scrollPane;
     }
 
     private JComponent buildFooter() {
@@ -110,41 +107,48 @@ public class ProductPickerDialog extends JDialog {
 
     private void handleEvent(PropertyChangeEvent event) {
         if (AppState.EVENT_PRODUCTS.equals(event.getPropertyName())) {
-            SwingUtilities.invokeLater(this::reloadProducts);
+            SwingUtilities.invokeLater(this::loadActiveProducts);
         }
     }
 
-    private void reloadProducts() {
+    private void loadActiveProducts() {
         List<Product> products;
         try {
-            if (activeCategory == null || activeCategory.isBlank()) {
-                products = appState.getAvailableProducts();
-            } else {
-                products = appState.getProductsByCategoryName(activeCategory);
-            }
+            products = switch (activeFilter) {
+                case FOODS -> appState.getProductsByCategoryName("Yemekler");
+                case DRINKS -> appState.getProductsByCategoryName("İçecekler");
+                default -> appState.getAvailableProducts();
+            };
         } catch (RuntimeException ex) {
             products = List.of();
-            messageLabel.setText("Ürünler yüklenemedi: " + ex.getMessage());
+            showMessage("Ürünler yüklenemedi: " + ex.getMessage(), true);
         }
-        currentProducts = products;
-        renderProducts();
+        reloadProducts(products);
     }
 
-    private void renderProducts() {
-        gridPanel.removeAll();
-        if (currentProducts.isEmpty()) {
+    private void reloadProducts(List<Product> data) {
+        listPanel.removeAll();
+        if (data.isEmpty()) {
             JLabel empty = new JLabel("Bu filtrede ürün bulunamadı");
             empty.setHorizontalAlignment(SwingConstants.CENTER);
-            gridPanel.setLayout(new BorderLayout());
-            gridPanel.add(empty, BorderLayout.CENTER);
+            empty.setAlignmentX(Component.CENTER_ALIGNMENT);
+            JPanel wrapper = new JPanel(new BorderLayout());
+            wrapper.setOpaque(false);
+            wrapper.add(empty, BorderLayout.CENTER);
+            wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+            listPanel.add(wrapper);
         } else {
-            gridPanel.setLayout(new GridLayout(0, 3, 12, 12));
-            for (Product product : currentProducts) {
-                gridPanel.add(new ProductPanel(product));
+            for (int i = 0; i < data.size(); i++) {
+                ProductRowPanel row = new ProductRowPanel(data.get(i));
+                row.setAlignmentX(Component.LEFT_ALIGNMENT);
+                listPanel.add(row);
+                if (i < data.size() - 1) {
+                    listPanel.add(Box.createVerticalStrut(8));
+                }
             }
         }
-        gridPanel.revalidate();
-        gridPanel.repaint();
+        listPanel.revalidate();
+        listPanel.repaint();
     }
 
     private void addProduct(Product product, int quantity) {
@@ -158,7 +162,7 @@ public class ProductPickerDialog extends JDialog {
         }
         try {
             appState.addItem(tableNo, product.getId(), quantity, currentUser);
-            showMessage(quantity + " x " + safeName(product) + " eklendi", false);
+            showMessage(quantity + " x " + productLabel(product) + " eklendi", false);
         } catch (RuntimeException ex) {
             String message = ex.getMessage();
             if (message == null || message.isBlank()) {
@@ -173,81 +177,131 @@ public class ProductPickerDialog extends JDialog {
         messageLabel.setText(text);
     }
 
-    private String formatPrice(Product product) {
-        BigDecimal price = product.getUnitPrice();
-        if (price == null) {
-            price = BigDecimal.ZERO;
-        }
-        return currencyFormat.format(price);
+    private void clearMessage() {
+        messageLabel.setForeground(Color.DARK_GRAY);
+        messageLabel.setText(" ");
     }
 
-    private String safeName(Product product) {
-        String name = product.getName();
-        if (name == null || name.isBlank()) {
+    private String tl(BigDecimal amount) {
+        if (amount == null) {
+            amount = BigDecimal.ZERO;
+        }
+        return currencyFormat.format(amount);
+    }
+
+    private String safe(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private String productLabel(Product product) {
+        if (product == null) {
             return "Ürün";
         }
-        return name.trim();
+        String name = product.getName();
+        if (name == null) {
+            return "Ürün";
+        }
+        String trimmed = name.trim();
+        return trimmed.isEmpty() ? "Ürün" : trimmed;
     }
 
-    private class ProductPanel extends JPanel {
-        private final Product product;
-        private final JPanel quantityPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 50, 1));
+    private Icon loadProductIcon(Product product) {
+        Image image = loadImageForSku(resolveSku(product));
+        if (image == null) {
+            image = loadImageFromResource("/images/placeholder.png");
+        }
+        if (image == null) {
+            return UIManager.getIcon("OptionPane.informationIcon");
+        }
+        Image scaled = image.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
+    }
 
-        ProductPanel(Product product) {
-            super(new BorderLayout(4, 4));
-            this.product = product;
-            setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
-            JButton button = new JButton(buildLabel(product));
-            button.setFocusPainted(false);
-            button.setBackground(Color.WHITE);
-            button.addActionListener(e -> toggleQuantity());
-            add(button, BorderLayout.CENTER);
+    private Image loadImageForSku(String sku) {
+        if (sku == null || sku.isBlank()) {
+            return null;
+        }
+        return loadImageFromResource("/images/" + sku.trim() + ".png");
+    }
 
+    private Image loadImageFromResource(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        try {
+            java.net.URL resource = getClass().getResource(path);
+            if (resource == null) {
+                return null;
+            }
+            return ImageIO.read(resource);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private String resolveSku(Product product) {
+        if (product == null) {
+            return null;
+        }
+        try {
+            Method method = product.getClass().getMethod("getSku");
+            Object value = method.invoke(product);
+            if (value instanceof String sku && !sku.isBlank()) {
+                return sku.trim();
+            }
+        } catch (ReflectiveOperationException ignore) {
+            // sku alanı olmayan modellerde placeholder kullanılacak
+        }
+        return null;
+    }
+
+    private class ProductRowPanel extends JPanel {
+        ProductRowPanel(Product product) {
+            super(new BorderLayout(8, 0));
+            setOpaque(false);
+            setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+            setMaximumSize(new Dimension(Integer.MAX_VALUE, 84));
+
+            JLabel pic = new JLabel(loadProductIcon(product));
+            pic.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
+            add(pic, BorderLayout.WEST);
+
+            JLabel name = new JLabel("<html><b>" + safe(productLabel(product)) + "</b><br/>" + tl(product.getUnitPrice()) + "</html>");
+            add(name, BorderLayout.CENTER);
+
+            JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+            right.setOpaque(false);
+            JButton minus = new JButton("-");
+            JSpinner qty = new JSpinner(new SpinnerNumberModel(1, 1, 99, 1));
+            JButton plus = new JButton("+");
             JButton addButton = new JButton("Ekle");
-            addButton.addActionListener(e -> commitSelection());
-            quantityPanel.add(new JLabel("Adet"));
-            quantitySpinner.setPreferredSize(new Dimension(60, quantitySpinner.getPreferredSize().height));
-            quantityPanel.add(quantitySpinner);
-            quantityPanel.add(addButton);
-            quantityPanel.setVisible(false);
-            add(quantityPanel, BorderLayout.SOUTH);
 
-            JComponent editor = quantitySpinner.getEditor();
-            if (editor instanceof JSpinner.DefaultEditor defaultEditor) {
-                defaultEditor.getTextField().addActionListener(e -> commitSelection());
-            }
-        }
+            minus.addActionListener(e -> {
+                int current = ((Number) qty.getValue()).intValue();
+                qty.setValue(Math.max(1, current - 1));
+            });
+            plus.addActionListener(e -> {
+                int current = ((Number) qty.getValue()).intValue();
+                qty.setValue(Math.min(99, current + 1));
+            });
+            addButton.addActionListener(e -> {
+                int quantity = ((Number) qty.getValue()).intValue();
+                addProduct(product, quantity);
+            });
 
-        private void toggleQuantity() {
-            boolean newState = !quantityPanel.isVisible();
-            hideAllQuantityPanels();
-            quantityPanel.setVisible(newState);
-            if (newState) {
-                quantitySpinner.requestFocusInWindow();
-            }
-            revalidate();
-            repaint();
-        }
+            Dimension spinnerSize = qty.getPreferredSize();
+            qty.setPreferredSize(new Dimension(48, spinnerSize.height));
 
-        private void commitSelection() {
-            int qty = (Integer) quantitySpinner.getValue();
-            addProduct(product, qty);
-            quantitySpinner.setValue(1);
-            quantityPanel.setVisible(false);
-        }
-
-        private String buildLabel(Product product) {
-            return "<html><div style='text-align:center'><b>" + safeName(product)
-                    + "</b><br/>" + formatPrice(product) + "</div></html>";
-        }
-    }
-
-    private void hideAllQuantityPanels() {
-        for (Component component : gridPanel.getComponents()) {
-            if (component instanceof ProductPanel panel) {
-                panel.quantityPanel.setVisible(false);
-            }
+            right.add(minus);
+            right.add(qty);
+            right.add(plus);
+            right.add(addButton);
+            add(right, BorderLayout.EAST);
         }
     }
 }

@@ -6,6 +6,7 @@ import state.ExpenseRecord;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableColumn;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -27,6 +28,12 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class ExpensesPanel extends JPanel {
+    private static final int COL_ID = 0;
+    private static final int COL_DATE = 1;
+    private static final int COL_DESCRIPTION = 2;
+    private static final int COL_AMOUNT = 3;
+    private static final int COL_USER = 4;
+    private static final int COL_CREATED = 5;
     private final AppState appState;
     private final User currentUser;
     private final DefaultTableModel tableModel;
@@ -37,14 +44,13 @@ public class ExpensesPanel extends JPanel {
     private final JSpinner expenseDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
     private final JButton deleteButton = new JButton("Gider kaldır");
     private final PropertyChangeListener listener = this::handleStateChange;
-    private List<ExpenseRecord> currentRecords = List.of();
 
     public ExpensesPanel(AppState appState, User currentUser) {
         this.appState = Objects.requireNonNull(appState, "appState");
         this.currentUser = Objects.requireNonNull(currentUser, "currentUser");
         setLayout(new BorderLayout(8, 8));
 
-        tableModel = new DefaultTableModel(new Object[]{"Tarih", "Açıklama", "Tutar", "Kullanıcı", "Kayıt"}, 0) {
+        tableModel = new DefaultTableModel(new Object[]{"ID", "Tarih", "Açıklama", "Tutar", "Kullanıcı", "Kayıt"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -54,31 +60,34 @@ public class ExpensesPanel extends JPanel {
         table.setRowHeight(22);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.getSelectionModel().addListSelectionListener(e -> updateDeleteButtonState());
+        hideIdColumn();
         add(buildFilterPanel(), BorderLayout.NORTH);
         add(new JScrollPane(table), BorderLayout.CENTER);
         add(buildFormPanel(), BorderLayout.SOUTH);
 
         appState.addPropertyChangeListener(listener);
-        refreshTable();
+        reloadExpenses();
     }
 
     private JComponent buildFilterPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        panel.add(new JLabel("Tarih"));
+        JToolBar toolbar = new JToolBar();
+        toolbar.setFloatable(false);
+        toolbar.add(new JLabel("Tarih"));
         filterDateSpinner.setEditor(new JSpinner.DateEditor(filterDateSpinner, "dd-MM-yyyy"));
-        panel.add(filterDateSpinner);
+        toolbar.add(filterDateSpinner);
         JButton refreshButton = new JButton("Listele");
-        refreshButton.addActionListener(e -> refreshTable());
-        panel.add(refreshButton);
+        refreshButton.addActionListener(e -> reloadExpenses());
+        toolbar.add(refreshButton);
 
         deleteButton.setEnabled(false);
         deleteButton.addActionListener(e -> removeSelectedExpense());
-        panel.add(deleteButton);
+        toolbar.add(deleteButton);
 
+        toolbar.addSeparator();
         JButton exportButton = new JButton("Excel'e aktar");
         exportButton.addActionListener(e -> exportToExcel());
-        panel.add(exportButton);
-        return panel;
+        toolbar.add(exportButton);
+        return toolbar;
     }
 
     private JComponent buildFormPanel() {
@@ -118,7 +127,7 @@ public class ExpensesPanel extends JPanel {
 
     private void handleStateChange(PropertyChangeEvent event) {
         if (AppState.EVENT_EXPENSES.equals(event.getPropertyName())) {
-            SwingUtilities.invokeLater(this::refreshTable);
+            SwingUtilities.invokeLater(this::reloadExpenses);
         }
     }
 
@@ -137,16 +146,16 @@ public class ExpensesPanel extends JPanel {
         appState.addExpense(BigDecimal.valueOf(amountValue), description, date, currentUser);
         descriptionField.setText("");
         amountSpinner.setValue(0.0);
-        refreshTable();
+        reloadExpenses();
     }
 
-    private void refreshTable() {
+    private void reloadExpenses() {
         LocalDate date = convertToDate(filterDateSpinner);
         List<ExpenseRecord> records = appState.getExpensesOn(date);
-        currentRecords = List.copyOf(records);
         tableModel.setRowCount(0);
         for (ExpenseRecord record : records) {
             tableModel.addRow(new Object[]{
+                    record.getId(),
                     record.getExpenseDate(),
                     record.getDescription(),
                     String.format(Locale.getDefault(), "%.2f", record.getAmount()),
@@ -154,12 +163,28 @@ public class ExpensesPanel extends JPanel {
                     record.getCreatedAt()
             });
         }
+        hideIdColumn();
         updateDeleteButtonState();
     }
 
     private LocalDate convertToDate(JSpinner spinner) {
         Date date = (Date) spinner.getValue();
         return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private void hideIdColumn() {
+        if (table.getColumnModel().getColumnCount() <= COL_ID) {
+            return;
+        }
+        TableColumn column = table.getColumnModel().getColumn(COL_ID);
+        column.setMinWidth(0);
+        column.setMaxWidth(0);
+        column.setPreferredWidth(0);
+        column.setResizable(false);
+        TableColumn headerColumn = table.getTableHeader().getColumnModel().getColumn(COL_ID);
+        headerColumn.setMinWidth(0);
+        headerColumn.setMaxWidth(0);
+        headerColumn.setPreferredWidth(0);
     }
 
     private void updateDeleteButtonState() {
@@ -173,29 +198,24 @@ public class ExpensesPanel extends JPanel {
             return;
         }
         int modelRow = table.convertRowIndexToModel(viewRow);
-        if (modelRow < 0 || modelRow >= currentRecords.size()) {
+        if (modelRow < 0 || modelRow >= tableModel.getRowCount()) {
             return;
         }
-        ExpenseRecord record = currentRecords.get(modelRow);
-        Long id = record.getId();
-        if (id == null || id <= 0) {
+        Long expenseId = resolveExpenseId(modelRow);
+        if (expenseId == null || expenseId <= 0) {
             JOptionPane.showMessageDialog(this, "Seçili gider silinemedi", "Hata", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        String description = record.getDescription();
-        if (description == null || description.isBlank()) {
-            description = "seçili gider";
-        }
         int confirm = JOptionPane.showConfirmDialog(this,
-                description + " kaydını silmek istiyor musunuz?",
+                "Seçili gider silinsin mi?",
                 "Onay",
                 JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         try {
-            appState.deleteExpense(id);
-            refreshTable();
+            appState.deleteExpense(expenseId);
+            reloadExpenses();
             table.clearSelection();
         } catch (RuntimeException ex) {
             String message = ex.getMessage();
@@ -206,6 +226,17 @@ public class ExpensesPanel extends JPanel {
         } finally {
             updateDeleteButtonState();
         }
+    }
+
+    private Long resolveExpenseId(int modelRow) {
+        Object value = tableModel.getValueAt(modelRow, COL_ID);
+        if (value instanceof Long id) {
+            return id;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return null;
     }
 
     private void exportToExcel() {
