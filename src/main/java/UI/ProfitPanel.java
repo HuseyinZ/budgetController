@@ -54,7 +54,7 @@ public class ProfitPanel extends JPanel {
         int row = 0;
         gc.gridx = 0; gc.gridy = row;
         panel.add(new JLabel("Günlük tarih"), gc);
-        dailyDateSpinner.setEditor(new JSpinner.DateEditor(dailyDateSpinner, "yyyy-MM-dd"));
+        dailyDateSpinner.setEditor(new JSpinner.DateEditor(dailyDateSpinner, "dd-MM-yyyy"));
         gc.gridx = 1;
         panel.add(dailyDateSpinner, gc);
         JButton refreshDaily = new JButton("Güncelle");

@@ -3,7 +3,7 @@ package model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public class Payment extends BaseEntity {
+public class    Payment extends BaseEntity {
     private Long orderId;            // FK -> orders.id
     private Long cashierId;          // FK -> users.id
     private BigDecimal amount;       // genelde orders.total

@@ -20,7 +20,7 @@ public class ProductJdbcDAO implements ProductDAO {
     private final Object stockColumnLock = new Object();
     private volatile boolean legacyPriceColumn;
     private volatile boolean legacyStockColumn;
-    private volatile String stockColumnName = "stock";
+    private volatile String stockColumnName = "stock_qty";
 
     public ProductJdbcDAO() {
         this(Db.getDataSource(), null);

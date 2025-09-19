@@ -91,9 +91,12 @@ public class RestaurantTablesPanel extends JPanel {
 
     private void openTableDialog(int tableNo) {
         TableSnapshot snapshot = appState.snapshot(tableNo);
-        TableOrderDialog dialog = new TableOrderDialog(SwingUtilities.getWindowAncestor(this), appState, snapshot, currentUser);
+        TableOrderDialog dialog = new TableOrderDialog(
+                SwingUtilities.getWindowAncestor(this), appState, snapshot, currentUser
+        );
         dialog.setVisible(true);
     }
+
 
     private void handleStateChange(PropertyChangeEvent event) {
         if (!AppState.EVENT_TABLES.equals(event.getPropertyName())) {
@@ -108,15 +111,19 @@ public class RestaurantTablesPanel extends JPanel {
 
     private void refreshButton(int tableNo) {
         JButton button = tableButtons.get(tableNo);
-        if (button == null) {
-            return;
-        }
+        if (button == null) return;
+
         TableSnapshot snapshot = appState.snapshot(tableNo);
         button.setText(formatText(snapshot));
-        button.setBackground(colorFor(snapshot.getStatus()));
-        button.setForeground(Color.DARK_GRAY);
+
+        // ⬇️ RENKLER buradan geliyor
+        button.setBackground(colorFor(snapshot.getStatus()));  // sadece background
+        button.setForeground(Color.DARK_GRAY);                 // hep koyu gri yazı
+
         button.setBorder(BorderFactory.createLineBorder(Color.GRAY));
     }
+
+
 
     private String formatText(TableSnapshot snapshot) {
         StringBuilder sb = new StringBuilder();
@@ -133,11 +140,12 @@ public class RestaurantTablesPanel extends JPanel {
             return Color.WHITE;
         }
         return switch (status) {
-            case EMPTY -> Color.WHITE;
+            case EMPTY   -> Color.WHITE;
             case ORDERED -> new Color(255, 245, 157);
-            case SERVED -> new Color(165, 214, 167);
+            case SERVED  -> new Color(165, 214, 167);
         };
     }
+
 
     public boolean canPerformSale() {
         Role role = currentUser.getRole();

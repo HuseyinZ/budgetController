@@ -61,7 +61,7 @@ public class ExpensesPanel extends JPanel {
     private JComponent buildFilterPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.add(new JLabel("Tarih"));
-        filterDateSpinner.setEditor(new JSpinner.DateEditor(filterDateSpinner, "yyyy-MM-dd"));
+        filterDateSpinner.setEditor(new JSpinner.DateEditor(filterDateSpinner, "dd-MM-yyyy"));
         panel.add(filterDateSpinner);
         JButton refreshButton = new JButton("Listele");
         refreshButton.addActionListener(e -> refreshTable());
@@ -82,7 +82,7 @@ public class ExpensesPanel extends JPanel {
         int row = 0;
         gc.gridx = 0; gc.gridy = row;
         panel.add(new JLabel("Gider Tarihi"), gc);
-        expenseDateSpinner.setEditor(new JSpinner.DateEditor(expenseDateSpinner, "yyyy-MM-dd"));
+        expenseDateSpinner.setEditor(new JSpinner.DateEditor(expenseDateSpinner, "dd-MM-yyyy")); //yyyy-MM-dd
         gc.gridx = 1;
         panel.add(expenseDateSpinner, gc);
 

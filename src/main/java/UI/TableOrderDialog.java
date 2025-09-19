@@ -48,6 +48,7 @@ public class TableOrderDialog extends JDialog {
     private final PropertyChangeListener listener = this::handleStateChange;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
+    private java.util.function.Consumer<Integer> onReadyListener;
 
     public TableOrderDialog(Window owner, AppState appState, TableSnapshot snapshot, User user) {
         super(owner, "Masa " + snapshot.getTableNo(), ModalityType.APPLICATION_MODAL);
@@ -128,7 +129,9 @@ public class TableOrderDialog extends JDialog {
         }
         return new MenuItem(product.getId(), name, price);
     }
-
+    public void setOnReadyListener(java.util.function.Consumer<Integer> l) {
+        this.onReadyListener = l;
+    }
     private JComponent buildCenter() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 
@@ -165,11 +168,11 @@ public class TableOrderDialog extends JDialog {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton clearButton = new JButton("Siparişi temizle");
         clearButton.addActionListener(e -> clearOrder());
-        clearButton.setVisible(!waiterRole);
+        clearButton.setVisible(true);
         panel.add(clearButton);
 
         markServedButton.addActionListener(e -> markServed());
-        markServedButton.setVisible(!waiterRole);
+        markServedButton.setVisible(true);
         panel.add(markServedButton);
 
         saleButton.addActionListener(e -> performSale());
@@ -251,7 +254,9 @@ public class TableOrderDialog extends JDialog {
 
     private void markServed() {
         appState.markServed(tableNo, currentUser);
+        //dispose();
     }
+
 
     private void performSale() {
         TableSnapshot snapshot = appState.snapshot(tableNo);

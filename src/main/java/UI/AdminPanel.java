@@ -198,7 +198,7 @@ public class AdminPanel extends JPanel {
             }
         } finally {
             if (passwordChars != null) {
-                Arrays.fill(passwordChars, '\\0');
+                Arrays.fill(passwordChars, '\0');        // veya: Arrays.fill(passwordChars, (char) 0);
             }
             passwordField.setText("");
         }
