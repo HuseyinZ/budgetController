@@ -37,13 +37,14 @@ public class AllSalesPanel extends JPanel {
     private final JSpinner timeSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.MINUTE));
     private final JLabel summaryLabel = new JLabel(" ");
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final DateTimeFormatter soldAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private final PropertyChangeListener listener = this::handleStateChange;
 
     public AllSalesPanel(AppState appState) {
         this.appState = Objects.requireNonNull(appState, "appState");
         setLayout(new BorderLayout(8, 8));
 
-        tableModel = new DefaultTableModel(new Object[]{"Ürün Adı", "Adet Toplamı", "Satır Toplamı (TL)"}, 0) {
+        tableModel = new DefaultTableModel(new Object[]{"Satış Zamanı", "Ürün Adı", "Adet", "Satır Toplamı (TL)"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -92,16 +93,21 @@ public class AllSalesPanel extends JPanel {
             BigDecimal amount = row.getAmountTotal() == null ? BigDecimal.ZERO : row.getAmountTotal();
             total = total.add(amount);
             tableModel.addRow(new Object[]{
+                    formatSoldAt(row.getSoldAt()),
                     row.getProductName(),
-                    row.getQuantityTotal(),
+                    row.getQuantity(),
                     currencyFormat.format(amount)
             });
         }
-        updateSummary(rows.size(), total);
+        updateSummary(rows, total);
     }
 
     private List<ProductSalesRow> loadRows(LocalDateTime threshold) {
         return appState.getProductSalesBefore(threshold);
+    }
+
+    private String formatSoldAt(LocalDateTime soldAt) {
+        return soldAt == null ? "-" : soldAtFormatter.format(soldAt);
     }
 
     private LocalDateTime selectedDateTime() {
@@ -112,8 +118,12 @@ public class AllSalesPanel extends JPanel {
         return LocalDateTime.of(date, time);
     }
 
-    private void updateSummary(int rowCount, BigDecimal total) {
-        summaryLabel.setText("Satır: " + rowCount + "   Toplam: " + currencyFormat.format(total));
+    private void updateSummary(List<ProductSalesRow> rows, BigDecimal total) {
+        int rowCount = rows.size();
+        int quantityTotal = rows.stream()
+                .mapToInt(ProductSalesRow::getQuantity)
+                .sum();
+        summaryLabel.setText("Satır: " + rowCount + "   Adet: " + quantityTotal + "   Toplam: " + currencyFormat.format(total));
     }
 
     private void exportToExcel() {
@@ -131,29 +141,31 @@ public class AllSalesPanel extends JPanel {
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("Satışlar");
             Row header = sheet.createRow(0);
-            header.createCell(0).setCellValue("Ürün Adı");
-            header.createCell(1).setCellValue("Adet Toplamı");
-            header.createCell(2).setCellValue("Satır Toplamı (TL)");
+            header.createCell(0).setCellValue("Satış Zamanı");
+            header.createCell(1).setCellValue("Ürün Adı");
+            header.createCell(2).setCellValue("Adet");
+            header.createCell(3).setCellValue("Satır Toplamı (TL)");
 
             int rowIndex = 1;
             int totalQuantity = 0;
             BigDecimal totalAmount = BigDecimal.ZERO;
             for (ProductSalesRow row : rows) {
                 Row excelRow = sheet.createRow(rowIndex++);
-                excelRow.createCell(0).setCellValue(row.getProductName());
-                excelRow.createCell(1).setCellValue(row.getQuantityTotal());
+                excelRow.createCell(0).setCellValue(formatSoldAt(row.getSoldAt()));
+                excelRow.createCell(1).setCellValue(row.getProductName());
+                excelRow.createCell(2).setCellValue(row.getQuantity());
                 BigDecimal amount = row.getAmountTotal() == null ? BigDecimal.ZERO : row.getAmountTotal();
-                excelRow.createCell(2).setCellValue(amount.doubleValue());
-                totalQuantity += row.getQuantityTotal();
+                excelRow.createCell(3).setCellValue(amount.doubleValue());
+                totalQuantity += row.getQuantity();
                 totalAmount = totalAmount.add(amount);
             }
 
             Row summaryRow = sheet.createRow(rowIndex);
             summaryRow.createCell(0).setCellValue("Toplam");
-            summaryRow.createCell(1).setCellValue(totalQuantity);
-            summaryRow.createCell(2).setCellValue(totalAmount.doubleValue());
+            summaryRow.createCell(2).setCellValue(totalQuantity);
+            summaryRow.createCell(3).setCellValue(totalAmount.doubleValue());
 
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
                 sheet.autoSizeColumn(i);
             }
 
