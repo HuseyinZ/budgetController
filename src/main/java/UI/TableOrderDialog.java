@@ -179,7 +179,14 @@ public class TableOrderDialog extends JDialog {
         String product = (String) tableModel.getValueAt(row, 0);
         int confirm = JOptionPane.showConfirmDialog(this, product + " ürününü silmek istiyor musunuz?", "Onay", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
-            appState.removeItem(tableNo, product, currentUser);
+            try {
+                appState.removeItem(tableNo, product, currentUser);
+            } catch (RuntimeException ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Ürün silinirken bir hata oluştu: " + ex.getMessage(),
+                        "Hata",
+                        JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
