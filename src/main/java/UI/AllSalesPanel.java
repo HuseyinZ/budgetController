@@ -1,5 +1,6 @@
 package UI;
 
+import model.PaymentMethod;
 import model.ProductSalesRow;
 import state.AppState;
 
@@ -44,7 +45,14 @@ public class AllSalesPanel extends JPanel {
         this.appState = Objects.requireNonNull(appState, "appState");
         setLayout(new BorderLayout(8, 8));
 
-        tableModel = new DefaultTableModel(new Object[]{"Satış Zamanı", "Ürün Adı", "Adet", "Satır Toplamı (TL)"}, 0) {
+        tableModel = new DefaultTableModel(new Object[]{
+                "Satış Zamanı",
+                "Ürün Adı",
+                "Kategori",
+                "Adet",
+                "Ödeme yönetimi",
+                "Satır Toplamı (TL)"
+        }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -95,7 +103,9 @@ public class AllSalesPanel extends JPanel {
             tableModel.addRow(new Object[]{
                     formatSoldAt(row.getSoldAt()),
                     row.getProductName(),
+                    formatCategory(row.getCategoryName()),
                     row.getQuantity(),
+                    formatPaymentMethod(row.getPaymentMethod()),
                     currencyFormat.format(amount)
             });
         }
@@ -143,8 +153,10 @@ public class AllSalesPanel extends JPanel {
             Row header = sheet.createRow(0);
             header.createCell(0).setCellValue("Satış Zamanı");
             header.createCell(1).setCellValue("Ürün Adı");
-            header.createCell(2).setCellValue("Adet");
-            header.createCell(3).setCellValue("Satır Toplamı (TL)");
+            header.createCell(2).setCellValue("Kategori");
+            header.createCell(3).setCellValue("Adet");
+            header.createCell(4).setCellValue("Ödeme yönetimi");
+            header.createCell(5).setCellValue("Satır Toplamı (TL)");
 
             int rowIndex = 1;
             int totalQuantity = 0;
@@ -153,19 +165,21 @@ public class AllSalesPanel extends JPanel {
                 Row excelRow = sheet.createRow(rowIndex++);
                 excelRow.createCell(0).setCellValue(formatSoldAt(row.getSoldAt()));
                 excelRow.createCell(1).setCellValue(row.getProductName());
-                excelRow.createCell(2).setCellValue(row.getQuantity());
+                excelRow.createCell(2).setCellValue(formatCategory(row.getCategoryName()));
+                excelRow.createCell(3).setCellValue(row.getQuantity());
+                excelRow.createCell(4).setCellValue(formatPaymentMethod(row.getPaymentMethod()));
                 BigDecimal amount = row.getAmountTotal() == null ? BigDecimal.ZERO : row.getAmountTotal();
-                excelRow.createCell(3).setCellValue(amount.doubleValue());
+                excelRow.createCell(5).setCellValue(amount.doubleValue());
                 totalQuantity += row.getQuantity();
                 totalAmount = totalAmount.add(amount);
             }
 
             Row summaryRow = sheet.createRow(rowIndex);
             summaryRow.createCell(0).setCellValue("Toplam");
-            summaryRow.createCell(2).setCellValue(totalQuantity);
-            summaryRow.createCell(3).setCellValue(totalAmount.doubleValue());
+            summaryRow.createCell(3).setCellValue(totalQuantity);
+            summaryRow.createCell(5).setCellValue(totalAmount.doubleValue());
 
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 6; i++) {
                 sheet.autoSizeColumn(i);
             }
 
@@ -176,6 +190,27 @@ public class AllSalesPanel extends JPanel {
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Excel kaydedilemedi: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private String formatCategory(String categoryName) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return "-";
+        }
+        return categoryName;
+    }
+
+    private String formatPaymentMethod(PaymentMethod method) {
+        if (method == null) {
+            return "-";
+        }
+        return switch (method) {
+            case CASH -> "Nakit";
+            case CREDIT_CARD, CARD -> "Kredi Kartı";
+            case DEBIT_CARD -> "Banka Kartı";
+            case TRANSFER -> "Havale/EFT";
+            case ONLINE -> "Online";
+            case MIXED -> "Karma";
+        };
     }
 
     @Override

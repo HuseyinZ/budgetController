@@ -2,6 +2,7 @@ package dao.jdbc;
 
 import DataConnection.Db;
 import dao.ReportsDAO;
+import model.PaymentMethod;
 import model.ProductSalesRow;
 
 import javax.sql.DataSource;
@@ -32,11 +33,15 @@ public class ReportsJdbcDAO implements ReportsDAO {
     public List<ProductSalesRow> findProductSalesBefore(LocalDateTime threshold) {
         String sql = "SELECT p.paid_at AS sold_at, " +
                 "oi.product_name, " +
+                "c.name AS category_name, " +
                 "oi.quantity, " +
+                "p.method AS payment_method, " +
                 "COALESCE(oi.line_total, oi.quantity * oi.unit_price * 1.20) AS amount_total " +
                 "FROM payments p " +
                 "JOIN orders o ON o.id = p.order_id " +
                 "JOIN order_items oi ON oi.order_id = o.id " +
+                "LEFT JOIN products pr ON pr.id = oi.product_id " +
+                "LEFT JOIN categories c ON c.id = pr.category_id " +
                 "WHERE p.paid_at < ? " +
                 "ORDER BY sold_at DESC, oi.id DESC";
 
@@ -51,9 +56,12 @@ public class ReportsJdbcDAO implements ReportsDAO {
                     Timestamp soldAtTimestamp = rs.getTimestamp("sold_at");
                     LocalDateTime soldAt = soldAtTimestamp == null ? null : soldAtTimestamp.toLocalDateTime();
                     String name = rs.getString("product_name");
+                    String category = rs.getString("category_name");
                     int qty = rs.getInt("quantity");
+                    String paymentValue = rs.getString("payment_method");
+                    PaymentMethod method = PaymentMethod.fromDatabaseValue(paymentValue);
                     BigDecimal amount = rs.getBigDecimal("amount_total");
-                    rows.add(new ProductSalesRow(soldAt, name, qty, amount));
+                    rows.add(new ProductSalesRow(soldAt, name, category, qty, method, amount));
                 }
             }
         } catch (SQLException ex) {
