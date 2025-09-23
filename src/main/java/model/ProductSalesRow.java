@@ -10,13 +10,22 @@ import java.util.Objects;
 public class ProductSalesRow {
     private final LocalDateTime soldAt;
     private final String productName;
+    private final String categoryName;
     private final int quantity;
+    private final PaymentMethod paymentMethod;
     private final BigDecimal amountTotal;
 
-    public ProductSalesRow(LocalDateTime soldAt, String productName, int quantity, BigDecimal amountTotal) {
+    public ProductSalesRow(LocalDateTime soldAt,
+                           String productName,
+                           String categoryName,
+                           int quantity,
+                           PaymentMethod paymentMethod,
+                           BigDecimal amountTotal) {
         this.soldAt = soldAt;
         this.productName = productName == null ? "" : productName.trim();
+        this.categoryName = categoryName == null ? "" : categoryName.trim();
         this.quantity = Math.max(0, quantity);
+        this.paymentMethod = paymentMethod;
         this.amountTotal = amountTotal == null ? BigDecimal.ZERO : amountTotal;
     }
 
@@ -28,8 +37,16 @@ public class ProductSalesRow {
         return productName;
     }
 
+    public String getCategoryName() {
+        return categoryName;
+    }
+
     public int getQuantity() {
         return quantity;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
     }
 
     public BigDecimal getAmountTotal() {
@@ -41,7 +58,9 @@ public class ProductSalesRow {
         return "ProductSalesRow{" +
                 "soldAt=" + soldAt +
                 ", productName='" + productName + '\'' +
+                ", categoryName='" + categoryName + '\'' +
                 ", quantity=" + quantity +
+                ", paymentMethod=" + paymentMethod +
                 ", amountTotal=" + amountTotal +
                 '}';
     }
@@ -53,11 +72,13 @@ public class ProductSalesRow {
         return quantity == that.quantity
                 && Objects.equals(soldAt, that.soldAt)
                 && Objects.equals(productName, that.productName)
+                && Objects.equals(categoryName, that.categoryName)
+                && paymentMethod == that.paymentMethod
                 && Objects.equals(amountTotal, that.amountTotal);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(soldAt, productName, quantity, amountTotal);
+        return Objects.hash(soldAt, productName, categoryName, quantity, paymentMethod, amountTotal);
     }
 }

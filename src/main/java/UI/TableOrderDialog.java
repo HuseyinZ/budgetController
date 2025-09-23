@@ -217,7 +217,10 @@ public class TableOrderDialog extends JDialog {
         String selected = (String) methodCombo.getSelectedItem();
         PaymentMethod method = mapPaymentMethod(selected);
         appState.recordSale(tableNo, method, currentUser);
-        JOptionPane.showMessageDialog(this, "Satış tamamlandı", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this,
+                "Satış tamamlandı. Ödeme yöntemi: " + describePaymentMethod(method),
+                "Bilgi",
+                JOptionPane.INFORMATION_MESSAGE);
         dispose();
     }
 
@@ -229,6 +232,20 @@ public class TableOrderDialog extends JDialog {
             case "Kredi Kartı" -> PaymentMethod.CREDIT_CARD;
             case "Havale" -> PaymentMethod.TRANSFER;
             default -> PaymentMethod.CASH;
+        };
+    }
+
+    private String describePaymentMethod(PaymentMethod method) {
+        if (method == null) {
+            return "Bilinmiyor";
+        }
+        return switch (method) {
+            case CASH -> "Nakit";
+            case CREDIT_CARD, CARD -> "Kredi Kartı";
+            case DEBIT_CARD -> "Banka Kartı";
+            case TRANSFER -> "Havale/EFT";
+            case ONLINE -> "Online";
+            case MIXED -> "Karma";
         };
     }
 
