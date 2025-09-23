@@ -8,6 +8,9 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.Instant;
@@ -15,10 +18,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class AllSalesPanel extends JPanel {
     private final AppState appState;
@@ -60,6 +69,9 @@ public class AllSalesPanel extends JPanel {
         JButton listButton = new JButton("Listele");
         listButton.addActionListener(e -> refreshTable());
         panel.add(listButton);
+        JButton exportButton = new JButton("Excel'e aktar");
+        exportButton.addActionListener(e -> exportToExcel());
+        panel.add(exportButton);
         panel.add(summaryLabel);
         summaryLabel.setFont(summaryLabel.getFont().deriveFont(Font.BOLD));
         return panel;
@@ -73,7 +85,7 @@ public class AllSalesPanel extends JPanel {
 
     private void refreshTable() {
         LocalDateTime threshold = selectedDateTime();
-        List<ProductSalesRow> rows = appState.getProductSalesBefore(threshold);
+        List<ProductSalesRow> rows = loadRows(threshold);
         tableModel.setRowCount(0);
         BigDecimal total = BigDecimal.ZERO;
         for (ProductSalesRow row : rows) {
@@ -88,6 +100,10 @@ public class AllSalesPanel extends JPanel {
         updateSummary(rows.size(), total);
     }
 
+    private List<ProductSalesRow> loadRows(LocalDateTime threshold) {
+        return appState.getProductSalesBefore(threshold);
+    }
+
     private LocalDateTime selectedDateTime() {
         Date dateValue = (Date) dateSpinner.getValue();
         LocalDate date = Instant.ofEpochMilli(dateValue.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
@@ -98,6 +114,56 @@ public class AllSalesPanel extends JPanel {
 
     private void updateSummary(int rowCount, BigDecimal total) {
         summaryLabel.setText("Satır: " + rowCount + "   Toplam: " + currencyFormat.format(total));
+    }
+
+    private void exportToExcel() {
+        LocalDateTime threshold = selectedDateTime();
+        List<ProductSalesRow> rows = loadRows(threshold);
+
+        JFileChooser chooser = new JFileChooser();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
+        chooser.setSelectedFile(new File("satislar-" + formatter.format(threshold) + ".xlsx"));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File file = chooser.getSelectedFile();
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Satışlar");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("Ürün Adı");
+            header.createCell(1).setCellValue("Adet Toplamı");
+            header.createCell(2).setCellValue("Satır Toplamı (TL)");
+
+            int rowIndex = 1;
+            int totalQuantity = 0;
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            for (ProductSalesRow row : rows) {
+                Row excelRow = sheet.createRow(rowIndex++);
+                excelRow.createCell(0).setCellValue(row.getProductName());
+                excelRow.createCell(1).setCellValue(row.getQuantityTotal());
+                BigDecimal amount = row.getAmountTotal() == null ? BigDecimal.ZERO : row.getAmountTotal();
+                excelRow.createCell(2).setCellValue(amount.doubleValue());
+                totalQuantity += row.getQuantityTotal();
+                totalAmount = totalAmount.add(amount);
+            }
+
+            Row summaryRow = sheet.createRow(rowIndex);
+            summaryRow.createCell(0).setCellValue("Toplam");
+            summaryRow.createCell(1).setCellValue(totalQuantity);
+            summaryRow.createCell(2).setCellValue(totalAmount.doubleValue());
+
+            for (int i = 0; i < 3; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                workbook.write(out);
+            }
+            JOptionPane.showMessageDialog(this, "Excel dosyası kaydedildi", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Excel kaydedilemedi: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     @Override
