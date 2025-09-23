@@ -249,14 +249,22 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
         Connection connection = null;
         try {
             connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement("UPDATE order_items SET quantity = quantity - ? WHERE id=?")) {
-                ps.setInt(1, quantity);
-                ps.setLong(2, orderItemId);
-                ps.executeUpdate();
+            try (PreparedStatement delete = connection.prepareStatement(
+                    "DELETE FROM order_items WHERE id=? AND quantity <= ?")) {
+                delete.setLong(1, orderItemId);
+                delete.setInt(2, quantity);
+                int removed = delete.executeUpdate();
+                if (removed > 0) {
+                    return;
+                }
             }
-            try (PreparedStatement ps2 = connection.prepareStatement("DELETE FROM order_items WHERE id=? AND quantity<=0")) {
-                ps2.setLong(1, orderItemId);
-                ps2.executeUpdate();
+
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE order_items SET quantity = quantity - ? WHERE id=? AND quantity > ?")) {
+                update.setInt(1, quantity);
+                update.setLong(2, orderItemId);
+                update.setInt(3, quantity);
+                update.executeUpdate();
             }
         } catch (SQLException ex) {
             throw new RuntimeException(ex);
