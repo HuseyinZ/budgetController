@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,15 +30,15 @@ public class ReportsJdbcDAO implements ReportsDAO {
 
     @Override
     public List<ProductSalesRow> findProductSalesBefore(LocalDateTime threshold) {
-        String sql = "SELECT oi.product_name, " +
-                "SUM(oi.quantity) AS qty_total, " +
-                "SUM(COALESCE(oi.line_total, oi.quantity * oi.unit_price * 1.20)) AS amount_total " +
+        String sql = "SELECT p.paid_at AS sold_at, " +
+                "oi.product_name, " +
+                "oi.quantity, " +
+                "COALESCE(oi.line_total, oi.quantity * oi.unit_price * 1.20) AS amount_total " +
                 "FROM payments p " +
                 "JOIN orders o ON o.id = p.order_id " +
                 "JOIN order_items oi ON oi.order_id = o.id " +
                 "WHERE p.paid_at < ? " +
-                "GROUP BY oi.product_name " +
-                "ORDER BY amount_total DESC";
+                "ORDER BY sold_at DESC, oi.id DESC";
 
         LocalDateTime safeThreshold = threshold == null ? LocalDateTime.now() : threshold;
         List<ProductSalesRow> rows = new ArrayList<>();
@@ -47,10 +48,12 @@ public class ReportsJdbcDAO implements ReportsDAO {
             ps.setObject(1, safeThreshold);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    Timestamp soldAtTimestamp = rs.getTimestamp("sold_at");
+                    LocalDateTime soldAt = soldAtTimestamp == null ? null : soldAtTimestamp.toLocalDateTime();
                     String name = rs.getString("product_name");
-                    int qty = rs.getInt("qty_total");
+                    int qty = rs.getInt("quantity");
                     BigDecimal amount = rs.getBigDecimal("amount_total");
-                    rows.add(new ProductSalesRow(name, qty, amount));
+                    rows.add(new ProductSalesRow(soldAt, name, qty, amount));
                 }
             }
         } catch (SQLException ex) {

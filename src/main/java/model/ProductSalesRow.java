@@ -1,28 +1,35 @@
 package model;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 /**
  * Basit rapor satırı taşıyıcısı.
  */
 public class ProductSalesRow {
+    private final LocalDateTime soldAt;
     private final String productName;
-    private final int quantityTotal;
+    private final int quantity;
     private final BigDecimal amountTotal;
 
-    public ProductSalesRow(String productName, int quantityTotal, BigDecimal amountTotal) {
+    public ProductSalesRow(LocalDateTime soldAt, String productName, int quantity, BigDecimal amountTotal) {
+        this.soldAt = soldAt;
         this.productName = productName == null ? "" : productName.trim();
-        this.quantityTotal = Math.max(0, quantityTotal);
+        this.quantity = Math.max(0, quantity);
         this.amountTotal = amountTotal == null ? BigDecimal.ZERO : amountTotal;
+    }
+
+    public LocalDateTime getSoldAt() {
+        return soldAt;
     }
 
     public String getProductName() {
         return productName;
     }
 
-    public int getQuantityTotal() {
-        return quantityTotal;
+    public int getQuantity() {
+        return quantity;
     }
 
     public BigDecimal getAmountTotal() {
@@ -32,8 +39,9 @@ public class ProductSalesRow {
     @Override
     public String toString() {
         return "ProductSalesRow{" +
-                "productName='" + productName + '\'' +
-                ", quantityTotal=" + quantityTotal +
+                "soldAt=" + soldAt +
+                ", productName='" + productName + '\'' +
+                ", quantity=" + quantity +
                 ", amountTotal=" + amountTotal +
                 '}';
     }
@@ -42,13 +50,14 @@ public class ProductSalesRow {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof ProductSalesRow that)) return false;
-        return quantityTotal == that.quantityTotal
+        return quantity == that.quantity
+                && Objects.equals(soldAt, that.soldAt)
                 && Objects.equals(productName, that.productName)
                 && Objects.equals(amountTotal, that.amountTotal);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(productName, quantityTotal, amountTotal);
+        return Objects.hash(soldAt, productName, quantity, amountTotal);
     }
 }
