@@ -11,6 +11,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -32,6 +33,7 @@ public class ProductPickerDialog extends JDialog {
     private final JLabel messageLabel = new JLabel(" ");
     private final ButtonGroup filterGroup = new ButtonGroup();
     private final JToggleButton allButton = new JToggleButton("Tümü");
+    private final List<ProductTile> productTiles = new ArrayList<>();
 
     private Consumer<Selection> onSelect;
     private Long activeCategoryId;
@@ -120,6 +122,11 @@ public class ProductPickerDialog extends JDialog {
         messageLabel.setBorder(BorderFactory.createEmptyBorder(4, 12, 4, 12));
         messageLabel.setForeground(Color.DARK_GRAY);
         panel.add(messageLabel, BorderLayout.CENTER);
+        JButton addSelectedButton = new JButton("Ürünleri Ekle");
+        addSelectedButton.addActionListener(e -> addSelectedProducts());
+        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        leftButtons.add(addSelectedButton);
+        panel.add(leftButtons, BorderLayout.WEST);
         JButton closeButton = new JButton("Kapat");
         closeButton.addActionListener(e -> dispose());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -158,13 +165,16 @@ public class ProductPickerDialog extends JDialog {
 
     private void renderProducts(List<Product> products) {
         grid.removeAll();
+        productTiles.clear();
         int count = 0;
         if (products != null) {
             for (Product product : products) {
                 if (product == null || !product.isActive()) {
                     continue;
                 }
-                grid.add(new ProductTile(product));
+                ProductTile tile = new ProductTile(product);
+                grid.add(tile);
+                productTiles.add(tile);
                 count++;
             }
         }
@@ -186,17 +196,6 @@ public class ProductPickerDialog extends JDialog {
         label.setForeground(Color.DARK_GRAY);
         panel.add(label, BorderLayout.CENTER);
         return panel;
-    }
-
-    private void handleSelect(Long productId, int quantity) {
-        if (productId == null || quantity <= 0) {
-            showMessage("Ürün seçimi tamamlanamadı", true);
-            return;
-        }
-        if (onSelect != null) {
-            onSelect.accept(new Selection(productId, quantity));
-        }
-        dispose();
     }
 
     private void showMessage(String text, boolean error) {
@@ -261,18 +260,43 @@ public class ProductPickerDialog extends JDialog {
 
     private void adjustSpinnerValue(JSpinner spinner, int delta) {
         Number value = (Number) spinner.getValue();
-        int current = value == null ? 1 : value.intValue();
-        int updated = Math.max(1, Math.min(MAX_QUANTITY, current + delta));
+        int current = value == null ? 0 : value.intValue();
+        int updated = Math.max(0, Math.min(MAX_QUANTITY, current + delta));
         spinner.setValue(updated);
     }
 
+    private void addSelectedProducts() {
+        clearMessage();
+        int added = 0;
+        for (ProductTile tile : productTiles) {
+            int quantity = tile.getQuantity();
+            Long productId = tile.getProductId();
+            if (quantity > 0 && productId != null) {
+                if (onSelect != null) {
+                    onSelect.accept(new Selection(productId, quantity));
+                }
+                added++;
+            }
+        }
+        if (added == 0) {
+            showMessage("Siparişe eklenecek ürün seçmediniz", true);
+            return;
+        }
+        dispose();
+    }
+
     private class ProductTile extends JPanel {
+        private final Long productId;
+        private final JSpinner qtySpinner;
+
         ProductTile(Product product) {
             super(new BorderLayout(8, 8));
             setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(new Color(220, 220, 220)),
                     BorderFactory.createEmptyBorder(12, 12, 12, 12)));
             setBackground(Color.WHITE);
+
+            productId = product == null ? null : product.getId();
 
             JLabel iconLabel = new JLabel(loadProductIcon(product));
             iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
@@ -295,25 +319,27 @@ public class ProductPickerDialog extends JDialog {
             JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
             controls.setOpaque(false);
             JButton minus = new JButton("-");
-            JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_QUANTITY, 1));
+            qtySpinner = new JSpinner(new SpinnerNumberModel(0, 0, MAX_QUANTITY, 1));
             Dimension preferred = qtySpinner.getPreferredSize();
             qtySpinner.setPreferredSize(new Dimension(60, preferred.height));
             JButton plus = new JButton("+");
-            JButton addButton = new JButton("Ekle");
 
             minus.addActionListener(e -> adjustSpinnerValue(qtySpinner, -1));
             plus.addActionListener(e -> adjustSpinnerValue(qtySpinner, 1));
-            addButton.addActionListener(e -> {
-                Number number = (Number) qtySpinner.getValue();
-                int quantity = number == null ? 1 : number.intValue();
-                handleSelect(product.getId(), quantity);
-            });
 
             controls.add(minus);
             controls.add(qtySpinner);
             controls.add(plus);
-            controls.add(addButton);
             add(controls, BorderLayout.SOUTH);
+        }
+
+        Long getProductId() {
+            return productId;
+        }
+
+        int getQuantity() {
+            Number number = (Number) qtySpinner.getValue();
+            return number == null ? 0 : number.intValue();
         }
     }
 }
