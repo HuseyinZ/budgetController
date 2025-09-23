@@ -14,7 +14,6 @@ import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Consumer;
 
 public class ProductPickerDialog extends JDialog {
@@ -33,13 +32,9 @@ public class ProductPickerDialog extends JDialog {
     private final JLabel messageLabel = new JLabel(" ");
     private final ButtonGroup filterGroup = new ButtonGroup();
     private final JToggleButton allButton = new JToggleButton("Tümü");
-    private final JToggleButton foodsButton = new JToggleButton("Yemekler");
-    private final JToggleButton drinksButton = new JToggleButton("İçecekler");
 
     private Consumer<Selection> onSelect;
-    private String activeCategoryName;
-    private Long foodsCategoryId;
-    private Long drinksCategoryId;
+    private Long activeCategoryId;
 
     public ProductPickerDialog(Window owner, int tableNo) {
         this(owner, tableNo > 0 ? "Masa " + tableNo + " - Ürün Seç" : "Ürün Seç");
@@ -71,23 +66,45 @@ public class ProductPickerDialog extends JDialog {
     private JComponent buildFilterBar() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         configureFilterButton(panel, allButton, null);
-        configureFilterButton(panel, foodsButton, "Yemekler");
-        configureFilterButton(panel, drinksButton, "İçecekler");
+        populateCategoryButtons(panel);
         allButton.setSelected(true);
-        activeCategoryName = null;
+        activeCategoryId = null;
         return panel;
     }
 
-    private void configureFilterButton(JPanel panel, JToggleButton button, String categoryName) {
+    private void configureFilterButton(JPanel panel, JToggleButton button, Long categoryId) {
         button.addActionListener(e -> {
-            if (!Objects.equals(activeCategoryName, categoryName)) {
-                activeCategoryName = categoryName;
+            if (!Objects.equals(activeCategoryId, categoryId)) {
+                activeCategoryId = categoryId;
                 clearMessage();
-                loadProducts(categoryName);
+                loadProducts(categoryId);
             }
         });
         filterGroup.add(button);
         panel.add(button);
+    }
+
+    private void populateCategoryButtons(JPanel panel) {
+        List<Category> categories;
+        try {
+            categories = categoryService.getAllCategories();
+        } catch (RuntimeException ex) {
+            showMessage("Kategori bilgileri yüklenemedi: " + ex.getMessage(), true);
+            return;
+        }
+
+        if (categories == null || categories.isEmpty()) {
+            return;
+        }
+
+        for (Category category : categories) {
+            if (category == null || !category.isActive()) {
+                continue;
+            }
+            String name = categoryName(category);
+            JToggleButton button = new JToggleButton(name);
+            configureFilterButton(panel, button, category.getId());
+        }
     }
 
     private JComponent buildGridPanel() {
@@ -111,16 +128,13 @@ public class ProductPickerDialog extends JDialog {
         return panel;
     }
 
-    private void loadProducts(String categoryName) {
+    private void loadProducts(Long categoryId) {
         List<Product> products;
         try {
-            if (categoryName == null) {
+            if (categoryId == null) {
                 products = productService.getAllProducts();
             } else {
-                Long categoryId = resolveCategoryId(categoryName);
-                products = categoryId == null
-                        ? List.of()
-                        : productService.getProductsByCategory(categoryId, 0, 200);
+                products = productService.getProductsByCategory(categoryId, 0, 200);
             }
             clearMessage();
         } catch (RuntimeException ex) {
@@ -130,29 +144,16 @@ public class ProductPickerDialog extends JDialog {
         renderProducts(products);
     }
 
-    private Long resolveCategoryId(String name) {
+    private String categoryName(Category category) {
+        if (category == null) {
+            return "Kategori";
+        }
+        String name = category.getName();
         if (name == null) {
-            return null;
+            return "Kategori";
         }
-        String normalized = name.trim();
-        if (normalized.equalsIgnoreCase("Yemekler")) {
-            if (foodsCategoryId == null) {
-                foodsCategoryId = findCategoryId("Yemekler");
-            }
-            return foodsCategoryId;
-        }
-        if (normalized.equalsIgnoreCase("İçecekler") || normalized.equalsIgnoreCase("Icecekler")) {
-            if (drinksCategoryId == null) {
-                drinksCategoryId = findCategoryId("İçecekler");
-            }
-            return drinksCategoryId;
-        }
-        return findCategoryId(normalized);
-    }
-
-    private Long findCategoryId(String name) {
-        Optional<Category> category = categoryService.findByName(name);
-        return category.map(Category::getId).orElse(null);
+        String trimmed = name.trim();
+        return trimmed.isEmpty() ? "Kategori" : trimmed;
     }
 
     private void renderProducts(List<Product> products) {
