@@ -23,7 +23,7 @@ public class SettingsPanel extends JPanel {
         setLayout(new BorderLayout(8, 8));
         add(buildForm(), BorderLayout.CENTER);
         add(buildActions(), BorderLayout.SOUTH);
-        //loadCurrentConfig();
+        loadCurrentConfig();
     }
 
     private JPanel buildForm() {

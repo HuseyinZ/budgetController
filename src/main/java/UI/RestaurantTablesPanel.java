@@ -57,7 +57,7 @@ public class RestaurantTablesPanel extends JPanel {
 
             for (AppState.AreaDefinition area : areas) {
                 JPanel sectionPanel = new JPanel(new BorderLayout());
-                sectionPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY), area.getSection(), TitledBorder.LEFT, TitledBorder.TOP));
+                sectionPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.BLACK), area.getSection(), TitledBorder.LEFT, TitledBorder.TOP));
                 sectionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
                 JPanel grid = new JPanel(new GridLayout(2, 5, 8, 8));
@@ -70,11 +70,11 @@ public class RestaurantTablesPanel extends JPanel {
                 }
                 sectionPanel.add(grid, BorderLayout.CENTER);
                 buildingPanel.add(sectionPanel);
-                buildingPanel.add(Box.createVerticalStrut(8));
+                buildingPanel.add(Box.createVerticalStrut(10));
             }
 
             add(buildingPanel);
-            add(Box.createVerticalStrut(12));
+            add(Box.createVerticalStrut(15));
         });
     }
 
@@ -82,7 +82,7 @@ public class RestaurantTablesPanel extends JPanel {
         JButton button = new JButton();
         button.setFocusPainted(false);
         button.setOpaque(true);
-        button.setBackground(Color.WHITE);
+        button.setBackground(Color.RED);
         button.addActionListener(e -> openTableDialog(tableNo));
         tableButtons.put(tableNo, button);
         refreshButton(tableNo);
@@ -116,11 +116,11 @@ public class RestaurantTablesPanel extends JPanel {
         TableSnapshot snapshot = appState.snapshot(tableNo);
         button.setText(formatText(snapshot));
 
-        // ⬇️ RENKLER buradan geliyor
+        // ️ RENKLER buradan geliyor
         button.setBackground(colorFor(snapshot.getStatus()));  // sadece background
         button.setForeground(Color.DARK_GRAY);                 // hep koyu gri yazı
 
-        button.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        button.setBorder(BorderFactory.createLineBorder(Color.BLACK));
     }
 
 
@@ -140,7 +140,7 @@ public class RestaurantTablesPanel extends JPanel {
             return Color.WHITE;
         }
         return switch (status) {
-            case EMPTY   -> Color.WHITE;
+            case EMPTY   -> new Color(224, 244, 239);
             case ORDERED -> new Color(255, 245, 157);
             case SERVED  -> new Color(165, 214, 167);
         };

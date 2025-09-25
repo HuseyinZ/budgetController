@@ -179,14 +179,7 @@ public class TableOrderDialog extends JDialog {
         String product = (String) tableModel.getValueAt(row, 0);
         int confirm = JOptionPane.showConfirmDialog(this, product + " ürününü silmek istiyor musunuz?", "Onay", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
-            try {
-                appState.removeItem(tableNo, product, currentUser);
-            } catch (RuntimeException ex) {
-                JOptionPane.showMessageDialog(this,
-                        "Ürün silinirken bir hata oluştu: " + ex.getMessage(),
-                        "Hata",
-                        JOptionPane.ERROR_MESSAGE);
-            }
+            appState.removeItem(tableNo, product, currentUser);
         }
     }
 
@@ -302,7 +295,7 @@ public class TableOrderDialog extends JDialog {
         statusLabel.setText(text);
         statusLabel.setForeground(color);
         if (waiterRole) {
-            markServedButton.setEnabled(false);
+            markServedButton.setEnabled(true);
             saleButton.setEnabled(false);
         } else {
             markServedButton.setEnabled(status == TableOrderStatus.ORDERED);

@@ -16,14 +16,6 @@ public class App {
 
 
     public static void main(String[] args) {
-        UserService userService = new UserService();
-
-        boolean created = userService.seedAdminIfNotExists();
-        if (created) {
-            System.out.println("✔ Admin oluşturuldu: username=admin, password=1234");
-        } else {
-            System.out.println("ℹ Admin zaten var, oluşturma atlandı.");
-        }
 
         SwingUtilities.invokeLater(() -> {
             FlatLightLaf.setup();

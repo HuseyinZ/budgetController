@@ -70,7 +70,7 @@ public class AllSalesPanel extends JPanel {
     private JComponent buildControls() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.add(new JLabel("Tarih"));
-        dateSpinner.setEditor(new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd"));
+        dateSpinner.setEditor(new JSpinner.DateEditor(dateSpinner, "dd-MM-yyyy"));
         panel.add(dateSpinner);
         panel.add(new JLabel("Saat"));
         timeSpinner.setEditor(new JSpinner.DateEditor(timeSpinner, "HH:mm"));
