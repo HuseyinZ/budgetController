@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class RestaurantTablesPanel extends JPanel {
+public class RestaurantTablesPanel extends JPanel implements Scrollable {
     private final AppState appState;
     private final User currentUser;
     private final Map<Integer, JButton> tableButtons = new HashMap<>();
@@ -52,7 +52,7 @@ public class RestaurantTablesPanel extends JPanel {
             areas.sort(Comparator.comparing(AppState.AreaDefinition::getSection));
             JPanel buildingPanel = new JPanel();
             buildingPanel.setLayout(new BoxLayout(buildingPanel, BoxLayout.Y_AXIS));
-            buildingPanel.setBorder(BorderFactory.createTitledBorder(building));
+            buildingPanel.setBorder(createBuildingBorder(building));
             buildingPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
             for (AppState.AreaDefinition area : areas) {
@@ -78,11 +78,64 @@ public class RestaurantTablesPanel extends JPanel {
         });
     }
 
+    private TitledBorder createBuildingBorder(String building) {
+        Color borderColor = switch (building) {
+            case "1.Bina" -> new Color(0x1E88E5);  // mavi ton
+            case "2.Bina" -> new Color(0x43A047);  // yeşil ton
+            case "3.Bina" -> new Color(0xFB8C00);  // turuncu ton
+            default -> Color.DARK_GRAY;
+        };
+
+        TitledBorder border = BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(borderColor, 2),
+                building,
+                TitledBorder.LEFT,
+                TitledBorder.TOP
+        );
+        border.setTitleColor(borderColor.darker());
+        return border;
+    }
+
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return getPreferredSize();
+    }
+
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+        if (orientation == SwingConstants.VERTICAL) {
+            return 32;
+        }
+        return 16;
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+        if (orientation == SwingConstants.VERTICAL) {
+            return Math.max(visibleRect.height - 32, 32);
+        }
+        return Math.max(visibleRect.width - 16, 16);
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return false;
+    }
+
     private JButton createTableButton(int tableNo) {
         JButton button = new JButton();
         button.setFocusPainted(false);
         button.setOpaque(true);
         button.setBackground(Color.RED);
+        // Masaların (butonların) daha yüksek görünmesi için varsayılan boyutu arttırıyoruz.
+        Dimension preferredSize = new Dimension(140, 100);
+        button.setPreferredSize(preferredSize);
+        button.setMinimumSize(preferredSize);
         button.addActionListener(e -> openTableDialog(tableNo));
         tableButtons.put(tableNo, button);
         refreshButton(tableNo);
