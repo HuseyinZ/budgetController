@@ -73,6 +73,7 @@ public class ProductPickerDialog extends JDialog {
         configureFilterButton(panel, allButton, null);
         populateCategoryButtons(panel);
         allButton.setSelected(true);
+        allButton.setPreferredSize(new Dimension(160, 48));
         activeCategoryId = null;
         return panel;
     }
@@ -87,6 +88,7 @@ public class ProductPickerDialog extends JDialog {
         });
         filterGroup.add(button);
         panel.add(button);
+        button.setPreferredSize(new Dimension(160, 48));
     }
 
     private void populateCategoryButtons(JPanel panel) {
@@ -127,10 +129,12 @@ public class ProductPickerDialog extends JDialog {
         panel.add(messageLabel, BorderLayout.CENTER);
         JButton addSelectedButton = new JButton("Ürünleri Ekle");
         addSelectedButton.addActionListener(e -> addSelectedProducts());
+        addSelectedButton.setPreferredSize(new Dimension(160,43));
         JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
         leftButtons.add(addSelectedButton);
         panel.add(leftButtons, BorderLayout.WEST);
         JButton closeButton = new JButton("Kapat");
+        closeButton.setPreferredSize(new Dimension(160,43));
         closeButton.addActionListener(e -> dispose());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         buttons.add(closeButton);
@@ -270,6 +274,7 @@ public class ProductPickerDialog extends JDialog {
     }
 
     private void addSelectedProducts() {
+
         clearMessage();
         int added = 0;
         for (ProductTile tile : productTiles) {
@@ -297,6 +302,7 @@ public class ProductPickerDialog extends JDialog {
         private final JSpinner qtySpinner;
 
         ProductTile(Product product, int initialQuantity) {
+
             super(new BorderLayout(8, 8));
             setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(new Color(220, 220, 220)),

@@ -67,6 +67,7 @@ public class AllSalesPanel extends JPanel {
         refreshTable();
     }
 
+
     private JComponent buildControls() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panel.add(new JLabel("Tarih"));
@@ -141,7 +142,7 @@ public class AllSalesPanel extends JPanel {
         List<ProductSalesRow> rows = loadRows(threshold);
 
         JFileChooser chooser = new JFileChooser();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("ddMMyyyy-HHmm");
         chooser.setSelectedFile(new File("satislar-" + formatter.format(threshold) + ".xlsx"));
         if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
             return;

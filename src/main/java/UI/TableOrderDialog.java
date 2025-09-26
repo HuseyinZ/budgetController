@@ -94,11 +94,14 @@ public class TableOrderDialog extends JDialog {
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton productsButton = new JButton("Ürünler");
         productsButton.addActionListener(e -> openProductPicker());
+        productsButton.setPreferredSize(new Dimension(160,48));
         controls.add(productsButton);
         JButton decreaseButton = new JButton("Azalt");
+        decreaseButton.setPreferredSize(new Dimension(160,48));
         decreaseButton.addActionListener(e -> decrementSelected());
         controls.add(decreaseButton);
         JButton removeButton = new JButton("Sil");
+        removeButton.setPreferredSize(new Dimension(160,48));
         removeButton.addActionListener(e -> removeSelected());
         controls.add(removeButton);
         panel.add(controls, BorderLayout.NORTH);
@@ -131,18 +134,23 @@ public class TableOrderDialog extends JDialog {
     private JComponent buildFooter() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton clearButton = new JButton("Siparişi temizle");
+        clearButton.setPreferredSize(new Dimension(160,48));
         clearButton.addActionListener(e -> clearOrder());
         clearButton.setVisible(true);
         panel.add(clearButton);
 
         markServedButton.addActionListener(e -> markServed());
         markServedButton.setVisible(true);
+        markServedButton.setPreferredSize(new Dimension(160,48));
+
         panel.add(markServedButton);
 
         saleButton.addActionListener(e -> performSale());
         boolean canSell = currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.KASIYER;
         saleButton.setVisible(canSell);
         panel.add(saleButton);
+        saleButton.setPreferredSize(new Dimension(160,48));
+
 
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD));
         panel.add(totalLabel);
@@ -203,7 +211,16 @@ public class TableOrderDialog extends JDialog {
             return;
         }
         JComboBox<String> methodCombo = new JComboBox<>(new String[]{"Nakit", "Kredi Kartı", "Havale"});
-        int result = JOptionPane.showConfirmDialog(this, methodCombo, "Ödeme yöntemi", JOptionPane.OK_CANCEL_OPTION);
+        Object[] options = {"Ödemeyi tamamla", "İptal"};
+        int result = JOptionPane.showOptionDialog(
+                this,
+                methodCombo,
+                "Ödeme yöntemi",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]);
         if (result != JOptionPane.OK_OPTION) {
             return;
         }
