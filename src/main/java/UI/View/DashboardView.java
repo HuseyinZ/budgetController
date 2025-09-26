@@ -71,6 +71,8 @@ public class DashboardView extends JFrame {
             contentPanel.add(component, config.card());
 
             JToggleButton button = new JToggleButton(config.label());
+            button.setPreferredSize(new Dimension(160, 48));
+
             button.addActionListener(e -> cardLayout.show(contentPanel, config.card()));
             toolbar.add(button);
             group.add(button);

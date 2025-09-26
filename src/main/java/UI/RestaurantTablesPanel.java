@@ -158,7 +158,7 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable  {
         }
         return switch (status) {
             case EMPTY   -> new Color(245, 246, 216);
-            case ORDERED -> new Color(255, 245, 157);
+            case ORDERED -> new Color(155, 203, 239);
             case SERVED  -> new Color(165, 214, 167);
         };
     }
