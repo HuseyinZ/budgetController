@@ -54,7 +54,10 @@ public class TableOrderDialog extends JDialog {
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(12, 12));
-        setPreferredSize(new Dimension(720, 520));
+        setResizable(true);
+        Dimension preferredSize = new Dimension(960, 680);
+        setPreferredSize(preferredSize);
+        setMinimumSize(preferredSize);
 
         add(buildHeader(snapshot), BorderLayout.NORTH);
         add(buildCenter(), BorderLayout.CENTER);
@@ -69,6 +72,7 @@ public class TableOrderDialog extends JDialog {
             }
         });
         pack();
+        setSize(Math.max(getWidth(), preferredSize.width), Math.max(getHeight(), preferredSize.height));
         setLocationRelativeTo(owner);
     }
 
@@ -88,6 +92,7 @@ public class TableOrderDialog extends JDialog {
     public void setOnReadyListener(java.util.function.Consumer<Integer> l) {
         this.onReadyListener = l;
     }
+
     private JComponent buildCenter() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 

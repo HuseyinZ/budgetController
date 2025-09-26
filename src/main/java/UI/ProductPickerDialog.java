@@ -53,7 +53,10 @@ public class ProductPickerDialog extends JDialog {
         super(owner, title, ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
-        setPreferredSize(new Dimension(760, 560));
+        setResizable(true);
+        Dimension preferredSize = new Dimension(960, 680);
+        setPreferredSize(preferredSize);
+        setMinimumSize(preferredSize);
 
         add(buildFilterBar(), BorderLayout.NORTH);
         add(buildGridPanel(), BorderLayout.CENTER);
@@ -61,6 +64,7 @@ public class ProductPickerDialog extends JDialog {
 
         loadProducts(null);
         pack();
+        setSize(Math.max(getWidth(), preferredSize.width), Math.max(getHeight(), preferredSize.height));
         setLocationRelativeTo(owner);
     }
 
@@ -69,13 +73,16 @@ public class ProductPickerDialog extends JDialog {
     }
 
     private JComponent buildFilterBar() {
+        JPanel container = new JPanel(new BorderLayout());
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         configureFilterButton(panel, allButton, null);
         populateCategoryButtons(panel);
         allButton.setSelected(true);
         allButton.setPreferredSize(new Dimension(160, 48));
         activeCategoryId = null;
-        return panel;
+        container.add(panel, BorderLayout.CENTER);
+
+        return container;
     }
 
     private void configureFilterButton(JPanel panel, JToggleButton button, Long categoryId) {
