@@ -40,10 +40,13 @@ public class TableOrderDialog extends JDialog {
     private final JLabel statusLabel = new JLabel(" ");
     private final JButton markServedButton = new JButton("Sipariş hazır");
     private final JButton saleButton = new JButton("Satış yap");
+    private final JButton fullScreenButton = new JButton("Tam ekran");
     private final PropertyChangeListener listener = this::handleStateChange;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
     private java.util.function.Consumer<Integer> onReadyListener;
+    private boolean fullScreen;
+    private Rectangle windowedBounds;
 
     public TableOrderDialog(Window owner, AppState appState, TableSnapshot snapshot, User user) {
         super(owner, "Masa " + snapshot.getTableNo(), ModalityType.APPLICATION_MODAL);
@@ -54,7 +57,9 @@ public class TableOrderDialog extends JDialog {
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(12, 12));
-        setPreferredSize(new Dimension(720, 520));
+        Dimension preferredSize = new Dimension(960, 680);
+        setPreferredSize(preferredSize);
+        setMinimumSize(preferredSize);
 
         add(buildHeader(snapshot), BorderLayout.NORTH);
         add(buildCenter(), BorderLayout.CENTER);
@@ -69,6 +74,7 @@ public class TableOrderDialog extends JDialog {
             }
         });
         pack();
+        setSize(Math.max(getWidth(), preferredSize.width), Math.max(getHeight(), preferredSize.height));
         setLocationRelativeTo(owner);
     }
 
@@ -80,6 +86,8 @@ public class TableOrderDialog extends JDialog {
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
         statusPanel.add(statusLabel);
+        configureFullScreenButton();
+        statusPanel.add(fullScreenButton);
         panel.add(statusPanel, BorderLayout.EAST);
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         return panel;
@@ -87,6 +95,30 @@ public class TableOrderDialog extends JDialog {
 
     public void setOnReadyListener(java.util.function.Consumer<Integer> l) {
         this.onReadyListener = l;
+    }
+
+    private void configureFullScreenButton() {
+        fullScreenButton.addActionListener(e -> toggleFullScreen());
+    }
+
+    private void toggleFullScreen() {
+        if (!fullScreen) {
+            windowedBounds = getBounds();
+            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+            setBounds(screenBounds);
+            fullScreen = true;
+            fullScreenButton.setText("Pencereyi küçült");
+        } else {
+            if (windowedBounds != null) {
+                setBounds(windowedBounds);
+            } else {
+                pack();
+            }
+            fullScreen = false;
+            fullScreenButton.setText("Tam ekran");
+        }
+        revalidate();
+        repaint();
     }
     private JComponent buildCenter() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));

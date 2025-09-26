@@ -37,9 +37,12 @@ public class ProductPickerDialog extends JDialog {
     private final JToggleButton allButton = new JToggleButton("Tümü");
     private final List<ProductTile> productTiles = new ArrayList<>();
     private final Map<Long, Integer> selectedQuantities = new HashMap<>();
+    private final JButton fullScreenButton = new JButton("Tam ekran");
 
     private Consumer<Selection> onSelect;
     private Long activeCategoryId;
+    private boolean fullScreen;
+    private Rectangle windowedBounds;
 
     public ProductPickerDialog(Window owner, int tableNo) {
         this(owner, tableNo > 0 ? "Masa " + tableNo + " - Ürün Seç" : "Ürün Seç");
@@ -53,7 +56,9 @@ public class ProductPickerDialog extends JDialog {
         super(owner, title, ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
-        setPreferredSize(new Dimension(760, 560));
+        Dimension preferredSize = new Dimension(960, 680);
+        setPreferredSize(preferredSize);
+        setMinimumSize(preferredSize);
 
         add(buildFilterBar(), BorderLayout.NORTH);
         add(buildGridPanel(), BorderLayout.CENTER);
@@ -61,6 +66,7 @@ public class ProductPickerDialog extends JDialog {
 
         loadProducts(null);
         pack();
+        setSize(Math.max(getWidth(), preferredSize.width), Math.max(getHeight(), preferredSize.height));
         setLocationRelativeTo(owner);
     }
 
@@ -69,13 +75,20 @@ public class ProductPickerDialog extends JDialog {
     }
 
     private JComponent buildFilterBar() {
+        JPanel container = new JPanel(new BorderLayout());
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
         configureFilterButton(panel, allButton, null);
         populateCategoryButtons(panel);
         allButton.setSelected(true);
         allButton.setPreferredSize(new Dimension(160, 48));
         activeCategoryId = null;
-        return panel;
+        container.add(panel, BorderLayout.CENTER);
+
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        configureFullScreenButton();
+        rightPanel.add(fullScreenButton);
+        container.add(rightPanel, BorderLayout.EAST);
+        return container;
     }
 
     private void configureFilterButton(JPanel panel, JToggleButton button, Long categoryId) {
@@ -89,6 +102,10 @@ public class ProductPickerDialog extends JDialog {
         filterGroup.add(button);
         panel.add(button);
         button.setPreferredSize(new Dimension(160, 48));
+    }
+
+    private void configureFullScreenButton() {
+        fullScreenButton.addActionListener(e -> toggleFullScreen());
     }
 
     private void populateCategoryButtons(JPanel panel) {
@@ -140,6 +157,26 @@ public class ProductPickerDialog extends JDialog {
         buttons.add(closeButton);
         panel.add(buttons, BorderLayout.EAST);
         return panel;
+    }
+
+    private void toggleFullScreen() {
+        if (!fullScreen) {
+            windowedBounds = getBounds();
+            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+            setBounds(screenBounds);
+            fullScreen = true;
+            fullScreenButton.setText("Pencereyi küçült");
+        } else {
+            if (windowedBounds != null) {
+                setBounds(windowedBounds);
+            } else {
+                pack();
+            }
+            fullScreen = false;
+            fullScreenButton.setText("Tam ekran");
+        }
+        revalidate();
+        repaint();
     }
 
     private void loadProducts(Long categoryId) {
