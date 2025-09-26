@@ -36,7 +36,7 @@ public class ReportsJdbcDAO implements ReportsDAO {
                 "c.name AS category_name, " +
                 "oi.quantity, " +
                 "p.method AS payment_method, " +
-                "COALESCE(oi.line_total, oi.quantity * oi.unit_price * 1.20) AS amount_total " +
+                "COALESCE(oi.line_total, oi.quantity * oi.unit_price) AS amount_total " +
                 "FROM payments p " +
                 "JOIN orders o ON o.id = p.order_id " +
                 "JOIN order_items oi ON oi.order_id = o.id " +
