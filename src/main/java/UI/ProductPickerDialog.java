@@ -12,8 +12,10 @@ import java.awt.*;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -34,6 +36,7 @@ public class ProductPickerDialog extends JDialog {
     private final ButtonGroup filterGroup = new ButtonGroup();
     private final JToggleButton allButton = new JToggleButton("Tümü");
     private final List<ProductTile> productTiles = new ArrayList<>();
+    private final Map<Long, Integer> selectedQuantities = new HashMap<>();
 
     private Consumer<Selection> onSelect;
     private Long activeCategoryId;
@@ -172,7 +175,8 @@ public class ProductPickerDialog extends JDialog {
                 if (product == null || !product.isActive()) {
                     continue;
                 }
-                ProductTile tile = new ProductTile(product);
+                int initialQty = selectedQuantities.getOrDefault(product.getId(), 0);
+                ProductTile tile = new ProductTile(product, initialQty);
                 grid.add(tile);
                 productTiles.add(tile);
                 count++;
@@ -269,9 +273,12 @@ public class ProductPickerDialog extends JDialog {
         clearMessage();
         int added = 0;
         for (ProductTile tile : productTiles) {
-            int quantity = tile.getQuantity();
-            Long productId = tile.getProductId();
-            if (quantity > 0 && productId != null) {
+            updateSelection(tile.getProductId(), tile.getQuantity());
+        }
+        for (Map.Entry<Long, Integer> entry : selectedQuantities.entrySet()) {
+            Long productId = entry.getKey();
+            int quantity = entry.getValue();
+            if (productId != null && quantity > 0) {
                 if (onSelect != null) {
                     onSelect.accept(new Selection(productId, quantity));
                 }
@@ -289,7 +296,7 @@ public class ProductPickerDialog extends JDialog {
         private final Long productId;
         private final JSpinner qtySpinner;
 
-        ProductTile(Product product) {
+        ProductTile(Product product, int initialQuantity) {
             super(new BorderLayout(8, 8));
             setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(new Color(220, 220, 220)),
@@ -327,6 +334,11 @@ public class ProductPickerDialog extends JDialog {
             minus.addActionListener(e -> adjustSpinnerValue(qtySpinner, -1));
             plus.addActionListener(e -> adjustSpinnerValue(qtySpinner, 1));
 
+            if (initialQuantity > 0) {
+                qtySpinner.setValue(Math.min(initialQuantity, MAX_QUANTITY));
+            }
+            qtySpinner.addChangeListener(e -> updateSelection(productId, getQuantity()));
+
             controls.add(minus);
             controls.add(qtySpinner);
             controls.add(plus);
@@ -340,6 +352,17 @@ public class ProductPickerDialog extends JDialog {
         int getQuantity() {
             Number number = (Number) qtySpinner.getValue();
             return number == null ? 0 : number.intValue();
+        }
+    }
+
+    private void updateSelection(Long productId, int quantity) {
+        if (productId == null) {
+            return;
+        }
+        if (quantity <= 0) {
+            selectedQuantities.remove(productId);
+        } else {
+            selectedQuantities.put(productId, Math.min(quantity, MAX_QUANTITY));
         }
     }
 }
