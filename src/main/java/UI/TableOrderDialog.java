@@ -12,6 +12,8 @@ import state.TableSnapshot;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.beans.PropertyChangeEvent;
@@ -88,7 +90,7 @@ public class TableOrderDialog extends JDialog {
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
         statusPanel.add(statusLabel);
-        configureFullScreenButton();
+        configureFullScreenControls();
         statusPanel.add(fullScreenButton);
         panel.add(statusPanel, BorderLayout.EAST);
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -99,26 +101,71 @@ public class TableOrderDialog extends JDialog {
         this.onReadyListener = l;
     }
 
-    private void configureFullScreenButton() {
+    private void configureFullScreenControls() {
         fullScreenButton.addActionListener(e -> toggleFullScreen());
+
+        addWindowStateListener(e -> {
+            boolean maximized = (e.getNewState() & Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH;
+            if (maximized) {
+                enterFullScreen();
+            } else if (fullScreen) {
+                exitFullScreen();
+            }
+        });
+
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentMoved(ComponentEvent e) {
+                rememberWindowedBounds();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                rememberWindowedBounds();
+            }
+
+            private void rememberWindowedBounds() {
+                if (!fullScreen) {
+                    windowedBounds = getBounds();
+                }
+            }
+        });
     }
 
     private void toggleFullScreen() {
         if (!fullScreen) {
-            windowedBounds = getBounds();
-            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-            setBounds(screenBounds);
-            fullScreen = true;
-            fullScreenButton.setText("Pencereyi küçült");
+            enterFullScreen();
         } else {
-            if (windowedBounds != null) {
-                setBounds(windowedBounds);
-            } else {
-                pack();
-            }
-            fullScreen = false;
-            fullScreenButton.setText("Tam ekran");
+            exitFullScreen();
         }
+        revalidate();
+        repaint();
+    }
+
+    private void enterFullScreen() {
+        if (fullScreen) {
+            return;
+        }
+        windowedBounds = getBounds();
+        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        setBounds(screenBounds);
+        fullScreen = true;
+        fullScreenButton.setText("Pencereyi küçült");
+        revalidate();
+        repaint();
+    }
+
+    private void exitFullScreen() {
+        if (!fullScreen) {
+            return;
+        }
+        if (windowedBounds != null) {
+            setBounds(windowedBounds);
+        } else {
+            pack();
+        }
+        fullScreen = false;
+        fullScreenButton.setText("Tam ekran");
         revalidate();
         repaint();
     }
