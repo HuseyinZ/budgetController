@@ -56,6 +56,7 @@ public class ProductPickerDialog extends JDialog {
         super(owner, title, ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
+        setResizable(true);
         Dimension preferredSize = new Dimension(960, 680);
         setPreferredSize(preferredSize);
         setMinimumSize(preferredSize);
@@ -83,6 +84,7 @@ public class ProductPickerDialog extends JDialog {
         allButton.setPreferredSize(new Dimension(160, 48));
         activeCategoryId = null;
         container.add(panel, BorderLayout.CENTER);
+
 
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         configureFullScreenButton();

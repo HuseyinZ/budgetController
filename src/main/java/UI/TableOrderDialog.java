@@ -57,6 +57,8 @@ public class TableOrderDialog extends JDialog {
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(12, 12));
+        setResizable(true);
+
         Dimension preferredSize = new Dimension(960, 680);
         setPreferredSize(preferredSize);
         setMinimumSize(preferredSize);
