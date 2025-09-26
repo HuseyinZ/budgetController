@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class RestaurantTablesPanel extends JPanel implements Scrollable {
+public class RestaurantTablesPanel extends JPanel  {
     private final AppState appState;
     private final User currentUser;
     private final Map<Integer, JButton> tableButtons = new HashMap<>();
@@ -77,63 +77,27 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
             add(Box.createVerticalStrut(15));
         });
     }
-
     private TitledBorder createBuildingBorder(String building) {
-        Color borderColor = switch (building) {
-            case "1.Bina" -> new Color(0x1E88E5);  // mavi ton
-            case "2.Bina" -> new Color(0x43A047);  // yeşil ton
-            case "3.Bina" -> new Color(0xFB8C00);  // turuncu ton
-            default -> Color.DARK_GRAY;
-        };
+        Color borderColor =  new Color(64, 1, 1);
 
         TitledBorder border = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(borderColor, 2),
+                BorderFactory.createLineBorder(borderColor, 5),
                 building,
                 TitledBorder.LEFT,
                 TitledBorder.TOP
         );
-        border.setTitleColor(borderColor.darker());
+        border.setTitleColor(Color.BLACK);
+
         return border;
     }
 
-    @Override
-    public Dimension getPreferredScrollableViewportSize() {
-        return getPreferredSize();
-    }
-
-    @Override
-    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-        if (orientation == SwingConstants.VERTICAL) {
-            return 32;
-        }
-        return 16;
-    }
-
-    @Override
-    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
-        if (orientation == SwingConstants.VERTICAL) {
-            return Math.max(visibleRect.height - 32, 32);
-        }
-        return Math.max(visibleRect.width - 16, 16);
-    }
-
-    @Override
-    public boolean getScrollableTracksViewportWidth() {
-        return true;
-    }
-
-    @Override
-    public boolean getScrollableTracksViewportHeight() {
-        return false;
-    }
 
     private JButton createTableButton(int tableNo) {
         JButton button = new JButton();
         button.setFocusPainted(false);
         button.setOpaque(true);
         button.setBackground(Color.RED);
-        // Masaların (butonların) daha yüksek görünmesi için varsayılan boyutu arttırıyoruz.
-        Dimension preferredSize = new Dimension(140, 100);
+        Dimension preferredSize = new Dimension(150, 100);
         button.setPreferredSize(preferredSize);
         button.setMinimumSize(preferredSize);
         button.addActionListener(e -> openTableDialog(tableNo));
@@ -193,7 +157,7 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
             return Color.WHITE;
         }
         return switch (status) {
-            case EMPTY   -> new Color(224, 244, 239);
+            case EMPTY   -> new Color(245, 246, 216);
             case ORDERED -> new Color(255, 245, 157);
             case SERVED  -> new Color(165, 214, 167);
         };
@@ -210,4 +174,6 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
         super.removeNotify();
         appState.removePropertyChangeListener(listener);
     }
+
+
 }
