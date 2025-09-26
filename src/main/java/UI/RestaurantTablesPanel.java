@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-public class RestaurantTablesPanel extends JPanel  {
+public class RestaurantTablesPanel extends JPanel implements Scrollable  {
     private final AppState appState;
     private final User currentUser;
     private final Map<Integer, JButton> tableButtons = new HashMap<>();
@@ -174,6 +174,35 @@ public class RestaurantTablesPanel extends JPanel  {
         super.removeNotify();
         appState.removePropertyChangeListener(listener);
     }
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return getPreferredSize();
+    }
 
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+        if (orientation == SwingConstants.VERTICAL) {
+            return 32;
+        }
+        return 16;
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+        if (orientation == SwingConstants.VERTICAL) {
+            return Math.max(visibleRect.height - 32, 32);
+        }
+        return Math.max(visibleRect.width - 16, 16);
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return false;
+    }
 
 }
