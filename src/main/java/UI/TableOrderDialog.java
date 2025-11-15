@@ -361,7 +361,21 @@ public class TableOrderDialog extends JDialog {
 
     private String formatLog(OrderLogEntry entry) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
-        return entry.getTimestamp().format(formatter) + " - " + entry.getMessage();
+        StringBuilder sb = new StringBuilder(entry.getTimestamp().format(formatter));
+        String actor = entry.getActor();
+        if (actor != null && !actor.isBlank()) {
+            sb.append(" - ").append(actor);
+        }
+        String action = entry.getAction();
+        if (action != null && !action.isBlank()) {
+            sb.append(" - ").append(action);
+        } else {
+            String message = entry.getMessage();
+            if (message != null && !message.isBlank()) {
+                sb.append(" - ").append(message);
+            }
+        }
+        return sb.toString();
     }
 
     private void updateStatus(TableOrderStatus status) {

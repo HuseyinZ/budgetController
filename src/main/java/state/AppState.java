@@ -302,7 +302,7 @@ public class AppState {
         if (productLabel.isEmpty()) {
             productLabel = "Ürün";
         }
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productLabel + " ekledi");
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -323,7 +323,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productName + " azalttı");
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -347,7 +347,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        orderLogService.append(order.getId(), historyEntry(user, productName + " ürününü sildi"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -373,7 +373,7 @@ public class AppState {
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
-        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
+        orderLogService.append(order.getId(), historyEntry(user, "masayı temizledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -397,7 +397,7 @@ public class AppState {
                 tableService.markTableOccupied(tableId, true);
             }
         }
-        orderLogService.append(order.getId(), actor(user) + " siparişi servis etti");
+        orderLogService.append(order.getId(), historyEntry(user, "siparişi servis etti"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -415,8 +415,8 @@ public class AppState {
                 .setScale(2, RoundingMode.HALF_UP);
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
-        orderLogService.append(order.getId(), actor(user) + " satış yaptı. Tutar: "
-                + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name()));
+        orderLogService.append(order.getId(), historyEntry(user, "satış yaptı. Tutar: "
+                + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name())));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
         notifySalesChanged();
@@ -786,6 +786,16 @@ public class AppState {
             }
         }
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String historyEntry(User user, String action) {
+        return historyEntry(actor(user), action);
+    }
+
+    private String historyEntry(String actorName, String action) {
+        String performer = (actorName == null || actorName.isBlank()) ? "Sistem" : actorName;
+        String detail = action == null ? "" : action;
+        return performer + OrderLogEntry.ACTOR_SEPARATOR + detail;
     }
 
     private String actor(@Nullable User user) {
