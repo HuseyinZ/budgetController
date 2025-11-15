@@ -308,6 +308,7 @@ public class AppState {
             productLabel = "Ürün";
         }
         recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -329,6 +330,7 @@ public class AppState {
         }
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -353,6 +355,7 @@ public class AppState {
         }
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, productName + " ürününü sildi"));
+        orderLogService.append(order.getId(), historyEntry(user, productName + " ürününü sildi"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -379,6 +382,7 @@ public class AppState {
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
         recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
+        orderLogService.append(order.getId(), historyEntry(user, "masayı temizledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -403,6 +407,7 @@ public class AppState {
             }
         }
         recordHistory(tableNo, order.getId(), historyEntry(user, "siparişi servis etti"));
+        orderLogService.append(order.getId(), historyEntry(user, "siparişi servis etti"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -421,6 +426,7 @@ public class AppState {
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
         recordHistory(tableNo, order.getId(), historyEntry(user, "satış yaptı. Tutar: "
+        orderLogService.append(order.getId(), historyEntry(user, "satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name())));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
