@@ -592,7 +592,7 @@ public class ProductJdbcDAO implements ProductDAO {
                     return true;
                 }
             }
-        } catch (SQLException ignore) {
+        } catch (SQLException | RuntimeException | AbstractMethodError ignore) {
             return false;
         } finally {
             if (close && connection != null) {
