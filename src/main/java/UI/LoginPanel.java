@@ -32,7 +32,7 @@ public class LoginPanel extends JPanel {
         gc.insets = new Insets(4, 4, 4, 4);
         gc.fill = GridBagConstraints.HORIZONTAL;
 
-        JLabel title = new JLabel("Budget Controller");
+        JLabel title = new JLabel("Dağkapı Ciğercisi");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
         gc.gridx = 0; gc.gridy = 0; gc.gridwidth = 2; gc.anchor = GridBagConstraints.CENTER;
         add(title, gc);

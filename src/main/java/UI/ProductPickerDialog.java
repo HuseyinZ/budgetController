@@ -37,7 +37,6 @@ public class ProductPickerDialog extends JDialog {
     private final JToggleButton allButton = new JToggleButton("Tümü");
     private final List<ProductTile> productTiles = new ArrayList<>();
     private final Map<Long, Integer> selectedQuantities = new HashMap<>();
-    private final JButton fullScreenButton = new JButton("Tam ekran");
 
     private Consumer<Selection> onSelect;
     private Long activeCategoryId;
@@ -57,7 +56,7 @@ public class ProductPickerDialog extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
         setResizable(true);
-        Dimension preferredSize = new Dimension(960, 680);
+        Dimension preferredSize = new Dimension(1300, 800);
         setPreferredSize(preferredSize);
         setMinimumSize(preferredSize);
 
@@ -87,8 +86,6 @@ public class ProductPickerDialog extends JDialog {
 
 
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        configureFullScreenButton();
-        rightPanel.add(fullScreenButton);
         container.add(rightPanel, BorderLayout.EAST);
         return container;
     }
@@ -106,9 +103,6 @@ public class ProductPickerDialog extends JDialog {
         button.setPreferredSize(new Dimension(160, 48));
     }
 
-    private void configureFullScreenButton() {
-        fullScreenButton.addActionListener(e -> toggleFullScreen());
-    }
 
     private void populateCategoryButtons(JPanel panel) {
         List<Category> categories;
@@ -161,25 +155,6 @@ public class ProductPickerDialog extends JDialog {
         return panel;
     }
 
-    private void toggleFullScreen() {
-        if (!fullScreen) {
-            windowedBounds = getBounds();
-            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-            setBounds(screenBounds);
-            fullScreen = true;
-            fullScreenButton.setText("Pencereyi küçült");
-        } else {
-            if (windowedBounds != null) {
-                setBounds(windowedBounds);
-            } else {
-                pack();
-            }
-            fullScreen = false;
-            fullScreenButton.setText("Tam ekran");
-        }
-        revalidate();
-        repaint();
-    }
 
     private void loadProducts(Long categoryId) {
         List<Product> products;

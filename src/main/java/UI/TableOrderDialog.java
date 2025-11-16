@@ -42,7 +42,6 @@ public class TableOrderDialog extends JDialog {
     private final JLabel statusLabel = new JLabel(" ");
     private final JButton markServedButton = new JButton("Sipariş hazır");
     private final JButton saleButton = new JButton("Satış yap");
-    private final JButton fullScreenButton = new JButton("Tam ekran");
     private final PropertyChangeListener listener = this::handleStateChange;
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
@@ -61,7 +60,7 @@ public class TableOrderDialog extends JDialog {
         setLayout(new BorderLayout(12, 12));
         setResizable(true);
 
-        Dimension preferredSize = new Dimension(960, 680);
+        Dimension preferredSize = new Dimension(1300, 800);
         setPreferredSize(preferredSize);
         setMinimumSize(preferredSize);
 
@@ -90,8 +89,6 @@ public class TableOrderDialog extends JDialog {
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
         statusPanel.add(statusLabel);
-        configureFullScreenControls();
-        statusPanel.add(fullScreenButton);
         panel.add(statusPanel, BorderLayout.EAST);
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         return panel;
@@ -101,74 +98,6 @@ public class TableOrderDialog extends JDialog {
         this.onReadyListener = l;
     }
 
-    private void configureFullScreenControls() {
-        fullScreenButton.addActionListener(e -> toggleFullScreen());
-
-        addWindowStateListener(e -> {
-            boolean maximized = (e.getNewState() & Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH;
-            if (maximized) {
-                enterFullScreen();
-            } else if (fullScreen) {
-                exitFullScreen();
-            }
-        });
-
-        addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentMoved(ComponentEvent e) {
-                rememberWindowedBounds();
-            }
-
-            @Override
-            public void componentResized(ComponentEvent e) {
-                rememberWindowedBounds();
-            }
-
-            private void rememberWindowedBounds() {
-                if (!fullScreen) {
-                    windowedBounds = getBounds();
-                }
-            }
-        });
-    }
-
-    private void toggleFullScreen() {
-        if (!fullScreen) {
-            enterFullScreen();
-        } else {
-            exitFullScreen();
-        }
-        revalidate();
-        repaint();
-    }
-
-    private void enterFullScreen() {
-        if (fullScreen) {
-            return;
-        }
-        windowedBounds = getBounds();
-        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        setBounds(screenBounds);
-        fullScreen = true;
-        fullScreenButton.setText("Pencereyi küçült");
-        revalidate();
-        repaint();
-    }
-
-    private void exitFullScreen() {
-        if (!fullScreen) {
-            return;
-        }
-        if (windowedBounds != null) {
-            setBounds(windowedBounds);
-        } else {
-            pack();
-        }
-        fullScreen = false;
-        fullScreenButton.setText("Tam ekran");
-        revalidate();
-        repaint();
-    }
     private JComponent buildCenter() {
         JPanel panel = new JPanel(new BorderLayout(12, 12));
 
