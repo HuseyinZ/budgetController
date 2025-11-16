@@ -112,6 +112,7 @@ public class AppState {
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
     private final Map<Long, Deque<OrderLogEntry>> orderHistories = new ConcurrentHashMap<>();
     private final Map<Integer, Long> tableOrderHistoryIndex = new ConcurrentHashMap<>();
+    private final Map<Integer, Deque<OrderLogEntry>> tableHistories = new ConcurrentHashMap<>();
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
     private final AtomicReference<Long> defaultCategoryId = new AtomicReference<>();
@@ -231,13 +232,14 @@ public class AppState {
                     .setScale(2, RoundingMode.HALF_UP);
             status = mapOrderStatus(order.getStatus());
             List<OrderLogEntry> persisted = orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT);
-            history = resolveHistorySnapshot(tableNo, order.getId(), persisted);
+            history = resolveHistorySnapshot(tableNo, persisted);
         } else {
             TableStatus tableStatus = tableService.getByTableNo(tableNo)
                     .map(RestaurantTable::getStatus)
                     .orElse(TableStatus.EMPTY);
             status = mapTableStatus(tableStatus);
             history = resolveHistorySnapshot(tableNo, null, List.of());
+            history = resolveHistorySnapshot(tableNo, List.of());
         }
 
         return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
@@ -309,6 +311,7 @@ public class AppState {
             productLabel = "Ürün";
         }
         recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -330,6 +333,7 @@ public class AppState {
         }
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -354,6 +358,7 @@ public class AppState {
         }
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, productName + " ürününü sildi"));
+        orderLogService.append(order.getId(), historyEntry(user, productName + " ürününü sildi"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -381,6 +386,7 @@ public class AppState {
         orderService.reassignTable(order.getId(), null);
         recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
         clearHistoryForTable(tableNo);
+        orderLogService.append(order.getId(), historyEntry(user, "masayı temizledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -405,6 +411,7 @@ public class AppState {
             }
         }
         recordHistory(tableNo, order.getId(), historyEntry(user, "siparişi servis etti"));
+        orderLogService.append(order.getId(), historyEntry(user, "siparişi servis etti"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -423,8 +430,8 @@ public class AppState {
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
         recordHistory(tableNo, order.getId(), historyEntry(user, "satış yaptı. Tutar: "
+        orderLogService.append(order.getId(), historyEntry(user, "satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name())));
-        clearHistoryForTable(tableNo);
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
         notifySalesChanged();
@@ -796,17 +803,12 @@ public class AppState {
         return total.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private Deque<OrderLogEntry> historyDeque(Long orderId) {
-        return orderHistories.computeIfAbsent(orderId, ignored -> new ArrayDeque<>());
+    private Deque<OrderLogEntry> historyDeque(int tableNo) {
+        return tableHistories.computeIfAbsent(tableNo, ignored -> new ArrayDeque<>());
     }
 
-    private List<OrderLogEntry> resolveHistorySnapshot(int tableNo, Long orderId, List<OrderLogEntry> persisted) {
-        if (orderId == null) {
-            clearHistoryForTable(tableNo);
-            return List.of();
-        }
-        registerActiveOrder(tableNo, orderId);
-        Deque<OrderLogEntry> local = historyDeque(orderId);
+    private List<OrderLogEntry> resolveHistorySnapshot(int tableNo, List<OrderLogEntry> persisted) {
+        Deque<OrderLogEntry> local = historyDeque(tableNo);
         if (persisted != null && !persisted.isEmpty()) {
             local.clear();
             for (OrderLogEntry entry : persisted) {
@@ -820,33 +822,18 @@ public class AppState {
         if (message == null || message.isBlank()) {
             return;
         }
-        if (orderId == null) {
-            return;
-        }
-        registerActiveOrder(tableNo, orderId);
-        Deque<OrderLogEntry> local = historyDeque(orderId);
+        Deque<OrderLogEntry> local = historyDeque(tableNo);
         local.addFirst(new OrderLogEntry(LocalDateTime.now(), message));
         while (local.size() > HISTORY_LIMIT) {
             local.removeLast();
+        }
+        if (orderId == null) {
+            return;
         }
         try {
             orderLogService.append(orderId, message);
         } catch (RuntimeException ex) {
             System.err.println("Sipariş geçmişi veritabanına kaydedilemedi: " + ex.getMessage());
-        }
-    }
-
-    private void registerActiveOrder(int tableNo, Long orderId) {
-        Long previous = tableOrderHistoryIndex.put(tableNo, orderId);
-        if (previous != null && !previous.equals(orderId)) {
-            orderHistories.remove(previous);
-        }
-    }
-
-    private void clearHistoryForTable(int tableNo) {
-        Long previous = tableOrderHistoryIndex.remove(tableNo);
-        if (previous != null) {
-            orderHistories.remove(previous);
         }
     }
 
