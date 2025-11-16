@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +62,10 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     @Override
     public void append(Long orderId, String message) {
+        String normalizedMessage = normalizeMessage(message);
+        if (orderId == null || normalizedMessage == null) {
+            return;
+        }
         if (!ensureSchema()) {
             return;
         }
@@ -74,21 +77,18 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setLong(1, orderId);
                     ps.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                    if (message == null) {
-                        ps.setNull(3, Types.VARCHAR);
-                    } else {
-                        ps.setString(3, message);
-                    }
+                    ps.setString(3, normalizedMessage);
                     ps.executeUpdate();
                 }
-                return;
+                break;
             } catch (SQLException ex) {
                 if (isMissingTable(ex)) {
                     schemaEnsured = false;
-                    if (attempt == 0 && ensureSchema()) {
+                    boolean schemaReady = attempt == 0 && ensureSchema();
+                    if (schemaReady) {
                         continue;
                     }
-                    return;
+                    break;
                 }
                 throw new RuntimeException(ex);
             } finally {
@@ -99,15 +99,18 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     @Override
     public List<OrderLogEntry> findRecentByOrder(Long orderId, int limit) {
+        if (orderId == null || limit <= 0) {
+            return List.of();
+        }
         if (!ensureSchema()) {
             return List.of();
         }
         final String sql = "SELECT event_time, message FROM order_logs WHERE order_id=? ORDER BY event_time ASC, id ASC LIMIT ?";
         for (int attempt = 0; attempt < 2; attempt++) {
-            List<OrderLogEntry> out = new ArrayList<>();
             Connection connection = null;
             try {
                 connection = acquireConnection();
+                List<OrderLogEntry> out = new ArrayList<>();
                 try (PreparedStatement ps = connection.prepareStatement(sql)) {
                     ps.setLong(1, orderId);
                     ps.setInt(2, limit);
@@ -123,10 +126,11 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
             } catch (SQLException ex) {
                 if (isMissingTable(ex)) {
                     schemaEnsured = false;
-                    if (attempt == 0 && ensureSchema()) {
+                    boolean schemaReady = attempt == 0 && ensureSchema();
+                    if (schemaReady) {
                         continue;
                     }
-                    return List.of();
+                    break;
                 }
                 throw new RuntimeException(ex);
             } finally {
@@ -184,7 +188,7 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     order_id BIGINT NOT NULL,
                     event_time DATETIME NOT NULL,
-                    message VARCHAR(512),
+                    message VARCHAR(512) NOT NULL,
                     INDEX idx_order_logs_order (order_id),
                     CONSTRAINT fk_order_logs_order FOREIGN KEY (order_id)
                         REFERENCES orders(id) ON DELETE CASCADE
@@ -193,6 +197,14 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(ddl);
         }
+    }
+
+    private String normalizeMessage(String message) {
+        if (message == null) {
+            return null;
+        }
+        String trimmed = message.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private boolean isMissingTable(SQLException ex) {
