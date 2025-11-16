@@ -105,7 +105,8 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                     while (rs.next()) {
                         Timestamp ts = rs.getTimestamp("event_time");
                         String msg = rs.getString("message");
-                        out.add(new OrderLogEntry(ts == null ? LocalDateTime.now() : ts.toLocalDateTime(), msg));
+                        LocalDateTime timestamp = ts == null ? LocalDateTime.now() : ts.toLocalDateTime();
+                        out.add(OrderLogEntry.fromRaw(timestamp, msg));
                     }
                 }
             }

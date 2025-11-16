@@ -10,6 +10,7 @@ import model.PaymentMethod;
 import model.Product;
 import model.ProductSalesRow;
 import model.RestaurantTable;
+import model.Role;
 import model.TableStatus;
 import model.User;
 import service.CategoryService;
@@ -302,7 +303,7 @@ public class AppState {
         if (productLabel.isEmpty()) {
             productLabel = "Ürün";
         }
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productLabel + " ekledi");
+        appendOrderLog(order.getId(), user, quantity + " x " + productLabel + " ekledi");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -323,7 +324,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productName + " azalttı");
+        appendOrderLog(order.getId(), user, quantity + " x " + productName + " azalttı");
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -347,7 +348,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        appendOrderLog(order.getId(), user, productName + " ürününü sildi");
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -373,7 +374,7 @@ public class AppState {
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
-        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
+        appendOrderLog(order.getId(), user, "masayı temizledi");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -397,7 +398,7 @@ public class AppState {
                 tableService.markTableOccupied(tableId, true);
             }
         }
-        orderLogService.append(order.getId(), actor(user) + " siparişi servis etti");
+        appendOrderLog(order.getId(), user, "siparişi servis etti");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -415,7 +416,7 @@ public class AppState {
                 .setScale(2, RoundingMode.HALF_UP);
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
-        orderLogService.append(order.getId(), actor(user) + " satış yaptı. Tutar: "
+        appendOrderLog(order.getId(), user, "satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name()));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
@@ -786,6 +787,38 @@ public class AppState {
             }
         }
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void appendOrderLog(Long orderId, User user, String detail) {
+        if (orderId == null) {
+            return;
+        }
+        String performer = logActor(user);
+        String normalizedDetail = detail == null ? "" : detail.trim();
+        orderLogService.append(orderId, performer + "|" + normalizedDetail);
+    }
+
+    private String logActor(@Nullable User user) {
+        String actorName = actor(user);
+        String roleLabel = describeRole(user == null ? null : user.getRole());
+        if (roleLabel.isBlank()) {
+            return actorName;
+        }
+        if (actorName == null || actorName.isBlank()) {
+            return roleLabel;
+        }
+        return roleLabel + " " + actorName;
+    }
+
+    private String describeRole(@Nullable Role role) {
+        if (role == null) {
+            return "";
+        }
+        return switch (role) {
+            case GARSON -> "Garson";
+            case KASIYER -> "Kasiyer";
+            case ADMIN -> "Yönetici";
+        };
     }
 
     private String actor(@Nullable User user) {
