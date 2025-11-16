@@ -10,6 +10,7 @@ import model.PaymentMethod;
 import model.Product;
 import model.ProductSalesRow;
 import model.RestaurantTable;
+import model.Role;
 import model.TableStatus;
 import model.User;
 import service.CategoryService;
@@ -799,11 +800,31 @@ public class AppState {
         } else {
             orderLogService.append(orderId, performer + "|" + normalizedDetail);
         }
+        orderLogService.append(orderId, performer + "|" + normalizedDetail);
     }
 
     private String logActor(@Nullable User user) {
         String actorName = actor(user);
         return actorName == null ? "" : actorName.trim();
+        String roleLabel = describeRole(user == null ? null : user.getRole());
+        if (roleLabel.isBlank()) {
+            return actorName;
+        }
+        if (actorName == null || actorName.isBlank()) {
+            return roleLabel;
+        }
+        return roleLabel + " " + actorName;
+    }
+
+    private String describeRole(@Nullable Role role) {
+        if (role == null) {
+            return "";
+        }
+        return switch (role) {
+            case GARSON -> "Garson";
+            case KASIYER -> "Kasiyer";
+            case ADMIN -> "Yönetici";
+        };
     }
 
     private String actor(@Nullable User user) {
