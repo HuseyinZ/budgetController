@@ -20,6 +20,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -43,6 +44,7 @@ public class TableOrderDialog extends JDialog {
     private final JButton saleButton = new JButton("Satış yap");
     private final JButton fullScreenButton = new JButton("Tam ekran");
     private final PropertyChangeListener listener = this::handleStateChange;
+    private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
     private java.util.function.Consumer<Integer> onReadyListener;
@@ -349,8 +351,10 @@ public class TableOrderDialog extends JDialog {
                     currencyFormat.format(line.getLineTotal())
             });
         }
-        String historyText = snapshot.getHistory().stream()
+        List<OrderLogEntry> history = snapshot.getHistory();
+        String historyText = (history == null ? List.<OrderLogEntry>of() : history).stream()
                 .map(this::formatLog)
+                .filter(line -> line != null && !line.isBlank())
                 .collect(Collectors.joining("\n"));
         logArea.setText(historyText);
         logArea.setCaretPosition(logArea.getDocument().getLength());
@@ -362,7 +366,15 @@ public class TableOrderDialog extends JDialog {
         if (entry == null) {
             return "";
         }
-        return entry.formatForDisplay();
+        String timestamp = entry.getTimestamp() == null ? "" : entry.getTimestamp().format(LOG_TIME_FORMATTER);
+        String message = entry.getMessage() == null ? "" : entry.getMessage().trim();
+        if (timestamp.isEmpty()) {
+            return message;
+        }
+        if (message.isEmpty()) {
+            return timestamp;
+        }
+        return timestamp + " - " + message;
     }
 
     private void updateStatus(TableOrderStatus status) {
