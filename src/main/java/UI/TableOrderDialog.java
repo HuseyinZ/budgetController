@@ -357,8 +357,11 @@ public class TableOrderDialog extends JDialog {
                     currencyFormat.format(line.getLineTotal())
             });
         }
-        this.currentOrderId = snapshot.getOrderId();
-        String historyText = buildHistoryText(snapshot);
+        List<OrderLogEntry> history = snapshot.getHistory();
+        String historyText = (history == null ? List.<OrderLogEntry>of() : history).stream()
+                .map(this::formatLog)
+                .filter(line -> line != null && !line.isBlank())
+                .collect(Collectors.joining("\n"));
         logArea.setText(historyText);
         logArea.setCaretPosition(logArea.getDocument().getLength());
         totalLabel.setText("Toplam: " + currencyFormat.format(snapshot.getTotal()));
@@ -370,7 +373,7 @@ public class TableOrderDialog extends JDialog {
             return "";
         }
         String timestamp = entry.getTimestamp() == null ? "" : entry.getTimestamp().format(LOG_TIME_FORMATTER);
-        String message = normalizeLogMessage(entry.getMessage());
+        String message = entry.getMessage() == null ? "" : entry.getMessage().trim();
         if (timestamp.isEmpty()) {
             return message;
         }
@@ -378,53 +381,6 @@ public class TableOrderDialog extends JDialog {
             return timestamp;
         }
         return timestamp + " - " + message;
-    }
-
-    private String buildHistoryText(TableSnapshot snapshot) {
-        List<OrderLogEntry> entries = resolveHistory(snapshot);
-        return entries.stream()
-                .map(this::formatLog)
-                .filter(line -> line != null && !line.isBlank())
-                .collect(Collectors.joining("\n"));
-    }
-
-    private List<OrderLogEntry> resolveHistory(TableSnapshot snapshot) {
-        List<OrderLogEntry> history = snapshot == null ? List.of() : snapshot.getHistory();
-        if ((history == null || history.isEmpty()) && snapshot != null) {
-            Long orderId = snapshot.getOrderId() != null ? snapshot.getOrderId() : currentOrderId;
-            if (orderId != null) {
-                try {
-                    history = appState.getOrderHistory(orderId);
-                } catch (RuntimeException ex) {
-                    System.err.println("Sipariş geçmişi alınamadı: " + ex.getMessage());
-                    history = List.of();
-                }
-            }
-        }
-        return history == null ? List.of() : history;
-    }
-
-    private String normalizeLogMessage(String rawMessage) {
-        if (rawMessage == null) {
-            return "";
-        }
-        String trimmed = rawMessage.trim();
-        if (trimmed.isEmpty()) {
-            return "";
-        }
-        int colonIndex = trimmed.indexOf(':');
-        if (colonIndex < 0) {
-            return trimmed;
-        }
-        String user = trimmed.substring(0, colonIndex).trim();
-        String action = trimmed.substring(colonIndex + 1).trim();
-        if (user.isEmpty()) {
-            return action;
-        }
-        if (action.isEmpty()) {
-            return user;
-        }
-        return user + ": " + action;
     }
 
     private void updateStatus(TableOrderStatus status) {
