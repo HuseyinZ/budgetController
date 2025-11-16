@@ -20,7 +20,6 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -360,8 +359,10 @@ public class TableOrderDialog extends JDialog {
     }
 
     private String formatLog(OrderLogEntry entry) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
-        return entry.getTimestamp().format(formatter) + " - " + entry.getMessage();
+        if (entry == null) {
+            return "";
+        }
+        return entry.formatForDisplay();
     }
 
     private void updateStatus(TableOrderStatus status) {
