@@ -213,10 +213,12 @@ public class AppState {
         TableOrderStatus status = TableOrderStatus.EMPTY;
         List<OrderLine> lines = List.of();
         List<OrderLogEntry> history = List.of();
+        Long orderId = null;
         BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
         if (optOrder.isPresent()) {
             Order order = optOrder.get();
+            orderId = order.getId();
             List<OrderItem> items = orderService.getItemsForOrder(order.getId());
             lines = items.stream()
                     .map(this::toOrderLine)
@@ -234,7 +236,14 @@ public class AppState {
             status = mapTableStatus(tableStatus);
         }
 
-        return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
+        return new TableSnapshot(tableNo, layout.building(), layout.section(), status, orderId, lines, history, total);
+    }
+
+    public synchronized List<OrderLogEntry> getOrderHistory(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            return List.of();
+        }
+        return List.copyOf(orderLogService.getRecentLogs(orderId, HISTORY_LIMIT));
     }
 
     public synchronized BigDecimal getTableTotal(int tableNo) {

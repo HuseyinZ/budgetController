@@ -50,6 +50,7 @@ public class TableOrderDialog extends JDialog {
     private java.util.function.Consumer<Integer> onReadyListener;
     private boolean fullScreen;
     private Rectangle windowedBounds;
+    private Long currentOrderId;
 
     public TableOrderDialog(Window owner, AppState appState, TableSnapshot snapshot, User user) {
         super(owner, "Masa " + snapshot.getTableNo(), ModalityType.APPLICATION_MODAL);
@@ -208,6 +209,7 @@ public class TableOrderDialog extends JDialog {
         dialog.setOnSelect(selection -> {
             if (selection != null) {
                 appState.addItem(tableNo, selection.productId(), selection.quantity(), currentUser);
+                refreshSnapshotAsync();
             }
         });
         dialog.setVisible(true);
@@ -258,6 +260,7 @@ public class TableOrderDialog extends JDialog {
         }
         String product = (String) tableModel.getValueAt(row, 0);
         appState.decreaseItem(tableNo, product, 1, currentUser);
+        refreshSnapshotAsync();
     }
 
     private void removeSelected() {
@@ -270,6 +273,7 @@ public class TableOrderDialog extends JDialog {
         int confirm = JOptionPane.showConfirmDialog(this, product + " ürününü silmek istiyor musunuz?", "Onay", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             appState.removeItem(tableNo, product, currentUser);
+            refreshSnapshotAsync();
         }
     }
 
@@ -277,11 +281,13 @@ public class TableOrderDialog extends JDialog {
         int choice = JOptionPane.showConfirmDialog(this, "Tüm siparişler silinsin mi?", "Onay", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
             appState.clearTable(tableNo, currentUser);
+            refreshSnapshotAsync();
         }
     }
 
     private void markServed() {
         appState.markServed(tableNo, currentUser);
+        refreshSnapshotAsync();
         //dispose();
     }
 
@@ -412,6 +418,10 @@ public class TableOrderDialog extends JDialog {
             markServedButton.setEnabled(status == TableOrderStatus.ORDERED);
             saleButton.setEnabled(status == TableOrderStatus.SERVED || status == TableOrderStatus.ORDERED);
         }
+    }
+
+    private void refreshSnapshotAsync() {
+        SwingUtilities.invokeLater(() -> updateFromSnapshot(appState.snapshot(tableNo)));
     }
 
 }
