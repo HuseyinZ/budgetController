@@ -108,7 +108,7 @@ public class TableOrder {
     }
 
     public void log(String message) {
-        history.addFirst(new OrderLogEntry(LocalDateTime.now(), message));
+        history.addFirst(new OrderLogEntry(LocalDateTime.now(), null, message));
         while (history.size() > HISTORY_LIMIT) {
             history.removeLast();
         }

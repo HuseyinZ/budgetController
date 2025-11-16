@@ -290,7 +290,13 @@ public class TableOrderDialog extends JDialog {
 
     private String formatLog(OrderLogEntry entry) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
-        return entry.getTimestamp().format(formatter) + " - " + entry.getMessage();
+        StringBuilder builder = new StringBuilder(entry.getTimestamp().format(formatter)).append(" - ");
+        String actor = entry.getActor();
+        if (actor != null && !actor.isBlank()) {
+            builder.append(actor).append(' ');
+        }
+        builder.append(entry.getMessage());
+        return builder.toString();
     }
 
     private void updateStatus(TableOrderStatus status) {
