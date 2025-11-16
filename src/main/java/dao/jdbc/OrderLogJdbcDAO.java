@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDateTime;
@@ -21,6 +22,7 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
     private final Connection externalConnection;
     private final Object schemaLock = new Object();
     private volatile boolean tableMissing;
+    private volatile boolean schemaEnsured;
 
     public OrderLogJdbcDAO() {
         this(Db.getDataSource(), null);
@@ -61,80 +63,136 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
 
     @Override
     public void append(Long orderId, String message) {
-        if (tableMissing) {
+        if (!ensureSchema()) {
             return;
         }
         final String sql = "INSERT INTO order_logs (order_id, event_time, message) VALUES (?,?,?)";
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setLong(1, orderId);
-                ps.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                if (message == null) {
-                    ps.setNull(3, Types.VARCHAR);
-                } else {
-                    ps.setString(3, message);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Connection connection = null;
+            try {
+                connection = acquireConnection();
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setLong(1, orderId);
+                    ps.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                    if (message == null) {
+                        ps.setNull(3, Types.VARCHAR);
+                    } else {
+                        ps.setString(3, message);
+                    }
+                    ps.executeUpdate();
                 }
-                ps.executeUpdate();
-            }
-        } catch (SQLException ex) {
-            if (handleMissingTable(ex)) {
                 return;
+            } catch (SQLException ex) {
+                if (isMissingTable(ex)) {
+                    schemaEnsured = false;
+                    if (attempt == 0 && ensureSchema()) {
+                        continue;
+                    }
+                    return;
+                }
+                throw new RuntimeException(ex);
+            } finally {
+                close(connection);
             }
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
         }
     }
 
     @Override
     public List<OrderLogEntry> findRecentByOrder(Long orderId, int limit) {
-        if (tableMissing) {
+        if (!ensureSchema()) {
             return List.of();
         }
-        final String sql = "SELECT event_time, message FROM order_logs WHERE order_id=? ORDER BY event_time DESC, id DESC LIMIT ?";
-        List<OrderLogEntry> out = new ArrayList<>();
-        Connection connection = null;
-        try {
-            connection = acquireConnection();
-            try (PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setLong(1, orderId);
-                ps.setInt(2, limit);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        Timestamp ts = rs.getTimestamp("event_time");
-                        String msg = rs.getString("message");
-                        out.add(new OrderLogEntry(ts == null ? LocalDateTime.now() : ts.toLocalDateTime(), msg));
+        final String sql = "SELECT event_time, message FROM order_logs WHERE order_id=? ORDER BY event_time ASC, id ASC LIMIT ?";
+        for (int attempt = 0; attempt < 2; attempt++) {
+            List<OrderLogEntry> out = new ArrayList<>();
+            Connection connection = null;
+            try {
+                connection = acquireConnection();
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setLong(1, orderId);
+                    ps.setInt(2, limit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            Timestamp ts = rs.getTimestamp("event_time");
+                            String msg = rs.getString("message");
+                            out.add(new OrderLogEntry(ts == null ? LocalDateTime.now() : ts.toLocalDateTime(), msg));
+                        }
                     }
                 }
+                return out;
+            } catch (SQLException ex) {
+                if (isMissingTable(ex)) {
+                    schemaEnsured = false;
+                    if (attempt == 0 && ensureSchema()) {
+                        continue;
+                    }
+                    return List.of();
+                }
+                throw new RuntimeException(ex);
+            } finally {
+                close(connection);
             }
-        } catch (SQLException ex) {
-            if (handleMissingTable(ex)) {
-                return List.of();
-            }
-
-            throw new RuntimeException(ex);
-        } finally {
-            close(connection);
         }
-        return out;
+        return List.of();
     }
 
-    private boolean handleMissingTable(SQLException ex) {
-        if (isMissingTable(ex)) {
-            if (!tableMissing) {
-                synchronized (schemaLock) {
-                    if (!tableMissing) {
-                        tableMissing = true;
-                        System.err.println("Sipariş geçmişi tablosu (order_logs) bulunamadı. Günlükleme devre dışı bırakıldı. Ayrıntı: "
-                                + ex.getMessage());
-                    }
-                }
-            }
+    private boolean ensureSchema() {
+        if (schemaEnsured) {
             return true;
         }
-        return false;
+        synchronized (schemaLock) {
+            if (schemaEnsured) {
+                return true;
+            }
+            Connection connection = null;
+            try {
+                connection = acquireConnection();
+                if (!tableAvailable(connection)) {
+                    createSchema(connection);
+                }
+                schemaEnsured = true;
+                tableMissing = false;
+                return true;
+            } catch (SQLException ex) {
+                if (!tableMissing) {
+                    tableMissing = true;
+                    System.err.println("Sipariş geçmişi tablosu (order_logs) oluşturulamadı. Ayrıntı: " + ex.getMessage());
+                }
+                return false;
+            } finally {
+                close(connection);
+            }
+        }
+    }
+
+    private boolean tableAvailable(Connection connection) throws SQLException {
+        final String sql = "SELECT 1 FROM order_logs LIMIT 1";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.executeQuery();
+            return true;
+        } catch (SQLException ex) {
+            if (isMissingTable(ex)) {
+                return false;
+            }
+            throw ex;
+        }
+    }
+
+    private void createSchema(Connection connection) throws SQLException {
+        final String ddl = """
+                CREATE TABLE IF NOT EXISTS order_logs (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    order_id BIGINT NOT NULL,
+                    event_time DATETIME NOT NULL,
+                    message VARCHAR(512),
+                    INDEX idx_order_logs_order (order_id),
+                    CONSTRAINT fk_order_logs_order FOREIGN KEY (order_id)
+                        REFERENCES orders(id) ON DELETE CASCADE
+                )
+                """;
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(ddl);
+        }
     }
 
     private boolean isMissingTable(SQLException ex) {
