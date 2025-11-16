@@ -32,9 +32,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +110,8 @@ public class AppState {
     private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
+    private final Map<Long, Deque<OrderLogEntry>> orderHistories = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> tableOrderHistoryIndex = new ConcurrentHashMap<>();
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
     private final AtomicReference<Long> defaultCategoryId = new AtomicReference<>();
@@ -226,12 +230,14 @@ public class AppState {
                     .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(2, RoundingMode.HALF_UP);
             status = mapOrderStatus(order.getStatus());
-            history = List.copyOf(orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT));
+            List<OrderLogEntry> persisted = orderLogService.getRecentLogs(order.getId(), HISTORY_LIMIT);
+            history = resolveHistorySnapshot(tableNo, order.getId(), persisted);
         } else {
             TableStatus tableStatus = tableService.getByTableNo(tableNo)
                     .map(RestaurantTable::getStatus)
                     .orElse(TableStatus.EMPTY);
             status = mapTableStatus(tableStatus);
+            history = resolveHistorySnapshot(tableNo, null, List.of());
         }
 
         return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
@@ -302,7 +308,7 @@ public class AppState {
         if (productLabel.isEmpty()) {
             productLabel = "Ürün";
         }
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productLabel + " ekledi");
+        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -323,7 +329,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productName + " azalttı");
+        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -347,7 +353,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        recordHistory(tableNo, order.getId(), historyEntry(user, productName + " ürününü sildi"));
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -373,7 +379,8 @@ public class AppState {
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
-        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
+        recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
+        clearHistoryForTable(tableNo);
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -397,7 +404,7 @@ public class AppState {
                 tableService.markTableOccupied(tableId, true);
             }
         }
-        orderLogService.append(order.getId(), actor(user) + " siparişi servis etti");
+        recordHistory(tableNo, order.getId(), historyEntry(user, "siparişi servis etti"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -415,8 +422,9 @@ public class AppState {
                 .setScale(2, RoundingMode.HALF_UP);
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
-        orderLogService.append(order.getId(), actor(user) + " satış yaptı. Tutar: "
-                + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name()));
+        recordHistory(tableNo, order.getId(), historyEntry(user, "satış yaptı. Tutar: "
+                + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name())));
+        clearHistoryForTable(tableNo);
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
         notifySalesChanged();
@@ -786,6 +794,70 @@ public class AppState {
             }
         }
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private Deque<OrderLogEntry> historyDeque(Long orderId) {
+        return orderHistories.computeIfAbsent(orderId, ignored -> new ArrayDeque<>());
+    }
+
+    private List<OrderLogEntry> resolveHistorySnapshot(int tableNo, Long orderId, List<OrderLogEntry> persisted) {
+        if (orderId == null) {
+            clearHistoryForTable(tableNo);
+            return List.of();
+        }
+        registerActiveOrder(tableNo, orderId);
+        Deque<OrderLogEntry> local = historyDeque(orderId);
+        if (persisted != null && !persisted.isEmpty()) {
+            local.clear();
+            for (OrderLogEntry entry : persisted) {
+                local.addLast(entry);
+            }
+        }
+        return List.copyOf(local);
+    }
+
+    private void recordHistory(int tableNo, Long orderId, String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        if (orderId == null) {
+            return;
+        }
+        registerActiveOrder(tableNo, orderId);
+        Deque<OrderLogEntry> local = historyDeque(orderId);
+        local.addFirst(new OrderLogEntry(LocalDateTime.now(), message));
+        while (local.size() > HISTORY_LIMIT) {
+            local.removeLast();
+        }
+        try {
+            orderLogService.append(orderId, message);
+        } catch (RuntimeException ex) {
+            System.err.println("Sipariş geçmişi veritabanına kaydedilemedi: " + ex.getMessage());
+        }
+    }
+
+    private void registerActiveOrder(int tableNo, Long orderId) {
+        Long previous = tableOrderHistoryIndex.put(tableNo, orderId);
+        if (previous != null && !previous.equals(orderId)) {
+            orderHistories.remove(previous);
+        }
+    }
+
+    private void clearHistoryForTable(int tableNo) {
+        Long previous = tableOrderHistoryIndex.remove(tableNo);
+        if (previous != null) {
+            orderHistories.remove(previous);
+        }
+    }
+
+    private String historyEntry(User user, String action) {
+        return historyEntry(actor(user), action);
+    }
+
+    private String historyEntry(String actorName, String action) {
+        String performer = (actorName == null || actorName.isBlank()) ? "Sistem" : actorName;
+        String detail = action == null ? "" : action;
+        return performer + OrderLogEntry.ACTOR_SEPARATOR + detail;
     }
 
     private String actor(@Nullable User user) {
