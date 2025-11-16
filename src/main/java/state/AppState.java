@@ -213,10 +213,12 @@ public class AppState {
         TableOrderStatus status = TableOrderStatus.EMPTY;
         List<OrderLine> lines = List.of();
         List<OrderLogEntry> history = List.of();
+        Long orderId = null;
         BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
         if (optOrder.isPresent()) {
             Order order = optOrder.get();
+            orderId = order.getId();
             List<OrderItem> items = orderService.getItemsForOrder(order.getId());
             lines = items.stream()
                     .map(this::toOrderLine)
@@ -234,7 +236,14 @@ public class AppState {
             status = mapTableStatus(tableStatus);
         }
 
-        return new TableSnapshot(tableNo, layout.building(), layout.section(), status, lines, history, total);
+        return new TableSnapshot(tableNo, layout.building(), layout.section(), status, orderId, lines, history, total);
+    }
+
+    public synchronized List<OrderLogEntry> getOrderHistory(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            return List.of();
+        }
+        return List.copyOf(orderLogService.getRecentLogs(orderId, HISTORY_LIMIT));
     }
 
     public synchronized BigDecimal getTableTotal(int tableNo) {
@@ -302,7 +311,7 @@ public class AppState {
         if (productLabel.isEmpty()) {
             productLabel = "Ürün";
         }
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productLabel + " ekledi");
+        appendOrderLog(order.getId(), user, quantity + " x " + productLabel + " ekledi");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -323,7 +332,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + quantity + " x " + productName + " azalttı");
+        appendOrderLog(order.getId(), user, quantity + " x " + productName + " azalttı");
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -347,7 +356,7 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        orderLogService.append(order.getId(), actor(user) + " " + productName + " ürününü sildi");
+        appendOrderLog(order.getId(), user, productName + " ürününü sildi");
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
         }
@@ -373,7 +382,7 @@ public class AppState {
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
-        orderLogService.append(order.getId(), actor(user) + " masayı temizledi");
+        appendOrderLog(order.getId(), user, "masayı temizledi");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -397,7 +406,7 @@ public class AppState {
                 tableService.markTableOccupied(tableId, true);
             }
         }
-        orderLogService.append(order.getId(), actor(user) + " siparişi servis etti");
+        appendOrderLog(order.getId(), user, "siparişi servis etti");
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -415,7 +424,7 @@ public class AppState {
                 .setScale(2, RoundingMode.HALF_UP);
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
-        orderLogService.append(order.getId(), actor(user) + " satış yaptı. Tutar: "
+        appendOrderLog(order.getId(), user, "satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name()));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
@@ -808,6 +817,17 @@ public class AppState {
             return "Sistem";
         }
         return actor(userService.getUserById(userId));
+    }
+
+    private void appendOrderLog(Long orderId, User user, String action) {
+        if (orderId == null || action == null) {
+            return;
+        }
+        String trimmedAction = action.trim();
+        if (trimmedAction.isEmpty()) {
+            return;
+        }
+        orderLogService.append(orderId, actor(user) + ": " + trimmedAction);
     }
 
     private String formatCurrency(BigDecimal value) {

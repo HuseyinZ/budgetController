@@ -20,6 +20,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -43,11 +44,13 @@ public class TableOrderDialog extends JDialog {
     private final JButton saleButton = new JButton("Satış yap");
     private final JButton fullScreenButton = new JButton("Tam ekran");
     private final PropertyChangeListener listener = this::handleStateChange;
+    private static final DateTimeFormatter LOG_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
     private final boolean waiterRole;
     private java.util.function.Consumer<Integer> onReadyListener;
     private boolean fullScreen;
     private Rectangle windowedBounds;
+    private Long currentOrderId;
 
     public TableOrderDialog(Window owner, AppState appState, TableSnapshot snapshot, User user) {
         super(owner, "Masa " + snapshot.getTableNo(), ModalityType.APPLICATION_MODAL);
@@ -206,6 +209,7 @@ public class TableOrderDialog extends JDialog {
         dialog.setOnSelect(selection -> {
             if (selection != null) {
                 appState.addItem(tableNo, selection.productId(), selection.quantity(), currentUser);
+                refreshSnapshotAsync();
             }
         });
         dialog.setVisible(true);
@@ -256,6 +260,7 @@ public class TableOrderDialog extends JDialog {
         }
         String product = (String) tableModel.getValueAt(row, 0);
         appState.decreaseItem(tableNo, product, 1, currentUser);
+        refreshSnapshotAsync();
     }
 
     private void removeSelected() {
@@ -268,6 +273,7 @@ public class TableOrderDialog extends JDialog {
         int confirm = JOptionPane.showConfirmDialog(this, product + " ürününü silmek istiyor musunuz?", "Onay", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             appState.removeItem(tableNo, product, currentUser);
+            refreshSnapshotAsync();
         }
     }
 
@@ -275,11 +281,13 @@ public class TableOrderDialog extends JDialog {
         int choice = JOptionPane.showConfirmDialog(this, "Tüm siparişler silinsin mi?", "Onay", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
             appState.clearTable(tableNo, currentUser);
+            refreshSnapshotAsync();
         }
     }
 
     private void markServed() {
         appState.markServed(tableNo, currentUser);
+        refreshSnapshotAsync();
         //dispose();
     }
 
@@ -349,9 +357,8 @@ public class TableOrderDialog extends JDialog {
                     currencyFormat.format(line.getLineTotal())
             });
         }
-        String historyText = snapshot.getHistory().stream()
-                .map(this::formatLog)
-                .collect(Collectors.joining("\n"));
+        this.currentOrderId = snapshot.getOrderId();
+        String historyText = buildHistoryText(snapshot);
         logArea.setText(historyText);
         logArea.setCaretPosition(logArea.getDocument().getLength());
         totalLabel.setText("Toplam: " + currencyFormat.format(snapshot.getTotal()));
@@ -362,7 +369,62 @@ public class TableOrderDialog extends JDialog {
         if (entry == null) {
             return "";
         }
-        return entry.formatForDisplay();
+        String timestamp = entry.getTimestamp() == null ? "" : entry.getTimestamp().format(LOG_TIME_FORMATTER);
+        String message = normalizeLogMessage(entry.getMessage());
+        if (timestamp.isEmpty()) {
+            return message;
+        }
+        if (message.isEmpty()) {
+            return timestamp;
+        }
+        return timestamp + " - " + message;
+    }
+
+    private String buildHistoryText(TableSnapshot snapshot) {
+        List<OrderLogEntry> entries = resolveHistory(snapshot);
+        return entries.stream()
+                .map(this::formatLog)
+                .filter(line -> line != null && !line.isBlank())
+                .collect(Collectors.joining("\n"));
+    }
+
+    private List<OrderLogEntry> resolveHistory(TableSnapshot snapshot) {
+        List<OrderLogEntry> history = snapshot == null ? List.of() : snapshot.getHistory();
+        if ((history == null || history.isEmpty()) && snapshot != null) {
+            Long orderId = snapshot.getOrderId() != null ? snapshot.getOrderId() : currentOrderId;
+            if (orderId != null) {
+                try {
+                    history = appState.getOrderHistory(orderId);
+                } catch (RuntimeException ex) {
+                    System.err.println("Sipariş geçmişi alınamadı: " + ex.getMessage());
+                    history = List.of();
+                }
+            }
+        }
+        return history == null ? List.of() : history;
+    }
+
+    private String normalizeLogMessage(String rawMessage) {
+        if (rawMessage == null) {
+            return "";
+        }
+        String trimmed = rawMessage.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        int colonIndex = trimmed.indexOf(':');
+        if (colonIndex < 0) {
+            return trimmed;
+        }
+        String user = trimmed.substring(0, colonIndex).trim();
+        String action = trimmed.substring(colonIndex + 1).trim();
+        if (user.isEmpty()) {
+            return action;
+        }
+        if (action.isEmpty()) {
+            return user;
+        }
+        return user + ": " + action;
     }
 
     private void updateStatus(TableOrderStatus status) {
@@ -400,6 +462,10 @@ public class TableOrderDialog extends JDialog {
             markServedButton.setEnabled(status == TableOrderStatus.ORDERED);
             saleButton.setEnabled(status == TableOrderStatus.SERVED || status == TableOrderStatus.ORDERED);
         }
+    }
+
+    private void refreshSnapshotAsync() {
+        SwingUtilities.invokeLater(() -> updateFromSnapshot(appState.snapshot(tableNo)));
     }
 
 }
