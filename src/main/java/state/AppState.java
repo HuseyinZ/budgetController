@@ -110,8 +110,6 @@ public class AppState {
     private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
-    private final Map<Long, Deque<OrderLogEntry>> orderHistories = new ConcurrentHashMap<>();
-    private final Map<Integer, Long> tableOrderHistoryIndex = new ConcurrentHashMap<>();
     private final Map<Integer, Deque<OrderLogEntry>> tableHistories = new ConcurrentHashMap<>();
     private final AtomicReference<SalesSignature> salesSignature = new AtomicReference<>(SalesSignature.empty());
     private final AtomicReference<ExpensesSignature> expensesSignature = new AtomicReference<>(ExpensesSignature.empty());
@@ -238,7 +236,6 @@ public class AppState {
                     .map(RestaurantTable::getStatus)
                     .orElse(TableStatus.EMPTY);
             status = mapTableStatus(tableStatus);
-            history = resolveHistorySnapshot(tableNo, null, List.of());
             history = resolveHistorySnapshot(tableNo, List.of());
         }
 
@@ -385,7 +382,6 @@ public class AppState {
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
         recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
-        clearHistoryForTable(tableNo);
         orderLogService.append(order.getId(), historyEntry(user, "masayı temizledi"));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
