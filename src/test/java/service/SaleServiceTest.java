@@ -115,6 +115,7 @@ class SaleServiceTest {
     }
 
     private static class StubUserDAO implements UserDAO {
+
         private final User user;
 
         StubUserDAO(User user) {
@@ -127,16 +128,32 @@ class SaleServiceTest {
         }
 
         @Override
-        public Optional<User> findByUsername(String username) { throw new UnsupportedOperationException(); }
+        public Optional<User> findByUsername(String username) {
+            throw new UnsupportedOperationException();
+        }
+
         @Override
-        public Long create(User e) { throw new UnsupportedOperationException(); }
+        public Long create(User e) {
+            throw new UnsupportedOperationException();
+        }
+
         @Override
         public void update(User e) { }
+
         @Override
         public void deleteById(Long id) { }
+
         @Override
-        public List<User> findAll(int offset, int limit) { return List.of(); }
+        public List<User> findAll(int offset, int limit) {
+            return List.of();
+        }
+
         @Override
         public void updateRole(Long userId, Role role) { }
+
+        @Override
+        public long countByRole(Role role) {
+            return 0;
+        }
     }
 }

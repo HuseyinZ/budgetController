@@ -21,9 +21,22 @@ import service.ProductService;
 import service.ReportsService;
 import service.RestaurantTableService;
 import service.UserService;
+import service.print.PrintingService;
+import dao.UserAreaPermissionDAO;
+import dao.jdbc.UserAreaPermissionJdbcDAO;
+import dao.KitchenPrinterDAO;
+import dao.CategoryPrinterRouteDAO;
+import dao.jdbc.KitchenPrinterJdbcDAO;
+import dao.jdbc.CategoryPrinterRouteJdbcDAO;
+import model.KitchenPrinter;
+import model.RefundLog;
+import model.Role;
+import model.UserAreaPermission;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -50,22 +63,41 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public class AppState {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AppState.class);
+
     public static final String EVENT_TABLES = "tables";
     public static final String EVENT_SALES = "sales";
     public static final String EVENT_EXPENSES = "expenses";
     public static final String EVENT_PRODUCTS = "products";
+    public static final String EVENT_CATEGORIES = "categories";
     private static final int HISTORY_LIMIT = 50;
     private static final String DEFAULT_CATEGORY_NAME = "Genel";
 
+    /**
+     * Restoran düzeni: Bina → Kat → Salon → Masa hiyerarşisi.
+     *
+     * <p><b>Geriye uyumluluk:</b> Eski 3 seviyeli yapı (Bina + Section + Masa)
+     * için {@code salon} parametresiz constructor kullanılabilir; bu durumda
+     * {@link #getSalon()} boş döner ve UI tek seviyeli (sadece kat → masa) gösterir.
+     */
     public static final class AreaDefinition {
         private final String building;
-        private final String section;
+        private final String section;   // "Kat" anlamına gelir (örn. "1. Kat", "Bahçe")
+        private final String salon;     // Opsiyonel — kat içindeki alt salon (örn. "1. Salon")
         private final int startTableNo;
         private final int tableCount;
 
+        /** 3 seviyeli (geriye uyum): Bina + Kat + Masa. Salon boş. */
         public AreaDefinition(String building, String section, int startTableNo, int tableCount) {
-            this.building = building;
-            this.section = section;
+            this(building, section, "", startTableNo, tableCount);
+        }
+
+        /** 4 seviyeli: Bina + Kat + Salon + Masa. */
+        public AreaDefinition(String building, String section, String salon, int startTableNo, int tableCount) {
+            this.building = building == null ? "" : building;
+            this.section = section == null ? "" : section;
+            this.salon = salon == null ? "" : salon;
             this.startTableNo = startTableNo;
             this.tableCount = tableCount;
         }
@@ -74,8 +106,18 @@ public class AppState {
             return building;
         }
 
+        /** "Kat" karşılığı. UI'da bu seviye üst sıradaki butonlardır. */
         public String getSection() {
             return section;
+        }
+
+        /** Opsiyonel salon adı (örn. "1. Salon"). Boş string ise kat tek salonlu sayılır. */
+        public String getSalon() {
+            return salon;
+        }
+
+        public boolean hasSalon() {
+            return salon != null && !salon.isBlank();
         }
 
         public List<Integer> getTableNumbers() {
@@ -106,6 +148,10 @@ public class AppState {
     private final ExpenseService expenseService;
     private final OrderLogService orderLogService;
     private final ReportsService reportsService;
+    private final UserAreaPermissionDAO areaPermissionDAO = new UserAreaPermissionJdbcDAO();
+    private final KitchenPrinterDAO kitchenPrinterDAO = new KitchenPrinterJdbcDAO();
+    private final CategoryPrinterRouteDAO categoryRouteDAO = new CategoryPrinterRouteJdbcDAO();
+    private final dao.RefundLogDAO refundLogDAO = new dao.jdbc.RefundLogJdbcDAO();
 
     private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
@@ -142,16 +188,131 @@ public class AppState {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> poller.shutdownNow(), "app-state-poller-shutdown"));
     }
 
+    /**
+     * Masa düzenini yükler.
+     *
+     * <p>Yükleme öncelik sırası:
+     * <ol>
+     *   <li><code>~/.budget/restaurant-layout.properties</code>  (kullanıcı override'ı)</li>
+     *   <li>Classpath: <code>/restaurant-layout.properties</code> (JAR içindeki varsayılan)</li>
+     *   <li>Hardcoded fallback (her iki dosya da yoksa)</li>
+     * </ol>
+     *
+     * <p>Restoran sahibi {@code restaurant-layout.properties} dosyasını
+     * düzenleyerek bina/salon/masa numaralarını değiştirebilir. Format
+     * için dosyanın başındaki yorumlara bakın.
+     */
     private List<AreaDefinition> createDefaultAreas() {
+        java.util.Properties props = new java.util.Properties();
+        boolean loaded = false;
+
+        // 1) Kullanıcı override'ı
+        java.nio.file.Path userFile = java.nio.file.Path.of(
+                System.getProperty("user.home"), ".budget", "restaurant-layout.properties");
+        if (java.nio.file.Files.exists(userFile)) {
+            try (java.io.InputStream in = java.nio.file.Files.newInputStream(userFile)) {
+                props.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+                loaded = true;
+                LOG.info("Masa düzeni yüklendi: {}", userFile);
+            } catch (java.io.IOException ex) {
+                LOG.warn("restaurant-layout.properties okunamadı: " + ex.getMessage());
+            }
+        }
+
+        // 2) Classpath default
+        if (!loaded) {
+            try (java.io.InputStream in =
+                         AppState.class.getResourceAsStream("/restaurant-layout.properties")) {
+                if (in != null) {
+                    props.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+                    loaded = true;
+                }
+            } catch (java.io.IOException ex) {
+                LOG.warn("Classpath layout okunamadı: " + ex.getMessage());
+            }
+        }
+
+        // 3) Hardcoded fallback (her ikisi de yoksa)
+        if (!loaded || props.isEmpty()) {
+            LOG.warn("UYARI: restaurant-layout.properties bulunamadı; varsayılan kullanılacak.");
+            List<AreaDefinition> fallback = new ArrayList<>();
+            // 1. Bina — 3 kat, her katta 2 salon (5'er masa)
+            fallback.add(new AreaDefinition("1. Bina", "1. Kat", "1. Salon", 101, 5));
+            fallback.add(new AreaDefinition("1. Bina", "1. Kat", "2. Salon", 106, 5));
+            fallback.add(new AreaDefinition("1. Bina", "2. Kat", "1. Salon", 111, 5));
+            fallback.add(new AreaDefinition("1. Bina", "2. Kat", "2. Salon", 116, 5));
+            fallback.add(new AreaDefinition("1. Bina", "3. Kat", "1. Salon", 121, 5));
+            fallback.add(new AreaDefinition("1. Bina", "3. Kat", "2. Salon", 126, 5));
+            // 2. Bina — 3 kat, her katta 2 salon
+            fallback.add(new AreaDefinition("2. Bina", "1. Kat", "1. Salon", 201, 5));
+            fallback.add(new AreaDefinition("2. Bina", "1. Kat", "2. Salon", 206, 5));
+            fallback.add(new AreaDefinition("2. Bina", "2. Kat", "1. Salon", 211, 5));
+            fallback.add(new AreaDefinition("2. Bina", "2. Kat", "2. Salon", 216, 5));
+            fallback.add(new AreaDefinition("2. Bina", "3. Kat", "1. Salon", 221, 5));
+            fallback.add(new AreaDefinition("2. Bina", "3. Kat", "2. Salon", 226, 5));
+            // 3. Bina — açık alan, tek katlı, tek salonlu
+            fallback.add(new AreaDefinition("3. Bina", "Bahçe",  "",         301, 10));
+            return Collections.unmodifiableList(fallback);
+        }
+
+        return Collections.unmodifiableList(parseAreas(props));
+    }
+
+    /** Properties → AreaDefinition listesi. area.<N>.* anahtarları sıralı okunur. */
+    private List<AreaDefinition> parseAreas(java.util.Properties props) {
+        // Önce hangi N indeks numaralarının var olduğunu çıkar
+        java.util.SortedSet<Integer> indexes = new java.util.TreeSet<>();
+        for (Object key : props.keySet()) {
+            String k = key.toString();
+            if (!k.startsWith("area.")) continue;
+            int firstDot = k.indexOf('.');
+            int secondDot = k.indexOf('.', firstDot + 1);
+            if (secondDot < 0) continue;
+            String numStr = k.substring(firstDot + 1, secondDot);
+            try {
+                indexes.add(Integer.parseInt(numStr));
+            } catch (NumberFormatException ignore) {}
+        }
+
         List<AreaDefinition> defs = new ArrayList<>();
-        defs.add(new AreaDefinition("1. Bina", "1. Kat", 101, 10));
-        defs.add(new AreaDefinition("1. Bina", "2. Kat", 111, 10));
-        defs.add(new AreaDefinition("1. Bina", "3. Kat", 121, 10));
-        defs.add(new AreaDefinition("2. Bina", "1. Kat", 201, 10));
-        defs.add(new AreaDefinition("2. Bina", "2. Kat", 211, 10));
-        defs.add(new AreaDefinition("2. Bina", "3. Kat", 221, 10));
-        defs.add(new AreaDefinition("3. Bina", "Bahçe", 301, 10));
-        return Collections.unmodifiableList(defs);
+        for (Integer idx : indexes) {
+            String prefix = "area." + idx + ".";
+            String building = trim(props.getProperty(prefix + "building"));
+            // Eski sürüm "section", yeni sürüm "floor" — ikisini de destekle (floor öncelikli)
+            String section  = trim(props.getProperty(prefix + "floor"));
+            if (section.isEmpty()) {
+                section = trim(props.getProperty(prefix + "section"));
+            }
+            String salon    = trim(props.getProperty(prefix + "salon"));
+            String startStr = trim(props.getProperty(prefix + "startTableNo"));
+            String countStr = trim(props.getProperty(prefix + "tableCount"));
+            if (building.isEmpty() || section.isEmpty() || startStr.isEmpty() || countStr.isEmpty()) {
+                LOG.warn("UYARI: area." + idx + " eksik alan, atlanıyor.");
+                continue;
+            }
+            int startTableNo;
+            int tableCount;
+            try {
+                startTableNo = Integer.parseInt(startStr);
+                tableCount = Integer.parseInt(countStr);
+            } catch (NumberFormatException ex) {
+                LOG.warn("UYARI: area." + idx + " sayısal hata, atlanıyor: " + ex.getMessage());
+                continue;
+            }
+            if (tableCount <= 0 || startTableNo <= 0) {
+                LOG.warn("UYARI: area." + idx + " geçersiz değerler, atlanıyor.");
+                continue;
+            }
+            defs.add(new AreaDefinition(building, section, salon, startTableNo, tableCount));
+        }
+        if (defs.isEmpty()) {
+            LOG.warn("UYARI: restaurant-layout.properties'de geçerli area yok.");
+        }
+        return defs;
+    }
+
+    private static String trim(String s) {
+        return s == null ? "" : s.trim();
     }
 
     private void buildLayouts() {
@@ -167,7 +328,7 @@ public class AppState {
             try {
                 ensureTableExists(tableNo);
             } catch (RuntimeException ex) {
-                System.err.println("Masa senkronizasyonu başarısız: " + tableNo + " - " + ex.getMessage());
+                LOG.warn("Masa senkronizasyonu başarısız: " + tableNo + " - " + ex.getMessage());
             }
         }
     }
@@ -180,11 +341,28 @@ public class AppState {
         return filterAndSortProducts(productService.getAllProducts());
     }
 
+    /**
+     * Tüm ürünleri (pasif/tükendi dahil) döner. Admin/Ürünler paneli ve
+     * Garson menüsü (ProductPicker) bunu kullanır — pasifler gri görünüp
+     * sipariş edilemese de ekranda yer alır.
+     */
+    public synchronized List<Product> getAllProductsIncludingInactive() {
+        return filterAndSortProductsAll(productService.getAllProducts());
+    }
+
     public synchronized List<Product> getProductsByCategoryName(String categoryName) {
         if (categoryName == null || categoryName.isBlank()) {
             return getAvailableProducts();
         }
         return filterAndSortProducts(productService.getProductsByCategoryName(categoryName));
+    }
+
+    /** Kategoriye göre tüm ürünler (pasif dahil) — ProductPicker için. */
+    public synchronized List<Product> getProductsByCategoryNameIncludingInactive(String categoryName) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return getAllProductsIncludingInactive();
+        }
+        return filterAndSortProductsAll(productService.getProductsByCategoryName(categoryName));
     }
 
     public synchronized Long createProduct(Product product) {
@@ -198,8 +376,167 @@ public class AppState {
         notifyProductsChanged();
     }
 
+    public synchronized void deleteProduct(Long productId) {
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("Geçersiz ürün ID");
+        }
+        productService.deleteProduct(productId);
+        notifyProductsChanged();
+    }
+
+    /**
+     * Bir ürünün "tükendi/stokta" durumunu değiştirir.
+     * <p>Pasif (active=false) ürünler garson menüsünde gri/disabled görünür
+     * ve sipariş edilemez. Admin/Aşçı menüden tek tıkla "tükendi" diyebilir.
+     */
+    public synchronized void setProductActive(Long productId, boolean active) {
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("Geçersiz ürün ID");
+        }
+        Product product = productService.getProductById(productId);
+        if (product == null) {
+            throw new IllegalArgumentException("Ürün bulunamadı: " + productId);
+        }
+        product.setActive(active);
+        productService.updateProduct(product);
+        notifyProductsChanged();
+    }
+
     public synchronized List<Category> getAllCategories() {
         return categoryService.getAllCategories();
+    }
+
+    // ============================================================
+    //   Kategori → Mutfak Yazıcısı Eşleştirme
+    // ============================================================
+
+    /** Tüm aktif mutfak yazıcılarını listeler (UI'da checkbox satırları için). */
+    public List<KitchenPrinter> getAllKitchenPrinters() {
+        return kitchenPrinterDAO.findActive();
+    }
+
+    /** Bir kategori için eşleştirilmiş yazıcı id'lerini döner. */
+    public List<Integer> getPrinterIdsForCategory(Long categoryId) {
+        if (categoryId == null) return List.of();
+        return categoryRouteDAO.findPrinterIdsByCategory(categoryId);
+    }
+
+    /**
+     * Bir kategorinin yazıcı atamalarını yeniler. Eski tüm atamalar silinir,
+     * verilen yazıcı id'lerinin tümü eklenir.
+     */
+    public synchronized void replaceCategoryRoutes(Long categoryId, java.util.Set<Integer> printerIds) {
+        if (categoryId == null) {
+            throw new IllegalArgumentException("Kategori boş olamaz");
+        }
+        categoryRouteDAO.deleteByCategory(categoryId);
+        if (printerIds == null || printerIds.isEmpty()) return;
+        for (Integer pid : printerIds) {
+            if (pid == null || pid <= 0) continue;
+            categoryRouteDAO.link(categoryId, pid);
+        }
+    }
+
+    // ============================================================
+    //   Garson Alan Yetkilendirmesi (V2026_05_17c)
+    // ============================================================
+
+    /**
+     * Tüm tanımlı alanlar (bina + salon eşsiz çiftleri) — yetkilendirme
+     * UI'sında checkbox listesi oluşturmak için.
+     */
+    public List<AreaDefinition> getAllAreas() {
+        return new ArrayList<>(areas);
+    }
+
+    /**
+     * Bir kullanıcının erişebileceği alanları döner.
+     * <ul>
+     *   <li>ADMIN veya KASIYER → tüm areas (filtresiz).</li>
+     *   <li>GARSON → user_area_permissions tablosundaki çiftler.</li>
+     *   <li>İzin atanmamış garson → boş liste (hiçbir kat görmez — admin atayana kadar).</li>
+     * </ul>
+     */
+    public List<AreaDefinition> getAccessibleAreas(User user) {
+        if (user == null) return List.of();
+        Role role = user.getRole();
+        if (role == Role.ADMIN || role == Role.KASIYER) {
+            return new ArrayList<>(areas);
+        }
+        // GARSON
+        java.util.Set<String> allowed = getAccessibleAreaKeys(user);
+        if (allowed.isEmpty()) return List.of();
+        List<AreaDefinition> out = new ArrayList<>();
+        for (AreaDefinition a : areas) {
+            if (allowed.contains(areaKey(a.getBuilding(), a.getSection()))) {
+                out.add(a);
+            }
+        }
+        return out;
+    }
+
+    /** Erişim anahtarı seti (UI tablo filtresi için hızlı kontrol). */
+    public java.util.Set<String> getAccessibleAreaKeys(User user) {
+        if (user == null) return java.util.Set.of();
+        Role role = user.getRole();
+        if (role == Role.ADMIN || role == Role.KASIYER) {
+            java.util.Set<String> all = new java.util.HashSet<>();
+            for (AreaDefinition a : areas) {
+                all.add(areaKey(a.getBuilding(), a.getSection()));
+            }
+            return all;
+        }
+        // GARSON — DB'den oku
+        List<UserAreaPermission> perms = areaPermissionDAO.findByUserId(user.getId());
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (UserAreaPermission p : perms) {
+            out.add(areaKey(p.getBuilding(), p.getSection()));
+        }
+        return out;
+    }
+
+    /** UI: Belirli garsonun mevcut yetkilerini döner (admin paneli için). */
+    public List<UserAreaPermission> getPermissionsFor(Long userId) {
+        if (userId == null) return List.of();
+        return areaPermissionDAO.findByUserId(userId);
+    }
+
+    /**
+     * Bir garsonun yetkilerini yeniler. Önce tüm eskileri siler, sonra
+     * verilen anahtarları ekler. Anahtar format: {@code "Bina||Salon"}.
+     */
+    public synchronized void replaceAreaPermissions(Long userId, java.util.Set<String> areaKeys) {
+        if (userId == null || userId <= 0) {
+            throw new IllegalArgumentException("Geçersiz userId");
+        }
+        areaPermissionDAO.deleteAllForUser(userId);
+        if (areaKeys == null || areaKeys.isEmpty()) return;
+        for (String key : areaKeys) {
+            if (key == null) continue;
+            int idx = key.indexOf("||");
+            if (idx < 0) continue;
+            String building = key.substring(0, idx);
+            String section  = key.substring(idx + 2);
+            areaPermissionDAO.grant(userId, building, section);
+        }
+        notifyTableChanged(-1); // tüm masalar yeniden değerlendirilsin
+    }
+
+    /** Salt iç kullanım — area anahtarı üretir. */
+    public static String areaKey(String building, String section) {
+        return (building == null ? "" : building.trim()) + "||"
+                + (section == null ? "" : section.trim());
+    }
+
+    /** Bir masaya (tableNo) bu kullanıcının erişebilip erişemediğini kontrol eder. */
+    public boolean canAccessTable(int tableNo, User user) {
+        if (user == null) return false;
+        Role role = user.getRole();
+        if (role == Role.ADMIN || role == Role.KASIYER) return true;
+        TableLayout layout = layouts.get(tableNo);
+        if (layout == null) return false;
+        java.util.Set<String> allowed = getAccessibleAreaKeys(user);
+        return allowed.contains(areaKey(layout.building(), layout.section()));
     }
 
     public void addPropertyChangeListener(PropertyChangeListener listener) {
@@ -238,7 +575,6 @@ public class AppState {
                     .map(RestaurantTable::getStatus)
                     .orElse(TableStatus.EMPTY);
             status = mapTableStatus(tableStatus);
-            history = resolveHistorySnapshot(tableNo, null, List.of());
             history = resolveHistorySnapshot(tableNo, List.of());
         }
 
@@ -252,6 +588,10 @@ public class AppState {
     public synchronized TableOrderStatus getTableStatus(int tableNo) {
         return snapshot(tableNo).getStatus();
     }
+
+    // ============================================================
+    //   Sipariş İşlemleri (ürün ekle / azalt / sil / temizle)
+    // ============================================================
 
     public synchronized void addItem(int tableNo, Long productId, int quantity, User user) {
         if (productId == null || productId <= 0) {
@@ -267,6 +607,54 @@ public class AppState {
     public synchronized void addItem(int tableNo, String productName, BigDecimal price, int quantity, User user) {
         Product product = ensureProduct(productName, price);
         addItemInternal(tableNo, product, quantity, user);
+    }
+
+    /**
+     * Şiş/birim bazlı ekleme: garson "5 şiş ciğer" diye seçtiğinde kullanılır.
+     * <p>Ürün şiş bazlı (piecesPerPortion>0) değilse {@link #addItem(int, Long, int, User)}
+     * davranışına döner.
+     *
+     * @param pieces toplam şiş/birim sayısı (örn. 5)
+     */
+    public synchronized void addItemByPieces(int tableNo, Long productId, int pieces, User user) {
+        if (productId == null || productId <= 0) {
+            throw new IllegalArgumentException("Geçersiz ürün");
+        }
+        if (pieces <= 0) {
+            throw new IllegalArgumentException("Şiş/birim sayısı 1 veya üzeri olmalı");
+        }
+        Product product = productService.getProductById(productId);
+        if (product == null) {
+            throw new IllegalArgumentException("Ürün bulunamadı: " + productId);
+        }
+        if (!product.isPieceBased()) {
+            // Şiş bazlı değilse normal akış (pieces = quantity)
+            addItemInternal(tableNo, product, pieces, user);
+            return;
+        }
+        addItemInternalPieces(tableNo, product, pieces, user);
+    }
+
+    private void addItemInternalPieces(int tableNo, Product product, int pieces, User user) {
+        Long productId = product.getId();
+        if (productId == null || productId <= 0) {
+            throw new IllegalStateException("Ürün kaydedilmemiş: " + safeProductName(product));
+        }
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId)
+                .orElseGet(() -> orderService.createOrder(tableId, user == null ? null : user.getId()));
+        // Stok yönetimi UI'dan kaldırıldı → virtual restock'a gerek yok.
+        // OrderService overload'ı pieces parametresiyle çağrılır → şiş bazlı fiyat
+        orderService.addItemToOrder(order.getId(), productId, pieces, pieces);
+        orderService.updateOrderStatus(order.getId(), OrderStatus.IN_PROGRESS);
+        orderService.recomputeTotals(order.getId());
+        tableService.markTableOccupied(tableId, true);
+        String label = product.getUnitLabel() == null ? "şiş" : product.getUnitLabel();
+        String desc = pieces + " " + label + " " + safeProductName(product);
+        recordHistory(tableNo, order.getId(), historyEntry(user, desc + " ekledi"));
+        orderLogService.append(order.getId(), historyEntry(user, desc + " ekledi"));
+        refreshTableSignature(tableNo);
+        notifyTableChanged(tableNo);
     }
 
     private void addItemInternal(int tableNo, Product product, int quantity, User user) {
@@ -288,19 +676,12 @@ public class AppState {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId)
                 .orElseGet(() -> orderService.createOrder(tableId, user == null ? null : user.getId()));
-        boolean restockApplied = false;
+        // Stok yönetimi UI'dan kaldırıldı → virtual restock'a gerek yok.
+        // OrderService.addItemToOrder içinde stok azaltması zaten yapılıyor;
+        // CHECK constraint patlarsa ProductJdbcDAO.updateStock clamp ile geçer.
         try {
-            productService.increaseProductStock(productId, quantity, "virtual-restock");
-            restockApplied = true;
             orderService.addItemToOrder(order.getId(), productId, quantity);
         } catch (RuntimeException ex) {
-            if (restockApplied) {
-                try {
-                    productService.decreaseProductStock(productId, quantity);
-                } catch (RuntimeException rollbackEx) {
-                    System.err.println("Ürün stok güncellemesi geri alınamadı: " + rollbackEx.getMessage());
-                }
-            }
             throw ex;
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.IN_PROGRESS);
@@ -317,6 +698,23 @@ public class AppState {
     }
 
     public synchronized void decreaseItem(int tableNo, String productName, int quantity, User user) {
+        decreaseItem(tableNo, productName, quantity, user, null);
+    }
+
+    /**
+     * Bir kalemin adedini azaltır. Audit log için {@code reason} parametresi
+     * alır — refund_log tablosuna yazılır.
+     *
+     * <p><b>Yetki:</b>
+     * <ul>
+     *   <li>Garson: SADECE 'pending' (henüz mutfağa gönderilmemiş) kalemi azaltabilir.</li>
+     *   <li>Admin/Kasiyer: Her zaman izinli.</li>
+     * </ul>
+     *
+     * @param reason iade nedeni — null/boş ise garson için OK, kalem pending ise
+     *               opsiyonel; admin/kasiyer her durumda yazmaya zorlanmalı (UI'da kontrol).
+     */
+    public synchronized void decreaseItem(int tableNo, String productName, int quantity, User user, String reason) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Adet sıfır olamaz");
         }
@@ -327,6 +725,8 @@ public class AppState {
         if (item == null) {
             return;
         }
+        // Yetki kontrolü: garson sadece pending (mutfağa gönderilmemiş) kalemi azaltabilir
+        ensureMayModifyItem(user, item, "kalem azalt");
         orderService.decrementItem(item.getId(), quantity);
         if (item.getProductId() != null) {
             productService.decreaseProductStock(item.getProductId(), quantity);
@@ -334,14 +734,36 @@ public class AppState {
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
         orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
+
+        // Audit log — iade kaydı tut
+        java.math.BigDecimal lineRefund = resolveUnitPrice(item)
+                .multiply(java.math.BigDecimal.valueOf(quantity))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        writeRefundLog(user, RefundLog.ActionType.DECREASE_ITEM,
+                tableNo, order.getId(), productName, quantity, lineRefund, reason);
+
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
-            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+            // Tüm kalemler silindi → siparişi kapat ve masayı boşalt
+            closeEmptyOrderAndFreeTable(tableNo, tableId, order);
         }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
 
     public synchronized void removeItem(int tableNo, String productName, User user) {
+        removeItem(tableNo, productName, user, null);
+    }
+
+    /**
+     * Bir kalemi tamamen siler. Audit log için {@code reason} alır.
+     *
+     * <p><b>Yetki:</b>
+     * <ul>
+     *   <li>Garson: SADECE 'pending' (mutfağa gönderilmemiş) kalemi silebilir.</li>
+     *   <li>Admin/Kasiyer: Her zaman izinli. UI'da reason girilmesi zorunlu.</li>
+     * </ul>
+     */
+    public synchronized void removeItem(int tableNo, String productName, User user, String reason) {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
         if (order == null) {
@@ -351,6 +773,8 @@ public class AppState {
         if (item == null) {
             return;
         }
+        // Yetki kontrolü
+        ensureMayModifyItem(user, item, "kalem sil");
         int qty = item.getQuantity();
         orderService.decrementItem(item.getId(), qty);
         if (item.getProductId() != null && qty > 0) {
@@ -359,14 +783,319 @@ public class AppState {
         orderService.recomputeTotals(order.getId());
         recordHistory(tableNo, order.getId(), historyEntry(user, productName + " ürününü sildi"));
         orderLogService.append(order.getId(), historyEntry(user, productName + " ürününü sildi"));
+
+        // Audit log
+        java.math.BigDecimal refundAmount = resolveUnitPrice(item)
+                .multiply(java.math.BigDecimal.valueOf(Math.max(0, qty)))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        writeRefundLog(user, RefundLog.ActionType.REMOVE_ITEM,
+                tableNo, order.getId(), productName, qty, refundAmount, reason);
+
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
-            orderService.updateOrderStatus(order.getId(), OrderStatus.PENDING);
+            // Son kalem de silindi → siparişi kapat, masayı boşalt
+            closeEmptyOrderAndFreeTable(tableNo, tableId, order);
         }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
 
+    // ============================================================
+    //   Yetki & audit log yardımcıları
+    // ============================================================
+
+    /**
+     * Bir kalemi değiştirme (azalt/sil) yetkisi kontrolü.
+     * <p>Garson sadece pending (mutfağa gönderilmemiş) kalemi değiştirebilir.
+     * Admin/Kasiyer her durumda izinli.
+     *
+     * @throws SecurityException yetkisiz erişimde
+     */
+    private void ensureMayModifyItem(User user, OrderItem item, String actionDesc) {
+        if (user == null) {
+            throw new SecurityException("Kullanıcı bilinmiyor, '" + actionDesc + "' işlemi yapılamaz");
+        }
+        Role role = user.getRole();
+        if (role == Role.ADMIN || role == Role.KASIYER) {
+            return; // serbest
+        }
+        // GARSON
+        if (item == null || item.isPending()) {
+            return; // pending kalem garson tarafından değiştirilebilir
+        }
+        throw new SecurityException(
+                "Bu kalem zaten mutfağa gönderilmiş — '" + actionDesc + "' için Admin/Kasiyer onayı gerekir");
+    }
+
+    /** İade/iptal işlemleri için ADMIN veya KASIYER yetkisi şart. Garson YAPAMAZ. */
+    private void ensureRefundPrivilege(User user, String actionDesc) {
+        if (user == null) {
+            throw new SecurityException("Kullanıcı bilinmiyor, '" + actionDesc + "' yetkisi yok");
+        }
+        Role role = user.getRole();
+        if (role != Role.ADMIN && role != Role.KASIYER) {
+            throw new SecurityException(
+                    "'" + actionDesc + "' işlemi için Admin veya Kasiyer yetkisi gerekir");
+        }
+    }
+
+    /**
+     * refund_log tablosuna bir kayıt yazar — hatalar sessiz loglanır (asıl işlem
+     * geri alınmaz).
+     */
+    private void writeRefundLog(User user, RefundLog.ActionType type, Integer tableNo, Long orderId,
+                                String productName, Integer quantity,
+                                java.math.BigDecimal amount, String reason) {
+        try {
+            RefundLog log = new RefundLog();
+            log.setActionType(type);
+            log.setUserId(user == null ? null : user.getId());
+            log.setUserName(user == null ? null : (user.getFullName() != null && !user.getFullName().isBlank()
+                    ? user.getFullName() : user.getUsername()));
+            log.setTableNo(tableNo);
+            log.setOrderId(orderId);
+            log.setProductName(productName);
+            log.setQuantity(quantity);
+            log.setAmount(amount);
+            log.setReason(reason);
+            refundLogDAO.create(log);
+        } catch (RuntimeException ex) {
+            LOG.warn("Audit log yazılamadı ({}): {}", type, ex.getMessage());
+        }
+    }
+
+    // ============================================================
+    //   Masa transferi
+    // ============================================================
+
+    /**
+     * Bir masadaki açık siparişi başka boş masaya taşır.
+     *
+     * <p>İş kuralları:
+     * <ul>
+     *   <li>Kaynak masada AÇIK bir sipariş olmalı (yoksa hata).</li>
+     *   <li>Hedef masa BOŞ olmalı (açık siparişi varsa hata).</li>
+     *   <li>Garson kullanıcı her iki masaya da erişim yetkisine sahip olmalı.</li>
+     *   <li>Admin/Kasiyer her zaman izinli.</li>
+     * </ul>
+     */
+    public synchronized void transferTable(int fromTableNo, int toTableNo, User user) {
+        if (fromTableNo == toTableNo) {
+            throw new IllegalArgumentException("Kaynak ve hedef masa aynı");
+        }
+        if (user == null) {
+            throw new SecurityException("Kullanıcı bilinmiyor — masa transferi yapılamaz");
+        }
+        // Yetki kontrolü — garson hem kaynak hem hedef masaya erişebilmeli
+        if (!canAccessTable(fromTableNo, user) || !canAccessTable(toTableNo, user)) {
+            throw new SecurityException(
+                    "Bu masalardan en az birinin yetkisi yok (Masa " + fromTableNo
+                    + " → Masa " + toTableNo + ")");
+        }
+
+        Long fromTableId = ensureTableExists(fromTableNo);
+        Long toTableId   = ensureTableExists(toTableNo);
+
+        Order fromOrder = orderService.getOpenOrderByTable(fromTableId).orElse(null);
+        if (fromOrder == null) {
+            throw new IllegalArgumentException("Masa " + fromTableNo + " boş — taşınacak sipariş yok");
+        }
+        Order toOrder = orderService.getOpenOrderByTable(toTableId).orElse(null);
+        if (toOrder != null) {
+            throw new IllegalArgumentException("Masa " + toTableNo + " dolu — önce hedef masayı boşaltın");
+        }
+
+        // Order'ın table_id'sini değiştir
+        orderService.reassignTable(fromOrder.getId(), toTableId);
+        // Eski masayı boşalt, yenisini dolu yap
+        try {
+            tableService.markTableOccupied(fromTableId, false);
+        } catch (RuntimeException ignore) {}
+        try {
+            tableService.markTableOccupied(toTableId, true);
+        } catch (RuntimeException ignore) {}
+
+        String msg = "siparişi Masa " + fromTableNo + " → Masa " + toTableNo + " taşıdı";
+        recordHistory(fromTableNo, fromOrder.getId(), historyEntry(user, msg));
+        recordHistory(toTableNo, fromOrder.getId(), historyEntry(user, msg));
+        orderLogService.append(fromOrder.getId(), historyEntry(user, msg));
+
+        refreshTableSignature(fromTableNo);
+        refreshTableSignature(toTableNo);
+        notifyTableChanged(fromTableNo);
+        notifyTableChanged(toTableNo);
+    }
+
+    /**
+     * Garson/Admin için "boş hedef masa" listesini döner.
+     * Kaynak masa hariç, kullanıcının erişebildiği ve şu an siparişsiz olan masalar.
+     */
+    public synchronized List<Integer> getAvailableTransferTargets(int fromTableNo, User user) {
+        if (user == null) return List.of();
+        List<Integer> result = new ArrayList<>();
+        for (Integer tableNo : layouts.keySet()) {
+            if (tableNo == fromTableNo) continue;
+            if (!canAccessTable(tableNo, user)) continue;
+            Long tableId = tableIds.get(tableNo);
+            if (tableId == null) continue;
+            if (orderService.getOpenOrderByTable(tableId).isPresent()) continue;
+            result.add(tableNo);
+        }
+        Collections.sort(result);
+        return result;
+    }
+
+    // ============================================================
+    //   Masa kilidi (concurrent koruma)
+    // ============================================================
+
+    /**
+     * Bir masaya kim girdi bilgisi. Aynı masaya iki garson aynı anda
+     * girip ayrı kalemler eklerse veri karışır → bu lock ile önleriz.
+     */
+    public static final class TableLock {
+        public final Long userId;
+        public final String userName;
+        public final long acquiredAt;
+        public TableLock(Long userId, String userName, long acquiredAt) {
+            this.userId = userId; this.userName = userName; this.acquiredAt = acquiredAt;
+        }
+    }
+
+    /** Aktif masa kilitleri — in-memory. Restart sonrası temizlenir. */
+    private final java.util.concurrent.ConcurrentHashMap<Integer, TableLock> tableLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** Lock TTL: bu süre boyunca yenileme gelmezse otomatik bırakılır. */
+    private static final long LOCK_TTL_MILLIS = 120_000L;  // 2 dakika
+
+    /**
+     * Bir masayı kilitlemeye çalışır. Başka biri kilitliyse ve TTL dolmadıysa
+     * false döner; başarılıysa true.
+     *
+     * <p>Aynı kullanıcı tekrar lock isterse refresh sayılır (acquiredAt güncellenir).
+     */
+    public boolean acquireTableLock(int tableNo, User user) {
+        if (user == null) return false;
+        long now = System.currentTimeMillis();
+        TableLock existing = tableLocks.get(tableNo);
+        if (existing != null) {
+            // Süresi dolmuşsa kaldır
+            if (now - existing.acquiredAt > LOCK_TTL_MILLIS) {
+                tableLocks.remove(tableNo);
+            } else if (java.util.Objects.equals(existing.userId, user.getId())) {
+                // Aynı kullanıcı → refresh
+                tableLocks.put(tableNo, new TableLock(user.getId(),
+                        nameOf(user), now));
+                return true;
+            } else {
+                // Başkası tutuyor
+                return false;
+            }
+        }
+        tableLocks.put(tableNo, new TableLock(user.getId(), nameOf(user), now));
+        return true;
+    }
+
+    /** Kilidi bırakır (sadece sahibi). */
+    public void releaseTableLock(int tableNo, User user) {
+        if (user == null) return;
+        tableLocks.computeIfPresent(tableNo, (no, lock) ->
+                java.util.Objects.equals(lock.userId, user.getId()) ? null : lock);
+    }
+
+    /** Mevcut kilit bilgisi (null = kilit yok veya süresi dolmuş). */
+    public TableLock getTableLock(int tableNo) {
+        TableLock lock = tableLocks.get(tableNo);
+        if (lock == null) return null;
+        if (System.currentTimeMillis() - lock.acquiredAt > LOCK_TTL_MILLIS) {
+            tableLocks.remove(tableNo);
+            return null;
+        }
+        return lock;
+    }
+
+    private static String nameOf(User u) {
+        if (u == null) return "?";
+        String n = u.getFullName();
+        if (n != null && !n.isBlank()) return n;
+        return u.getUsername() == null ? "?" : u.getUsername();
+    }
+
+    /** İşlem geçmişi panelinde gösterilecek tüm refund kayıtları (en yeni üstte). */
+    public synchronized List<RefundLog> getAllRefundLogs() {
+        try {
+            return refundLogDAO.findAll();
+        } catch (RuntimeException ex) {
+            LOG.warn("Refund log okunamadı: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Tarih aralığına göre refund log filtresi. */
+    public synchronized List<RefundLog> getRefundLogsByDateRange(LocalDate from, LocalDate to) {
+        try {
+            return refundLogDAO.findByDateRange(from, to);
+        } catch (RuntimeException ex) {
+            LOG.warn("Refund log okunamadı: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Bir siparişte hiç kalem kalmadığında çağrılır. Order'ı CANCELLED yapar,
+     * masa atamasını kaldırır ve dining_tables.status'u EMPTY yapar.
+     */
+    private void closeEmptyOrderAndFreeTable(int tableNo, Long tableId, Order order) {
+        try {
+            orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
+            orderService.reassignTable(order.getId(), null);
+        } catch (RuntimeException ignore) {}
+        try {
+            tableService.markTableOccupied(tableId, false);
+        } catch (RuntimeException ignore) {}
+        recordHistory(tableNo, order.getId(),
+                "Sipariş tamamen boşaltıldığı için masa boş duruma alındı");
+    }
+
+    /**
+     * Bir kaleme not / özelleştirme atar.
+     *
+     * @param tableNo masa
+     * @param productName kalemin ürün adı (snapshot)
+     * @param note  boş string → notu temizle; null → işlem iptal
+     */
+    public synchronized void setItemNote(int tableNo, String productName, String note, User user) {
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (order == null) return;
+        OrderItem item = findOrderItem(order.getId(), productName);
+        if (item == null) return;
+
+        orderService.updateItemNote(item.getId(), note);
+        String summary = (note == null || note.isBlank())
+                ? productName + " notu temizlendi"
+                : productName + " notu: \"" + note + "\"";
+        recordHistory(tableNo, order.getId(), historyEntry(user, summary));
+        orderLogService.append(order.getId(), historyEntry(user, summary));
+        refreshTableSignature(tableNo);
+        notifyTableChanged(tableNo);
+    }
+
     public synchronized void clearTable(int tableNo, User user) {
+        clearTable(tableNo, user, null);
+    }
+
+    /**
+     * Masayı tamamen temizler (tüm kalemleri siler, siparişi iptal eder).
+     *
+     * <p><b>Yetki:</b> SADECE Admin veya Kasiyer. Garson çağıramaz.
+     * <p>Audit log'a yazılır.
+     *
+     * @param reason iade nedeni — null/boş olabilir ama UI'da zorunlu tutulmalı.
+     */
+    public synchronized void clearTable(int tableNo, User user, String reason) {
+        // Yetki kontrolü — garson masayı temizleyemez
+        ensureRefundPrivilege(user, "masa temizle");
+
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
         if (order == null) {
@@ -376,6 +1105,14 @@ public class AppState {
             return;
         }
         List<OrderItem> items = orderService.getItemsForOrder(order.getId());
+
+        // Toplam iade tutarı (audit için)
+        java.math.BigDecimal totalRefund = items.stream()
+                .filter(i -> i != null && i.getQuantity() > 0)
+                .map(this::lineTotal)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
         orderService.clearItems(order.getId());
         for (OrderItem item : items) {
             if (item.getProductId() != null && item.getQuantity() > 0) {
@@ -384,9 +1121,16 @@ public class AppState {
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
         orderService.reassignTable(order.getId(), null);
+        // Masa durumunu EMPTY yap
+        try {
+            tableService.markTableOccupied(tableId, false);
+        } catch (RuntimeException ignore) {}
         recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
-        clearHistoryForTable(tableNo);
-        orderLogService.append(order.getId(), historyEntry(user, "masayı temizledi"));
+
+        // Audit log
+        writeRefundLog(user, RefundLog.ActionType.CLEAR_TABLE,
+                tableNo, order.getId(), null, items.size(), totalRefund, reason);
+
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -398,6 +1142,13 @@ public class AppState {
             return;
         }
         orderService.updateOrderStatus(order.getId(), OrderStatus.READY);
+        // "Sipariş hazır" denince bütün pending kalemleri "mutfakta" olarak işaretle
+        // (kullanıcı zaten mutfağa gönderme adımını yapmış varsayılıyor)
+        try {
+            orderService.markAllItemsPrinted(order.getId());
+        } catch (RuntimeException ignored) {
+            // print_count sütunu yoksa sessiz geç
+        }
         if (tableReserveUnsupported) {
             tableService.markTableOccupied(tableId, true);
         } else {
@@ -405,7 +1156,7 @@ public class AppState {
                 tableService.markTableReserved(tableId);
             } catch (RuntimeException ex) {
                 tableReserveUnsupported = true;
-                System.err.println("Masa durumu 'RESERVED' olarak işaretlenemedi. 'OCCUPIED' kullanılacak. Ayrıntı: "
+                LOG.warn("Masa durumu 'RESERVED' olarak işaretlenemedi. 'OCCUPIED' kullanılacak. Ayrıntı: "
                         + ex.getMessage());
                 tableService.markTableOccupied(tableId, true);
             }
@@ -415,6 +1166,123 @@ public class AppState {
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
+
+    /**
+     * Açık siparişin tüm kalemlerini ilgili mutfak yazıcılarına gönderir.
+     *
+     * <p>Bu metod transaction içermez — yalnız ağ G/Ç yapar. Bu yüzden
+     * UI thread'inde çağırmaktan kaçının (Swing'in dışında bir worker'da
+     * tetikleyin) — örn. {@code SwingWorker} ile.
+     *
+     * @param tableNo     masa numarası (uygulamadaki visible number)
+     * @param user        gönderimi yapan kullanıcı (log için)
+     * @param printing    yazıcı servisi (null verilirse sessiz no-op)
+     * @return  mutfak bazında baskı sonuçları (boş liste = yapılacak iş yok)
+     */
+    public List<PrintingService.PrintResult> sendOrderToKitchens(int tableNo,
+                                                                 User user,
+                                                                 PrintingService printing) {
+        Long tableId = tableIds.get(tableNo);
+        if (tableId == null) {
+            return List.of();
+        }
+        Order open = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (open == null) {
+            return List.of();
+        }
+        TableLayout layout = layouts.get(tableNo);
+        String building = layout == null ? "" : safeStr(layout.building());
+        String section  = layout == null ? "" : safeStr(layout.section());
+        String salonName;
+        if (building.isBlank() && section.isBlank())      salonName = "";
+        else if (building.isBlank())                       salonName = section;
+        else if (section.isBlank())                        salonName = building;
+        else                                               salonName = building + " / " + section;
+        List<PrintingService.PrintResult> results =
+                orderService.sendToKitchens(open.getId(), salonName, printing);
+
+        // Log: her mutfak için bir kayıt
+        for (PrintingService.PrintResult r : results) {
+            String msg = "Mutfağa gönderildi (" + (r.target == null ? "?" : r.target.getDisplayName()) + ")"
+                    + (r.success ? "" : " — HATA: " + r.errorMessage);
+            recordHistory(tableNo, open.getId(), historyEntry(user, msg));
+        }
+        // Sesli bildirim — sadece "mutfağa sipariş geldi" tonu
+        boolean anySuccess = results.stream().anyMatch(r -> r.success);
+        if (anySuccess) {
+            service.sound.SoundService.play(service.sound.SoundService.Event.KITCHEN_SENT);
+        }
+        notifyTableChanged(tableNo);
+        return results;
+    }
+
+    private static String safeStr(String s) { return s == null ? "" : s; }
+
+    // ============================================================
+    //   Satış & Ödeme İşlemleri
+    // ============================================================
+
+    /**
+     * Hesap bölme — birden fazla ödeme yöntemiyle aynı siparişi kapatır.
+     *
+     * <p>Her {@code SplitPart} ayrı bir Payment kaydı oluşturur (amount + method).
+     * Toplamların satışın toplamına eşit olması beklenir; ufak farklar (kuruş
+     * yuvarlamasından) tolere edilir.
+     *
+     * <p><b>Yetki:</b> ADMIN veya KASIYER. Garson çağıramaz.
+     */
+    public synchronized void recordSplitSale(int tableNo, User user, List<SplitPart> parts) {
+        ensureRefundPrivilege(user, "hesap böl");
+        if (parts == null || parts.isEmpty()) {
+            throw new IllegalArgumentException("En az 1 ödeme parçası olmalı");
+        }
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (order == null) {
+            throw new IllegalArgumentException("Masa " + tableNo + " açık siparişi yok");
+        }
+        // Toplam tutarı hesapla — sipariş kalemlerinden
+        List<OrderItem> items = orderService.getItemsForOrder(order.getId());
+        java.math.BigDecimal expectedTotal = items.stream()
+                .map(this::lineTotal)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        // Parça toplamı = sipariş toplamı kontrolü
+        java.math.BigDecimal sumParts = parts.stream()
+                .map(SplitPart::amount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (sumParts.subtract(expectedTotal).abs()
+                .compareTo(new java.math.BigDecimal("0.10")) > 0) {
+            throw new IllegalArgumentException(
+                    "Parça toplamları (" + sumParts + ") sipariş toplamına ("
+                    + expectedTotal + ") eşit değil");
+        }
+
+        // Her parça için ayrı Payment kaydı
+        Long cashierId = user.getId();
+        for (SplitPart part : parts) {
+            if (part == null || part.amount() == null || part.method() == null) continue;
+            paymentService.recordPayment(order.getId(), cashierId, part.amount(), part.method());
+        }
+        // Siparişi kapat ve masayı boşalt
+        orderService.updateOrderStatus(order.getId(), OrderStatus.COMPLETED);
+        try {
+            tableService.markTableOccupied(tableId, false);
+        } catch (RuntimeException ignore) {}
+
+        StringBuilder summary = new StringBuilder("hesabı ").append(parts.size())
+                .append(" parça olarak böldü (toplam ").append(formatCurrency(expectedTotal)).append(")");
+        recordHistory(tableNo, order.getId(), historyEntry(user, summary.toString()));
+        refreshTableSignature(tableNo);
+        notifyTableChanged(tableNo);
+        notifySalesChanged();
+    }
+
+    /** Tek hesap parçası — tutar + ödeme yöntemi. */
+    public record SplitPart(java.math.BigDecimal amount, PaymentMethod method) {}
 
     public synchronized void recordSale(int tableNo, PaymentMethod method, User user) {
         Long tableId = ensureTableExists(tableNo);
@@ -430,7 +1298,6 @@ public class AppState {
         Long cashierId = user == null ? null : user.getId();
         orderService.checkoutAndClose(order.getId(), cashierId, method);
         recordHistory(tableNo, order.getId(), historyEntry(user, "satış yaptı. Tutar: "
-        orderLogService.append(order.getId(), historyEntry(user, "satış yaptı. Tutar: "
                 + formatCurrency(total) + ", Yöntem: " + (method == null ? "Belirtilmedi" : method.name())));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
@@ -467,6 +1334,10 @@ public class AppState {
         return sumAmounts(amounts);
     }
 
+    // ============================================================
+    //   Gider İşlemleri
+    // ============================================================
+
     public synchronized void addExpense(BigDecimal amount, String description, LocalDate date, User user) {
         Expense expense = new Expense();
         BigDecimal safeAmount = amount == null ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
@@ -474,6 +1345,38 @@ public class AppState {
         expense.setDescription(description);
         expense.setExpenseDate(date == null ? LocalDate.now() : date);
         expense.setUserId(user == null ? null : user.getId());
+        expenseService.createExpense(expense);
+        notifyExpensesChanged();
+    }
+
+    /**
+     * Kg-bazlı gider ekleme. Toplam tutar = kilo × kgFiyat olarak hesaplanır.
+     * Verilen description'a kg detayı eklenir (örn. "Domates (3 kg × 25 TL/kg)").
+     */
+    public synchronized void addKgBasedExpense(String description,
+                                               BigDecimal quantityKg,
+                                               BigDecimal unitPricePerKg,
+                                               LocalDate date,
+                                               User user) {
+        if (quantityKg == null || quantityKg.signum() <= 0) {
+            throw new IllegalArgumentException("Kilo sıfırdan büyük olmalı");
+        }
+        if (unitPricePerKg == null || unitPricePerKg.signum() < 0) {
+            throw new IllegalArgumentException("Kg fiyatı negatif olamaz");
+        }
+        BigDecimal total = quantityKg.multiply(unitPricePerKg).setScale(2, RoundingMode.HALF_UP);
+        String safeDesc = description == null ? "" : description.trim();
+        if (safeDesc.isEmpty()) safeDesc = "Gider";
+        String enriched = safeDesc + " (" + quantityKg.toPlainString() + " kg × " +
+                unitPricePerKg.toPlainString() + " ₺/kg)";
+
+        Expense expense = new Expense();
+        expense.setAmount(total);
+        expense.setDescription(enriched);
+        expense.setExpenseDate(date == null ? LocalDate.now() : date);
+        expense.setUserId(user == null ? null : user.getId());
+        expense.setQuantityKg(quantityKg);
+        expense.setUnitPricePerKg(unitPricePerKg);
         expenseService.createExpense(expense);
         notifyExpensesChanged();
     }
@@ -600,7 +1503,7 @@ public class AppState {
                     throw new IllegalStateException("Varsayılan kategori oluşturulamadı");
                 }
                 if (!DEFAULT_CATEGORY_NAME.equalsIgnoreCase(optionalName(fallback))) {
-                    System.err.println("Varsayılan kategori '" + DEFAULT_CATEGORY_NAME
+                    LOG.warn("Varsayılan kategori '" + DEFAULT_CATEGORY_NAME
                             + "' bulunamadı. '" + optionalName(fallback) + "' kullanılacak.");
                 }
                 categoryId = fallback.getId();
@@ -654,6 +1557,21 @@ public class AppState {
                 .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
     }
 
+    /**
+     * Pasif (tükendi) ürünler dahil tüm ürünleri sıralar.
+     * Pasifler isim listesinin SONUNA gelir (önce aktifler, sonra tükenenler).
+     */
+    private List<Product> filterAndSortProductsAll(List<Product> products) {
+        Comparator<Product> byActiveThenName = Comparator
+                .comparing(Product::isActive).reversed()      // aktif (true) önce
+                .thenComparing(this::safeProductName, String.CASE_INSENSITIVE_ORDER);
+        return products.stream()
+                .filter(Objects::nonNull)
+                .filter(p -> !safeProductName(p).isEmpty())
+                .sorted(byActiveThenName)
+                .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
+    }
+
 
     private OrderItem findOrderItem(Long orderId, String productName) {
         if (orderId == null || productName == null) {
@@ -676,7 +1594,8 @@ public class AppState {
         }
         BigDecimal unitPrice = resolveUnitPrice(item);
         int qty = Math.max(1, item.getQuantity());
-        return new OrderLine(name, unitPrice, qty);
+        // pending = mutfağa henüz basılmadı (yeni "ek sipariş" kalemi)
+        return new OrderLine(name, unitPrice, qty, item.isPending(), item.getNote());
     }
 
     private BigDecimal lineTotal(OrderItem item) {
@@ -833,7 +1752,7 @@ public class AppState {
         try {
             orderLogService.append(orderId, message);
         } catch (RuntimeException ex) {
-            System.err.println("Sipariş geçmişi veritabanına kaydedilemedi: " + ex.getMessage());
+            LOG.warn("Sipariş geçmişi veritabanına kaydedilemedi: " + ex.getMessage());
         }
     }
 
@@ -880,7 +1799,7 @@ public class AppState {
         try {
             tableSignatures.put(tableNo, captureSignature(tableNo));
         } catch (RuntimeException ex) {
-            System.err.println("Masa durumu güncellenemedi: " + tableNo + " - " + ex.getMessage());
+            LOG.warn("Masa durumu güncellenemedi: " + tableNo + " - " + ex.getMessage());
         }
     }
 
@@ -888,17 +1807,17 @@ public class AppState {
         try {
             pollTables();
         } catch (Exception ex) {
-            ex.printStackTrace();
+            LOG.warn("pollTables hatası: {}", ex.getMessage(), ex);
         }
         try {
             pollSales();
         } catch (Exception ex) {
-            ex.printStackTrace();
+            LOG.warn("pollSales hatası: {}", ex.getMessage(), ex);
         }
         try {
             pollExpenses();
         } catch (Exception ex) {
-            ex.printStackTrace();
+            LOG.warn("pollExpenses hatası: {}", ex.getMessage(), ex);
         }
     }
 

@@ -137,6 +137,12 @@ class ProductJdbcDAOTest {
                         updateStockCalls.incrementAndGet();
                         fail("Stok kolonu eksik olduğunda updateStock sorgusu çalıştırılmamalı");
                     }
+                    if (sql.startsWith("UPDATE products SET is_active")
+                            || sql.startsWith("UPDATE products SET active")) {
+                        // applyActiveBestEffort: bu testin şemasında is_active/active sütunu yok.
+                        // DAO SQLException'ı sessizce yutar → "missing column" davranışını taklit et.
+                        throw new SQLException("column not found (test stub)");
+                    }
                     if (sql.startsWith("SELECT")) {
                         return createSelectPreparedStatement();
                     }

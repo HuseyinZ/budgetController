@@ -1,0 +1,53 @@
+# ============================================================================
+#   Pre-commit hooks — commit öncesi otomatik kontroller
+#
+#   Kurulum:
+#     pip install pre-commit            # veya: brew install pre-commit
+#     pre-commit install                # her commit'te otomatik çalışır
+#     pre-commit install --hook-type pre-push   # opsiyonel: push öncesi de
+#
+#   Tek seferlik tüm dosyalarda tarama:
+#     pre-commit run --all-files
+#
+#   Bir hook'u atlamak (acil durumlar için):
+#     git commit --no-verify
+#     SKIP=gitleaks git commit -m "..."
+# ============================================================================
+repos:
+
+  # ---------- Secret tarama ----------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: "Secret detection (gitleaks)"
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: "Secret patterns (detect-secrets)"
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            \.secrets\.baseline|
+            target/.*|
+            logs/.*|
+            .*\.example
+          )$
+
+  # ---------- Genel kontroller ----------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-xml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: mixed-line-ending
+        args: ['--fix=lf']

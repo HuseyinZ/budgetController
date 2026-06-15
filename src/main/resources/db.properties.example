@@ -1,0 +1,25 @@
+# ============================================================================
+#   ÖRNEK YAPILANDIRMA — gerçek değerleri bu dosyaya YAZMAYIN
+# ============================================================================
+#
+#   GERÇEK db.properties dosyasını şuraya koyun:
+#
+#       Windows: C:\Users\<kullanıcı>\.budget\db.properties
+#       Linux/Mac: ~/.budget/db.properties
+#
+#   Dış config aynı anahtarları içerir, repo içine giren bu dosyanın
+#   üzerine yazar. Bu sayede secret repo'ya commit edilmez.
+#
+#   Alternatif: sistem değişkenleriyle veya ortam değişkenleriyle override:
+#       -Ddb.url=...   /  DB_URL=...
+#       -Ddb.user=...  /  DB_USER=...
+#       -Ddb.password=...  /  DB_PASS=...
+#
+# ============================================================================
+db.url=jdbc:mysql://localhost:3306/posdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Europe/Istanbul&allowPublicKeyRetrieval=true&useSSL=true&requireSSL=true
+db.user=pos_app
+db.password=CHANGE_ME
+
+# Pool ayarları (opsiyonel)
+db.pool.maxSize=10
+db.pool.minIdle=2

@@ -21,7 +21,25 @@ import java.util.function.Consumer;
 
 public class ProductPickerDialog extends JDialog {
 
-    public record Selection(Long productId, int quantity) {}
+    /**
+     * Seçim sonucu.
+     * <ul>
+     *   <li>{@code quantity}: ürün şiş bazlı DEĞİLSE porsiyon sayısı; şiş
+     *       bazlıysa toplam birim (şiş) sayısı olarak kullanılır.</li>
+     *   <li>{@code piecesOverride}: şiş bazlı ürünlerde toplam şiş sayısı —
+     *       {@code null} → ürün şiş bazlı değil, eski davranış.</li>
+     *   <li>{@code note}: (opsiyonel) bu kalem için not / özelleştirme.
+     *       Örn. "Soğansız, az pişmiş".</li>
+     * </ul>
+     */
+    public record Selection(Long productId, int quantity, Integer piecesOverride, String note) {
+        public Selection(Long productId, int quantity) {
+            this(productId, quantity, null, null);
+        }
+        public Selection(Long productId, int quantity, Integer piecesOverride) {
+            this(productId, quantity, piecesOverride, null);
+        }
+    }
 
     private static final int GRID_COLUMNS = 2;
     private static final int MAX_QUANTITY = 20;
@@ -37,7 +55,8 @@ public class ProductPickerDialog extends JDialog {
     private final JToggleButton allButton = new JToggleButton("Tümü");
     private final List<ProductTile> productTiles = new ArrayList<>();
     private final Map<Long, Integer> selectedQuantities = new HashMap<>();
-    private final JButton fullScreenButton = new JButton("Tam ekran");
+    private final Map<Long, Integer> selectedPieces = new HashMap<>();  // şiş bazlı toplam birim
+    private final Map<Long, String>  selectedNotes  = new HashMap<>();  // İçerik dialog ile
 
     private Consumer<Selection> onSelect;
     private Long activeCategoryId;
@@ -57,7 +76,7 @@ public class ProductPickerDialog extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout(8, 8));
         setResizable(true);
-        Dimension preferredSize = new Dimension(960, 680);
+        Dimension preferredSize = new Dimension(1300, 800);
         setPreferredSize(preferredSize);
         setMinimumSize(preferredSize);
 
@@ -87,8 +106,6 @@ public class ProductPickerDialog extends JDialog {
 
 
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        configureFullScreenButton();
-        rightPanel.add(fullScreenButton);
         container.add(rightPanel, BorderLayout.EAST);
         return container;
     }
@@ -106,9 +123,6 @@ public class ProductPickerDialog extends JDialog {
         button.setPreferredSize(new Dimension(160, 48));
     }
 
-    private void configureFullScreenButton() {
-        fullScreenButton.addActionListener(e -> toggleFullScreen());
-    }
 
     private void populateCategoryButtons(JPanel panel) {
         List<Category> categories;
@@ -161,34 +175,28 @@ public class ProductPickerDialog extends JDialog {
         return panel;
     }
 
-    private void toggleFullScreen() {
-        if (!fullScreen) {
-            windowedBounds = getBounds();
-            Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-            setBounds(screenBounds);
-            fullScreen = true;
-            fullScreenButton.setText("Pencereyi küçült");
-        } else {
-            if (windowedBounds != null) {
-                setBounds(windowedBounds);
-            } else {
-                pack();
-            }
-            fullScreen = false;
-            fullScreenButton.setText("Tam ekran");
-        }
-        revalidate();
-        repaint();
-    }
 
     private void loadProducts(Long categoryId) {
         List<Product> products;
         try {
+            // Pasifler dahil tüm ürünler — tükenmiş olanlar tile içinde gri/disabled
+            // görünür, garson "lahmacun tükenmiş" bilgisini ekranda direkt görür.
             if (categoryId == null) {
                 products = productService.getAllProducts();
             } else {
                 products = productService.getProductsByCategory(categoryId, 0, 200);
             }
+            // Aktif olanlar önce, pasifler sonda — sırala
+            products = products.stream()
+                    .filter(p -> p != null)
+                    .sorted((a, b) -> {
+                        int byActive = Boolean.compare(!a.isActive(), !b.isActive()); // aktif önce
+                        if (byActive != 0) return byActive;
+                        String an = a.getName() == null ? "" : a.getName();
+                        String bn = b.getName() == null ? "" : b.getName();
+                        return an.compareToIgnoreCase(bn);
+                    })
+                    .collect(java.util.stream.Collectors.toList());
             clearMessage();
         } catch (RuntimeException ex) {
             products = List.of();
@@ -215,9 +223,11 @@ public class ProductPickerDialog extends JDialog {
         int count = 0;
         if (products != null) {
             for (Product product : products) {
-                if (product == null || !product.isActive()) {
+                if (product == null) {
                     continue;
                 }
+                // Pasif (tükendi) ürünler de GÖRÜNÜR — sadece tile içinde
+                // gri ve devre dışı olur (garson "lahmacun tükenmiş" görsün)
                 int initialQty = selectedQuantities.getOrDefault(product.getId(), 0);
                 ProductTile tile = new ProductTile(product, initialQty);
                 grid.add(tile);
@@ -305,10 +315,30 @@ public class ProductPickerDialog extends JDialog {
         return trimmed.isEmpty() ? "Ürün" : trimmed;
     }
 
+    /** Renk-kodlu +/- buton üretir (büyük ve dokunmatik dostu). */
+    private static JButton colorButton(String text, Color color) {
+        JButton b = new JButton(text);
+        b.setPreferredSize(new Dimension(48, 44));
+        b.setFont(b.getFont().deriveFont(Font.BOLD, 18f));
+        b.setBackground(color);
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setOpaque(true);
+        b.setBorderPainted(false);
+        return b;
+    }
+
     private void adjustSpinnerValue(JSpinner spinner, int delta) {
         Number value = (Number) spinner.getValue();
         int current = value == null ? 0 : value.intValue();
-        int updated = Math.max(0, Math.min(MAX_QUANTITY, current + delta));
+        // Spinner'ın kendi modelinin min/max'ine saygı duy
+        SpinnerNumberModel model = (spinner.getModel() instanceof SpinnerNumberModel)
+                ? (SpinnerNumberModel) spinner.getModel() : null;
+        int min = (model != null && model.getMinimum() instanceof Number)
+                ? ((Number) model.getMinimum()).intValue() : 0;
+        int max = (model != null && model.getMaximum() instanceof Number)
+                ? ((Number) model.getMaximum()).intValue() : MAX_QUANTITY;
+        int updated = Math.max(min, Math.min(max, current + delta));
         spinner.setValue(updated);
     }
 
@@ -317,17 +347,18 @@ public class ProductPickerDialog extends JDialog {
         clearMessage();
         int added = 0;
         for (ProductTile tile : productTiles) {
-            updateSelection(tile.getProductId(), tile.getQuantity());
+            tile.flushSelection();
         }
         for (Map.Entry<Long, Integer> entry : selectedQuantities.entrySet()) {
             Long productId = entry.getKey();
             int quantity = entry.getValue();
-            if (productId != null && quantity > 0) {
-                if (onSelect != null) {
-                    onSelect.accept(new Selection(productId, quantity));
-                }
-                added++;
+            if (productId == null || quantity <= 0) continue;
+            if (onSelect != null) {
+                Integer pieces = selectedPieces.get(productId);
+                String note   = selectedNotes.get(productId);
+                onSelect.accept(new Selection(productId, quantity, pieces, note));
             }
+            added++;
         }
         if (added == 0) {
             showMessage("Siparişe eklenecek ürün seçmediniz", true);
@@ -338,65 +369,305 @@ public class ProductPickerDialog extends JDialog {
 
     private class ProductTile extends JPanel {
         private final Long productId;
-        private final JSpinner qtySpinner;
+        private final Integer piecesPerPortion;       // null → porsiyon bazlı ürün
+        private final String unitLabel;
+        private final JSpinner portionSpinner;
+        private final JSpinner extraPiecesSpinner;    // sadece şiş bazlı ürünlerde
+        private final String productDisplayName;
+        private final boolean foodCategory;
+        /** İçecek kategorisi — şiş bölümü gizlenir, "porsiyon" yerine "adet" gösterilir. */
+        private final boolean drinkCategory;
+        private String customNote;                    // "İçerik" dialog ile seçilmiş not
 
         ProductTile(Product product, int initialQuantity) {
 
             super(new BorderLayout(8, 8));
+            boolean inactive = product != null && !product.isActive();
+            // Pasif (tükendi) ürünler için gri arka plan + kırmızı çerçeve
+            Color tileBg = inactive ? new Color(240, 240, 240) : Color.WHITE;
+            Color tileBorder = inactive ? new Color(200, 80, 80) : new Color(220, 220, 220);
             setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(220, 220, 220)),
+                    BorderFactory.createLineBorder(tileBorder, inactive ? 2 : 1),
                     BorderFactory.createEmptyBorder(12, 12, 12, 12)));
-            setBackground(Color.WHITE);
+            setBackground(tileBg);
 
             productId = product == null ? null : product.getId();
+            piecesPerPortion = (product == null) ? null : product.getPiecesPerPortion();
+            drinkCategory = isDrinkCategory(product);
+            unitLabel = (product == null || product.getUnitLabel() == null
+                    || product.getUnitLabel().isBlank())
+                    ? (isPieceBased() ? "şiş" : (drinkCategory ? "adet" : "porsiyon"))
+                    : product.getUnitLabel();
+            productDisplayName = productName(product);
+            foodCategory = isFoodCategory(product);
 
             JLabel iconLabel = new JLabel(loadProductIcon(product));
             iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
             iconLabel.setVerticalAlignment(SwingConstants.CENTER);
             iconLabel.setPreferredSize(new Dimension(110, 110));
+            if (inactive) {
+                // Pasif ikonu gri tonla
+                iconLabel.setEnabled(false);
+            }
             add(iconLabel, BorderLayout.WEST);
 
             JPanel infoPanel = new JPanel();
             infoPanel.setOpaque(false);
             infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-            JLabel nameLabel = new JLabel(productName(product));
+            // Pasif ürünlerde başlığa "● TÜKENDİ" rozeti ekle
+            String nameHtml = inactive
+                    ? "<html><span style='color:#c62828;font-weight:bold;'>● TÜKENDİ &nbsp;</span>"
+                            + "<span style='color:#888;'>" + productName(product) + "</span></html>"
+                    : productName(product);
+            JLabel nameLabel = new JLabel(nameHtml);
             nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 14f));
-            JLabel priceLabel = new JLabel(formatCurrency(product.getUnitPrice()));
-            priceLabel.setForeground(new Color(0, 102, 153));
+            String priceLabelText = formatCurrency(product.getUnitPrice());
+            if (isPieceBased()) {
+                BigDecimal perPiece = product.getPerPiecePrice();
+                priceLabelText += "  (1 " + unitLabel + " = " + formatCurrency(perPiece) + ")";
+            }
+            JLabel priceLabel = new JLabel(priceLabelText);
+            priceLabel.setForeground(inactive ? Color.GRAY : new Color(0, 102, 153));
             infoPanel.add(nameLabel);
             infoPanel.add(Box.createVerticalStrut(6));
             infoPanel.add(priceLabel);
             add(infoPanel, BorderLayout.CENTER);
 
-            JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+            // Geniş aralıklı, renk-kodlu kontroller — porsiyon yeşil, şiş mavi
+            JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 4));
             controls.setOpaque(false);
-            JButton minus = new JButton("-");
-            qtySpinner = new JSpinner(new SpinnerNumberModel(0, 0, MAX_QUANTITY, 1));
-            Dimension preferred = qtySpinner.getPreferredSize();
-            qtySpinner.setPreferredSize(new Dimension(60, preferred.height));
-            JButton plus = new JButton("+");
 
-            minus.addActionListener(e -> adjustSpinnerValue(qtySpinner, -1));
-            plus.addActionListener(e -> adjustSpinnerValue(qtySpinner, 1));
+            portionSpinner = new JSpinner(new SpinnerNumberModel(0, 0, MAX_QUANTITY, 1));
+            Dimension preferred = portionSpinner.getPreferredSize();
+            portionSpinner.setPreferredSize(new Dimension(64, preferred.height));
+            extraPiecesSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 50, 1));
+            extraPiecesSpinner.setPreferredSize(new Dimension(64, preferred.height));
 
-            if (initialQuantity > 0) {
-                qtySpinner.setValue(Math.min(initialQuantity, MAX_QUANTITY));
+            // PORSİYON grubu — yeşil
+            Color portionColor = new Color(46, 125, 50);
+            JPanel portionGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+            portionGroup.setOpaque(false);
+            portionGroup.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(portionColor, 2, true),
+                    BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+            JButton minus = colorButton("−", portionColor);
+            JButton plus  = colorButton("+", portionColor);
+            // İçecekler için "Porsiyon" yerine "Adet" göster
+            JLabel pLabel = new JLabel(drinkCategory ? "Adet" : "Porsiyon");
+            pLabel.setForeground(portionColor);
+            pLabel.setFont(pLabel.getFont().deriveFont(Font.BOLD));
+            minus.addActionListener(e -> adjustSpinnerValue(portionSpinner, -1));
+            plus.addActionListener(e -> adjustSpinnerValue(portionSpinner, 1));
+            portionGroup.add(minus);
+            portionGroup.add(pLabel);
+            portionGroup.add(portionSpinner);
+            portionGroup.add(plus);
+            controls.add(portionGroup);
+
+            // İçecekler için şiş bölümü asla gösterilmez
+            if (isPieceBased() && !drinkCategory) {
+                // Aralık (görsel ayırıcı)
+                controls.add(Box.createHorizontalStrut(20));
+
+                // ŞİŞ grubu — mavi
+                Color pieceColor = new Color(21, 101, 192);
+                JPanel pieceGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+                pieceGroup.setOpaque(false);
+                pieceGroup.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(pieceColor, 2, true),
+                        BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+                JButton extraMinus = colorButton("−", pieceColor);
+                JButton extraPlus  = colorButton("+", pieceColor);
+                JLabel sLabel = new JLabel("+ " + unitLabel);
+                sLabel.setForeground(pieceColor);
+                sLabel.setFont(sLabel.getFont().deriveFont(Font.BOLD));
+                extraMinus.addActionListener(e -> adjustSpinnerValue(extraPiecesSpinner, -1));
+                extraPlus.addActionListener(e -> adjustSpinnerValue(extraPiecesSpinner, 1));
+                pieceGroup.add(extraMinus);
+                pieceGroup.add(sLabel);
+                pieceGroup.add(extraPiecesSpinner);
+                pieceGroup.add(extraPlus);
+                controls.add(pieceGroup);
+                // başlangıç değeri (eski seçim varsa): pieces ve portion'dan geri hesapla
+                Integer storedPieces = selectedPieces.get(productId);
+                if (storedPieces != null) {
+                    int pp = piecesPerPortion;
+                    int portions = storedPieces / pp;
+                    int extra = storedPieces - portions * pp;
+                    portionSpinner.setValue(Math.min(portions, MAX_QUANTITY));
+                    extraPiecesSpinner.setValue(extra);
+                } else if (initialQuantity > 0) {
+                    portionSpinner.setValue(Math.min(initialQuantity, MAX_QUANTITY));
+                }
+            } else {
+                if (initialQuantity > 0) {
+                    portionSpinner.setValue(Math.min(initialQuantity, MAX_QUANTITY));
+                }
             }
-            qtySpinner.addChangeListener(e -> updateSelection(productId, getQuantity()));
 
-            controls.add(minus);
-            controls.add(qtySpinner);
-            controls.add(plus);
+            // değişiklikte selection map'i güncelle
+            javax.swing.event.ChangeListener cl = e -> flushSelection();
+            portionSpinner.addChangeListener(cl);
+            extraPiecesSpinner.addChangeListener(cl);
+
             add(controls, BorderLayout.SOUTH);
+
+            // YEMEK kategorisinde "İçerik" butonu — soğansız/tuzsuz vs. seçimi
+            if (foodCategory && !inactive) {
+                JButton contentBtn = new JButton("İçerik");
+                contentBtn.setToolTipText("Bu ürüne içerik tercihleri ekle (soğansız, tuzsuz...)");
+                contentBtn.setForeground(new Color(120, 60, 0));
+                contentBtn.addActionListener(e -> openContentDialog());
+                JPanel topBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+                topBar.setOpaque(false);
+                topBar.add(contentBtn);
+                add(topBar, BorderLayout.NORTH);
+            }
+
+            // Pasif ürünler için tüm kontrolleri devre dışı bırak —
+            // garson görebilir ama sipariş ekleyemez
+            if (inactive) {
+                disableControls(controls);
+                portionSpinner.setEnabled(false);
+                extraPiecesSpinner.setEnabled(false);
+                setToolTipText("Bu ürün şu anda TÜKENDİ — admin yeniden stokta yapana kadar sipariş edilemez");
+            }
         }
 
-        Long getProductId() {
-            return productId;
+        /** Bir kontrol panelindeki tüm bileşenleri (recursive) devre dışı bırakır. */
+        private void disableControls(Container container) {
+            for (Component c : container.getComponents()) {
+                c.setEnabled(false);
+                if (c instanceof Container) {
+                    disableControls((Container) c);
+                }
+            }
         }
 
-        int getQuantity() {
-            Number number = (Number) qtySpinner.getValue();
-            return number == null ? 0 : number.intValue();
+        private void openContentDialog() {
+            ProductNoteDialog dlg = new ProductNoteDialog(
+                    SwingUtilities.getWindowAncestor(ProductPickerDialog.this),
+                    productDisplayName, customNote);
+            String picked = dlg.pickNote();
+            if (picked == null) return;
+            customNote = picked.isBlank() ? null : picked;
+            // Sipariş yokken seçim mevcut değilse minimum 1 porsiyon olsun (kullanıcının
+            // not eklemesinin sonucu boş kalmasın diye).
+            if (getQuantityForOrder() == 0) {
+                portionSpinner.setValue(1);
+            }
+            flushSelection();
+        }
+
+        public String getNote() { return customNote; }
+
+        boolean isPieceBased() {
+            // İçecek ise asla şiş bazlı sayma — sadece adet
+            if (drinkCategory) return false;
+            if (piecesPerPortion == null || piecesPerPortion <= 0) return false;
+            // unitLabel "adet/kase/tabak/kg" gibi non-şiş ise yine şiş yok
+            String ul = unitLabel == null ? "" : unitLabel.toLowerCase(new java.util.Locale("tr","TR"));
+            if (ul.equals("adet") || ul.equals("kase") || ul.equals("tabak")
+                    || ul.equals("kg") || ul.equals("lt") || ul.equals("litre")
+                    || ul.equals("porsiyon")) {
+                return false;
+            }
+            return true;
+        }
+
+        Long getProductId() { return productId; }
+
+        /** Toplam birim sayısını döndürür (şiş bazlı için pieces, porsiyon/adet bazlı için adet). */
+        int getQuantityForOrder() {
+            int portions = ((Number) portionSpinner.getValue()).intValue();
+            if (!isPieceBased()) return portions;
+            int extra = ((Number) extraPiecesSpinner.getValue()).intValue();
+            return portions * piecesPerPortion + extra;
+        }
+
+        Integer getPiecesIfApplicable() {
+            return isPieceBased() ? getQuantityForOrder() : null;
+        }
+
+        /** Bu kartın seçimini global map'lere yansıtır. */
+        void flushSelection() {
+            int qty = getQuantityForOrder();
+            updateSelection(productId, qty);
+            if (isPieceBased() && qty > 0) {
+                selectedPieces.put(productId, qty);
+            } else {
+                selectedPieces.remove(productId);
+            }
+            // Not da global haritaya yansısın
+            if (qty > 0 && customNote != null && !customNote.isBlank()) {
+                selectedNotes.put(productId, customNote);
+            } else {
+                selectedNotes.remove(productId);
+            }
+        }
+    }
+
+    /**
+     * Ürünün kategorisini "yemek" kabul ediyor muyuz?
+     * <p>Heuristik: kategori adı "yemek", "ana yemek", "kebap", "ızgara", "pide",
+     * "lahmacun", "ciğer", "köfte", "tavuk" gibi kelimeler içeriyorsa.
+     * <p>İleride bir flag/sütun eklenebilir.
+     */
+    /**
+     * Ürünün "içecek" kategorisinde olup olmadığını tespit eder.
+     * İçecek ürünleri için porsiyon/şiş yerine sadece "adet" sorulur.
+     *
+     * NOT: Locale("tr","TR") ZORUNLU — yoksa Türkçe "İçecek" → "i̇çecek"
+     * (combining dot ile) bozulur ve "içecek" keyword'ünü bulamayız.
+     */
+    private boolean isDrinkCategory(Product product) {
+        if (product == null || product.getCategoryId() == null) return false;
+        try {
+            Category cat = categoryService.getCategoryById(product.getCategoryId());
+            if (cat == null || cat.getName() == null) return false;
+            String raw = cat.getName();
+            // Türkçe locale ile düzgün lowercase
+            String l = raw.toLowerCase(new java.util.Locale("tr", "TR"));
+            // ASCII versiyonunu da hesapla (çş yazımı farklı olabilir)
+            String asciiL = l
+                    .replace('ç', 'c').replace('ğ', 'g').replace('ı', 'i')
+                    .replace('ö', 'o').replace('ş', 's').replace('ü', 'u');
+            String[] keywords = {
+                    "içecek", "icecek", "içki", "icki",
+                    "su", "ayran", "kola", "çay", "cay",
+                    "fanta", "sprite", "kahve", "gazoz",
+                    "meşrubat", "mesrubat", "soda", "limonata",
+                    "şalgam", "salgam", "şıra", "sira",
+                    "bar", "meşrub", "mesrub", "drink", "beverage"
+            };
+            for (String kw : keywords) {
+                if (l.contains(kw) || asciiL.contains(kw)) return true;
+            }
+            return false;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private boolean isFoodCategory(Product product) {
+        if (product == null || product.getCategoryId() == null) return false;
+        try {
+            Category cat = categoryService.getCategoryById(product.getCategoryId());
+            if (cat == null) return false;
+            String name = cat.getName();
+            if (name == null) return false;
+            String l = name.toLowerCase(java.util.Locale.ROOT);
+            String[] keywords = {
+                    "yemek", "ana yemek", "kebap", "ızgara", "izgara",
+                    "pide", "lahmacun", "ciğer", "ciger", "köfte", "kofte",
+                    "tavuk", "dürüm", "durum", "döner", "doner", "sıcak"
+            };
+            for (String kw : keywords) {
+                if (l.contains(kw)) return true;
+            }
+            return false;
+        } catch (RuntimeException ex) {
+            return false;
         }
     }
 
@@ -406,8 +677,9 @@ public class ProductPickerDialog extends JDialog {
         }
         if (quantity <= 0) {
             selectedQuantities.remove(productId);
+            selectedPieces.remove(productId);
         } else {
-            selectedQuantities.put(productId, Math.min(quantity, MAX_QUANTITY));
+            selectedQuantities.put(productId, Math.min(quantity, MAX_QUANTITY * 10));
         }
     }
 }

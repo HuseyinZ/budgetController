@@ -2,6 +2,8 @@ package UI;
 
 import model.User;
 import service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
@@ -10,6 +12,9 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 public class LoginPanel extends JPanel {
+
+    private static final Logger LOG = LoggerFactory.getLogger(LoginPanel.class);
+
     private final UserService userService;
     private final JTextField usernameField = new JTextField(20);
     private final JPasswordField passwordField = new JPasswordField(20);
@@ -32,7 +37,7 @@ public class LoginPanel extends JPanel {
         gc.insets = new Insets(4, 4, 4, 4);
         gc.fill = GridBagConstraints.HORIZONTAL;
 
-        JLabel title = new JLabel("Budget Controller");
+        JLabel title = new JLabel("Dağkapı Ciğercisi");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
         gc.gridx = 0; gc.gridy = 0; gc.gridwidth = 2; gc.anchor = GridBagConstraints.CENTER;
         add(title, gc);
@@ -83,7 +88,7 @@ public class LoginPanel extends JPanel {
             loginListener.accept(user);
         } catch (Exception ex) {
             showError("Kontrol paneli açılırken hata: " + ex.getMessage());
-            ex.printStackTrace();
+            LOG.error("Kontrol paneli açılırken hata", ex);
             return;
         }
 

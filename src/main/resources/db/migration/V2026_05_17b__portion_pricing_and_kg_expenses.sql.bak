@@ -1,0 +1,48 @@
+-- =====================================================================
+--  Tarih   : 2026-05-17 (B)
+--  Amaç    : (1) Şiş bazlı fiyatlandırma:
+--                  products.pieces_per_portion (porsiyondaki şiş sayısı)
+--                  products.unit_label         ('şiş', 'porsiyon', 'kg' …)
+--              order_items'a snapshot olarak aynı iki alan eklenir.
+--           (2) Kg bazlı gider girişi:
+--                  expenses.quantity_kg        (kilo)
+--                  expenses.unit_price_per_kg  (kg fiyatı)
+--                  amount otomatik hesaplanır (kilo × kgFiyat).
+--
+--  Çalıştırma:
+--      mysql -u root -p posdb < V2026_05_17b__portion_pricing_and_kg_expenses.sql
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) products: porsiyondaki şiş sayısı + birim etiketi
+--    pieces_per_portion NULL  → ürün porsiyon bazlı (eski davranış)
+--    pieces_per_portion >= 1  → 1 porsiyon = N şiş (örn. 4)
+-- ---------------------------------------------------------------------
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS pieces_per_portion INT NULL
+       COMMENT '1 porsiyonda kaç birim (şiş) var? NULL → porsiyon bazlı',
+  ADD COLUMN IF NOT EXISTS unit_label VARCHAR(16) NULL
+       COMMENT 'Birim etiketi: porsiyon / şiş / kg / adet';
+
+-- ---------------------------------------------------------------------
+-- 2) order_items: snapshot (ileride ürün değişse bile sipariş doğru
+--    raporlansın diye sipariş anındaki değerler saklanır)
+-- ---------------------------------------------------------------------
+ALTER TABLE order_items
+  ADD COLUMN IF NOT EXISTS pieces_per_portion INT NULL,
+  ADD COLUMN IF NOT EXISTS unit_label VARCHAR(16) NULL;
+
+-- ---------------------------------------------------------------------
+-- 3) expenses: kg-bazlı giriş
+--    quantity_kg NULL → manuel giriş (eski davranış, sadece amount)
+--    quantity_kg dolu → amount = quantity_kg × unit_price_per_kg
+-- ---------------------------------------------------------------------
+ALTER TABLE expenses
+  ADD COLUMN IF NOT EXISTS quantity_kg DECIMAL(10,3) NULL
+       COMMENT 'Kg-bazlı giriyse miktar (kg)',
+  ADD COLUMN IF NOT EXISTS unit_price_per_kg DECIMAL(10,2) NULL
+       COMMENT 'Kg-bazlı giriyse 1 kg fiyatı (TL)';
+
+-- =====================================================================
+--  Migration sonu
+-- =====================================================================

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ===============================================================
+   budgetController log yapılandırması
+
+   • Konsola da yazar (geliştirme için)
+   • logs/budget.log dosyasına yazar (production)
+   • Her gün yeni dosya, 30 gün geriye dönük tutar
+   • Hatalar ayrı bir dosyaya: logs/errors.log
+  ===============================================================
+-->
+<configuration>
+
+    <!-- Log dosyalarının dizini.
+         -Dbudget.logdir=/path ile değiştirilebilir.
+         Default: ./logs/ -->
+    <property name="LOG_DIR" value="${budget.logdir:-logs}"/>
+
+    <!-- Pattern: zaman | seviye | logger | mesaj -->
+    <property name="PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
+
+    <!-- 1. KONSOL appender (FlatLaf debug terminali için) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder><pattern>${PATTERN}</pattern></encoder>
+    </appender>
+
+    <!-- 2. ANA log dosyası — günlük rotation -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/budget.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/budget-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder><pattern>${PATTERN}</pattern></encoder>
+    </appender>
+
+    <!-- 3. SADECE HATA dosyası — kritik sorunlar tek yerde -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/errors.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/errors-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>90</maxHistory>
+        </rollingPolicy>
+        <encoder><pattern>${PATTERN}</pattern></encoder>
+    </appender>
+
+    <!-- 4. AUDIT log — güvenlik olayları için ayrı dosya, 1 yıl saklanır -->
+    <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/audit.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/audit-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>365</maxHistory>
+        </rollingPolicy>
+        <encoder><pattern>${PATTERN}</pattern></encoder>
+    </appender>
+
+    <!-- Audit logger'ını SADECE audit.log'a yönlendir (additivity=false) -->
+    <logger name="audit" level="INFO" additivity="false">
+        <appender-ref ref="AUDIT_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- HikariCP gibi alt katmanlar daha sessiz olsun -->
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.apache.poi"   level="WARN"/>
+    <logger name="ch.qos.logback"    level="WARN"/>
+
+    <!-- Bizim paketler INFO seviyesinde -->
+    <logger name="state"    level="INFO"/>
+    <logger name="service"  level="INFO"/>
+    <logger name="dao"      level="INFO"/>
+    <logger name="UI"       level="INFO"/>
+
+    <!-- Genel root -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="ERROR_FILE"/>
+    </root>
+
+</configuration>

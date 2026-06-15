@@ -30,6 +30,11 @@ public class ProductEditDialog extends JDialog {
     private final JComboBox<CategoryItem> categoryCombo = new JComboBox<>();
     private final JTextField priceField = new JTextField(10);
     private final JSpinner stockSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 1));
+    private final JComboBox<String> unitLabelCombo = new JComboBox<>(new String[]{
+            "porsiyon", "şiş", "adet", "kg", "tabak", "kase"
+    });
+    private final JSpinner piecesPerPortionSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
+    private final JLabel piecesHintLabel = new JLabel("0 → şiş bazlı değil");
     private final JLabel messageLabel = new JLabel(" ");
     private final PropertyChangeListener listener = this::handleEvent;
 
@@ -139,11 +144,28 @@ public class ProductEditDialog extends JDialog {
         gc.gridx = 1;
         panel.add(priceField, gc);
 
+        // Stok alanı şimdilik UI'dan gizli.
+
         row++;
         gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Stok"), gc);
+        panel.add(new JLabel("Birim"), gc);
         gc.gridx = 1;
-        panel.add(stockSpinner, gc);
+        unitLabelCombo.setEditable(true);
+        unitLabelCombo.setToolTipText("Bir porsiyonun tanımı: 'porsiyon', 'şiş', 'kg', 'adet' vs.");
+        panel.add(unitLabelCombo, gc);
+
+        row++;
+        gc.gridx = 0; gc.gridy = row;
+        panel.add(new JLabel("Porsiyondaki şiş adeti"), gc);
+        gc.gridx = 1;
+        JPanel piecesRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        piecesRow.add(piecesPerPortionSpinner);
+        piecesHintLabel.setForeground(Color.GRAY);
+        piecesHintLabel.setFont(piecesHintLabel.getFont().deriveFont(Font.ITALIC, 11f));
+        piecesRow.add(piecesHintLabel);
+        panel.add(piecesRow, gc);
+        piecesPerPortionSpinner.setToolTipText(
+                "Örn. ciğer 4 şiş, adana 2 şiş. 0 → bu ürün şiş bazlı değil; sadece porsiyon sayısı sorulur.");
 
         row++;
         gc.gridx = 1; gc.gridy = row; gc.anchor = GridBagConstraints.EAST;
@@ -234,6 +256,8 @@ public class ProductEditDialog extends JDialog {
         priceField.setText(product.getUnitPrice() == null ? "0" : product.getUnitPrice().toPlainString());
         stockSpinner.setValue(product.getStock() == null ? 0 : product.getStock());
         selectCategory(product.getCategoryId());
+        unitLabelCombo.setSelectedItem(product.getUnitLabel() == null ? "porsiyon" : product.getUnitLabel());
+        piecesPerPortionSpinner.setValue(product.getPiecesPerPortion() == null ? 0 : product.getPiecesPerPortion());
     }
 
     private void clearForm() {
@@ -243,6 +267,8 @@ public class ProductEditDialog extends JDialog {
         priceField.setText("0");
         stockSpinner.setValue(0);
         categoryCombo.setSelectedIndex(0);
+        unitLabelCombo.setSelectedItem("porsiyon");
+        piecesPerPortionSpinner.setValue(0);
         productList.clearSelection();
         showMessage("Yeni ürün kaydı", false);
     }
@@ -283,6 +309,14 @@ public class ProductEditDialog extends JDialog {
         CategoryItem categoryItem = (CategoryItem) categoryCombo.getSelectedItem();
         Long categoryId = categoryItem == null ? null : categoryItem.id();
 
+        Object selectedLabel = unitLabelCombo.getSelectedItem();
+        String unitLabel = selectedLabel == null ? null : selectedLabel.toString().trim();
+        if (unitLabel != null && unitLabel.isEmpty()) {
+            unitLabel = null;
+        }
+        int piecesPerPortion = (Integer) piecesPerPortionSpinner.getValue();
+        Integer piecesValue = piecesPerPortion <= 0 ? null : piecesPerPortion;
+
         try {
             if (editingProduct == null || editingProduct.getId() == null) {
                 Product product = new Product();
@@ -291,6 +325,8 @@ public class ProductEditDialog extends JDialog {
                 product.setVatRate(Product.DEFAULT_VAT);
                 product.setStock(stock);
                 product.setCategoryId(categoryId);
+                product.setUnitLabel(unitLabel);
+                product.setPiecesPerPortion(piecesValue);
                 Long id = appState.createProduct(product);
                 product.setId(id);
                 editingProduct = product;
@@ -301,6 +337,8 @@ public class ProductEditDialog extends JDialog {
                 editingProduct.setUnitPrice(price);
                 editingProduct.setStock(stock);
                 editingProduct.setCategoryId(categoryId);
+                editingProduct.setUnitLabel(unitLabel);
+                editingProduct.setPiecesPerPortion(piecesValue);
                 appState.updateProduct(editingProduct);
                 editingProductId = editingProduct.getId();
                 showMessage("Ürün güncellendi", false);

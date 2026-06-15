@@ -1,0 +1,33 @@
+-- =====================================================================
+--  Tarih   : 2026-05-17 (C)
+--  Amaç    : Garson alan yetkilendirmesi.
+--            Bir garson sadece kendisine atanmış (bina, salon) çiftlerini
+--            görür. Admin/Kasiyer her zaman tümünü görür.
+--
+--  Çalıştırma:
+--      mysql -u root -p posdb < V2026_05_17c__user_area_permissions.sql
+--
+--  NOT (2026-05-17): users.id sütunu INT olduğu için user_id INT olarak
+--  tanımlandı (BIGINT değildi). MySQL foreign key'ler aynı veri tipinde
+--  olmak zorundadır.
+-- =====================================================================
+
+-- Eski (yanlış tipli) tabloyu temizle — yalnız bu tablo henüz başarıyla
+-- yaratılmamışsa veya yanlış şemayla yaratıldıysa güvenli.
+DROP TABLE IF EXISTS user_area_permissions;
+
+CREATE TABLE user_area_permissions (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT          NOT NULL,
+    building     VARCHAR(64)  NOT NULL  COMMENT 'Örn: "1. Bina"',
+    section      VARCHAR(64)  NOT NULL  COMMENT 'Örn: "2. Kat" / "Bahçe"',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_uap_user_area UNIQUE (user_id, building, section),
+    CONSTRAINT fk_uap_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
+
+CREATE INDEX idx_uap_user ON user_area_permissions (user_id);
+
+-- =====================================================================
+--  Migration sonu
+-- =====================================================================

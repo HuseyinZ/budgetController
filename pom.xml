@@ -23,12 +23,101 @@
         <mysql.version>8.4.0</mysql.version>
         <hikari.version>5.1.0</hikari.version>
         <slf4j.version>2.0.12</slf4j.version>
+        <logback.version>1.5.6</logback.version>
         <flatlaf.version>3.3</flatlaf.version>
         <gson.version>2.11.0</gson.version>
         <junit.version>5.10.2</junit.version>
-        <poi.version>5.2.5</poi.version>
+        <poi.version>5.3.0</poi.version>
         <jbcrypt.version>0.4</jbcrypt.version>
+
+        <!-- Güvenlik: transitive sürüm override'ları için -->
+        <javalin.version>6.4.0</javalin.version>
+        <jetty.version>11.0.25</jetty.version>
+        <jackson.version>2.18.0</jackson.version>
+        <jakarta.mail.version>2.1.4</jakarta.mail.version>
+        <angus.mail.version>2.0.4</angus.mail.version>
+        <log4j.version>2.24.3</log4j.version>
+        <commons.compress.version>1.27.1</commons.compress.version>
+        <commons.lang3.version>3.18.0</commons.lang3.version>
+        <protobuf.version>3.25.6</protobuf.version>
+        <kotlin.version>2.0.21</kotlin.version>
     </properties>
+
+    <!-- ============================================================
+         dependencyManagement: transitive bağımlılıkların sürümlerini
+         güvenli olanlara KİLİTLER. Doğrudan kullanmadığımız ama
+         vulnerable olduğu raporlanan kütüphaneleri burada override
+         ediyoruz.
+         ============================================================ -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Jetty BOM — Javalin'in getirdiği eski Jetty 11.0.23 yerine
+                 güvenli 11.0.25+ (CVE-2026-2332, CVE-2025-5115, vb.) -->
+            <dependency>
+                <groupId>org.eclipse.jetty</groupId>
+                <artifactId>jetty-bom</artifactId>
+                <version>${jetty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- log4j-api — eski 2.21.1 yerine güvenli 2.24.3
+                 (CVE-2026-34477..34481 patch'li). log4j-to-slf4j zaten
+                 kullanılıyor; log4j-core dahil EDİLMİYOR. -->
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-api</artifactId>
+                <version>${log4j.version}</version>
+            </dependency>
+
+            <!-- commons-compress — POI'nin getirdiği eski 1.25 yerine 1.27.1
+                 (CVE-2024-25710, CVE-2024-26308 patch'li) -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons.compress.version}</version>
+            </dependency>
+
+            <!-- protobuf-java — Javalin/Jetty üzerinden gelen 3.25.1 yerine
+                 3.25.5 (CVE-2024-7254, CVE-2026-0994 patch'li) -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
+            </dependency>
+
+            <!-- kotlin-stdlib (ve jdk7 varyantı) — Javalin'in getirdiği 1.9.25
+                 yerine 2.0.21. CVE-2020-29582 1.4.21 öncesi içindir; bump'la birlikte
+                 ek olarak owasp-suppressions.xml'de false-positive olarak işaretlendi. -->
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>${kotlin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk7</artifactId>
+                <version>${kotlin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib-jdk8</artifactId>
+                <version>${kotlin.version}</version>
+            </dependency>
+
+            <!-- commons-lang3 — Javalin/POI üzerinden gelen 3.16.0 yerine 3.17.0
+                 (CVE-2025-48924 patch'li). -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons.lang3.version}</version>
+            </dependency>
+
+            <!-- NOT: angus-activation Maven Central'da 2.0.2 son sürüm
+                 (angus-mail 2.0.4'ün getirdiği transitive). 2.0.4 yayınlanmamış.
+                 CVE-2025-7962 owasp-suppressions.xml'de gerekçeli olarak suppress edildi. -->
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- MySQL Connector/J (LTS) -->
@@ -45,16 +134,16 @@
             <version>${hikari.version}</version>
         </dependency>
 
-        <!-- SLF4J -->
+        <!-- SLF4J + Logback (dosya log için) -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>${slf4j.version}</version>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
         </dependency>
 
         <!-- FlatLaf (modern Swing görünümü) -->
@@ -91,6 +180,48 @@
             <artifactId>jbcrypt</artifactId>
             <version>${jbcrypt.version}</version>
             <!-- İstemezsen bu bloğu silebilirsin -->
+        </dependency>
+
+        <!-- REST API katmanı: Javalin (Jetty tabanlı, Spring Boot'tan ~50x hafif) -->
+        <dependency>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin</artifactId>
+            <version>${javalin.version}</version>
+        </dependency>
+        <!-- Jackson JSON (Javalin'in default serializer'ı) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <!-- E-posta: Jakarta Mail (Angus implementasyonu) -->
+        <dependency>
+            <groupId>jakarta.mail</groupId>
+            <artifactId>jakarta.mail-api</artifactId>
+            <version>${jakarta.mail.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+            <version>${angus.mail.version}</version>
+        </dependency>
+
+        <!-- Log4j2 → SLF4J → Logback bridge.
+             Bazı transitive bağımlılıklar (Jetty / Angus Mail vb.) Log4j2 API
+             kullanıyor. Bu bridge, Log4j2 çağrılarını SLF4J'ye yönlendirir;
+             oradan Logback yakalar. Aksi halde "Log4j2 could not find a logging
+             implementation" uyarısı çıkar ve bu kütüphanelerin logları
+             logback.xml ayarlarımıza uymaz. -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-to-slf4j</artifactId>
+            <version>${log4j.version}</version>
         </dependency>
 
         <!-- Test: JUnit 5 -->
@@ -143,15 +274,112 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <!--
+                                Modüler JAR'lardaki module-info.class ve duplicate
+                                meta dosyalarını çıkar. "Discovered module-info.class"
+                                uyarılarını ve overlapping LICENSE/NOTICE/MANIFEST'i
+                                önler. SPI service dosyaları aşağıdaki transformer'la
+                                MERGE EDİLİR, silinmez.
+                            -->
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/DEPENDENCIES</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <!-- KENDİ main sınıfını yaz -->
                                     <mainClass>org.budget.App</mainClass>
                                 </transformer>
+                                <!-- KRİTİK: SPI service kayıtlarını MERGE et.
+                                     Aksi halde Jetty webapp config, POI extractor/workbook
+                                     provider, Jakarta servlet container initializer
+                                     gibi ServiceLoader-based discovery bozulur. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- Apache 2.0 NOTICE dosyalarını birleştir (lisans uyumu) -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                                    <addHeader>false</addHeader>
+                                </transformer>
+                                <!-- LICENSE dosyalarını birleştir -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
                             </transformers>
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!-- CycloneDX SBOM (Software Bill of Materials).
+                 Komut: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
+                 Çıktı: target/bom.json  ve  target/bom.xml
+                 Standart SBOM formatı; supply-chain audit araçları (Dependency-Track,
+                 Sonatype Nexus, GitHub Dependency Graph) okur. -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>application</projectType>
+                    <schemaVersion>1.5</schemaVersion>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>false</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeSystemScope>false</includeSystemScope>
+                    <includeTestScope>false</includeTestScope>
+                    <outputFormat>all</outputFormat>
+                    <outputName>bom</outputName>
+                </configuration>
+            </plugin>
+
+            <!-- OWASP Dependency-Check: CVE taraması.
+                 Komut: mvn org.owasp:dependency-check-maven:check
+                 Rapor: target/dependency-check-report.html
+                 NOT: ilk çalıştırma NVD veritabanını indirir (uzun sürer). -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>10.0.4</version>
+                <configuration>
+                    <!-- CVSS >= 7 olan high/critical varsa build fail -->
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <suppressionFiles>
+                        <!-- Yanlış pozitifleri burada bastırabilirsiniz -->
+                        <suppressionFile>owasp-suppressions.xml</suppressionFile>
+                    </suppressionFiles>
+                    <formats>
+                        <format>HTML</format>
+                        <format>JSON</format>
+                    </formats>
+                    <skipProvidedScope>true</skipProvidedScope>
+                    <skipTestScope>true</skipTestScope>
+                    <!-- Sonatype OSS Index ücretsiz hesap gerektiriyor; kimlik bilgisi
+                         yoksa "Invalid credentials" hatası build'i kırıyor. NVD veri
+                         tabanı tek başına yeterli. Hesap açıp kullanmak isterseniz:
+                         settings.xml'e <server id="ossindex">...</server> ekleyin ve
+                         buradan false → true yapın.
+                         NOT: Parametre adı doğru: 'ossindexAnalyzerEnabled' (küçük i). -->
+                    <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
+                    <!-- Analiz katmanlarının başarısızlığı build'i kırmasın; sadece
+                         gerçek CVE bulgusu (failBuildOnCVSS) build'i kırsın. -->
+                    <failOnError>false</failOnError>
+                </configuration>
             </plugin>
         </plugins>
     </build>

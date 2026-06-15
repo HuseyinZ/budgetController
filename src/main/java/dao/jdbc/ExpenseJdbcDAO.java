@@ -3,6 +3,8 @@ package dao.jdbc;
 import DataConnection.Db;
 import dao.ExpenseDAO;
 import model.Expense;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -20,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 public class ExpenseJdbcDAO implements ExpenseDAO {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ExpenseJdbcDAO.class);
 
     private final DataSource dataSource;
     private final Connection externalConnection;
@@ -99,6 +103,21 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         } catch (SQLException ignore) {
             // optional columns
         }
+
+        // Kg-bazlı giriş alanları (migration v3 — opsiyonel)
+        try {
+            BigDecimal qty = rs.getBigDecimal("quantity_kg");
+            if (qty != null) {
+                expense.setQuantityKg(qty);
+            }
+        } catch (SQLException ignore) {}
+        try {
+            BigDecimal up = rs.getBigDecimal("unit_price_per_kg");
+            if (up != null) {
+                expense.setUnitPricePerKg(up);
+            }
+        } catch (SQLException ignore) {}
+
         return expense;
     }
 
@@ -226,7 +245,10 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
                     ps.executeUpdate();
                     try (ResultSet rs = ps.getGeneratedKeys()) {
                         if (rs.next()) {
-                            return rs.getLong(1);
+                            long id = rs.getLong(1);
+                            applyKgFieldsBestEffort(connection, id,
+                                    expense.getQuantityKg(), expense.getUnitPricePerKg());
+                            return id;
                         }
                     }
                     throw new SQLException("No generated key for expenses");
@@ -241,6 +263,26 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             throw new RuntimeException(ex);
         } finally {
             close(connection);
+        }
+    }
+
+    /**
+     * expenses.quantity_kg ve unit_price_per_kg sütunları varsa günceller;
+     * yoksa sessizce geçer.
+     */
+    private void applyKgFieldsBestEffort(Connection connection, long expenseId,
+                                         BigDecimal quantityKg, BigDecimal unitPricePerKg) {
+        if (connection == null) return;
+        final String sql = "UPDATE expenses SET quantity_kg=?, unit_price_per_kg=? WHERE id=?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            if (quantityKg == null) ps.setNull(1, Types.DECIMAL);
+            else ps.setBigDecimal(1, quantityKg);
+            if (unitPricePerKg == null) ps.setNull(2, Types.DECIMAL);
+            else ps.setBigDecimal(2, unitPricePerKg);
+            ps.setLong(3, expenseId);
+            ps.executeUpdate();
+        } catch (SQLException ignore) {
+            // Migration v3 uygulanmadıysa sütun yoktur — sessiz geç
         }
     }
 
@@ -390,12 +432,12 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         synchronized (schemaLock) {
             if ("expense_name".equals(normalized) && !expenseNameColumnMissing) {
                 expenseNameColumnMissing = true;
-                System.err.println("Gider tablosunda 'expense_name' sütunu bulunamadı."
-                        + " 'description' veya 'note' sütunları kullanılacak. Ayrıntı: " + ex.getMessage());
+                LOG.warn("Gider tablosunda 'expense_name' sütunu bulunamadı."
+                        + " 'description' veya 'note' kullanılacak. Detay: {}", ex.getMessage());
             } else if ("description".equals(normalized) && !descriptionColumnMissing) {
                 descriptionColumnMissing = true;
-                System.err.println("Gider tablosunda 'description' sütunu bulunamadı."
-                        + " Kayıtlar 'expense_name' sütununda saklanacak. Ayrıntı: " + ex.getMessage());
+                LOG.warn("Gider tablosunda 'description' sütunu bulunamadı."
+                        + " Kayıtlar 'expense_name' sütununda saklanacak. Detay: {}", ex.getMessage());
             }
         }
         return true;
@@ -409,8 +451,8 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
             synchronized (schemaLock) {
                 if (!noteColumnMissing) {
                     noteColumnMissing = true;
-                    System.err.println("Gider tablosunda 'note' sütunu bulunamadı."
-                            + " Not bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                    LOG.warn("Gider tablosunda 'note' sütunu bulunamadı."
+                            + " Not bilgisi kaydedilmeyecek. Detay: {}", ex.getMessage());
                 }
             }
         }
@@ -425,24 +467,29 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
         synchronized (schemaLock) {
             if ("created_by".equals(normalized) && !createdByColumnMissing) {
                 createdByColumnMissing = true;
-                System.err.println("Gider tablosunda 'created_by' sütunu bulunamadı."
-                        + " Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                LOG.warn("Gider tablosunda 'created_by' sütunu bulunamadı."
+                        + " Kullanıcı bilgisi kaydedilmeyecek. Detay: {}", ex.getMessage());
             } else if ("user_id".equals(normalized) && !userIdColumnMissing) {
                 userIdColumnMissing = true;
-                System.err.println("Gider tablosunda 'user_id' sütunu bulunamadı."
-                        + " Kullanıcı bilgisi kaydedilmeyecek. Ayrıntı: " + ex.getMessage());
+                LOG.warn("Gider tablosunda 'user_id' sütunu bulunamadı."
+                        + " Kullanıcı bilgisi kaydedilmeyecek. Detay: {}", ex.getMessage());
             }
         }
         return true;
     }
 
+    /**
+     * Verilen istisnanın gerçekten <i>belirtilen sütun</i> hakkında
+     * "kayıp sütun" hatası olup olmadığını kontrol eder.
+     *
+     * <p>Eski sürümde SQLState 42S22 (column not found) tek başına yeterli
+     * sayılıyordu — fakat bu farklı bir sütun (örn. "note") yoksa "expense_name"
+     * de kayıp sanılıyordu. Şimdi sadece <b>mesajda sütun adı geçenleri</b>
+     * "kayıp" sayıyoruz.
+     */
     private boolean isMissingColumn(SQLException ex, String columnName) {
         SQLException current = ex;
         while (current != null) {
-            String state = current.getSQLState();
-            if ("42S22".equals(state)) {
-                return true;
-            }
             if (messageRefersMissingColumn(current.getMessage(), columnName)) {
                 return true;
             }
@@ -452,11 +499,28 @@ public class ExpenseJdbcDAO implements ExpenseDAO {
     }
 
     private boolean messageRefersMissingColumn(String message, String columnName) {
-        if (message == null) {
+        if (message == null || columnName == null) {
             return false;
         }
         String lower = message.toLowerCase();
-        return lower.contains("unknown column") && lower.contains(columnName.toLowerCase());
+        String col = columnName.toLowerCase();
+
+        // Hata mesajının gerçek "missing column" kısmı, "SQL statement" bölümünden
+        // önce gelir. H2 mesajı SQL'i de içerdiği için sadece o kısma bakmalıyız —
+        // aksi halde SQL içindeki başka sütun adları da "kayıp" sanılır.
+        int sqlIdx = lower.indexOf("sql statement");
+        String head = sqlIdx > 0 ? lower.substring(0, sqlIdx) : lower;
+
+        // Sütun adı tırnak içinde geçmeli: "X" veya 'X' veya `X`
+        boolean quoted = head.contains("\"" + col + "\"")
+                || head.contains("'" + col + "'")
+                || head.contains("`" + col + "`");
+
+        boolean recognized = head.contains("unknown column")  // MySQL
+                || head.contains("not found")                  // H2
+                || head.contains("doesn't exist")              // alt-MySQL
+                || head.contains("does not exist");            // Postgres
+        return quoted && recognized;
     }
 
     private boolean adjustColumnStates(SQLException ex) {

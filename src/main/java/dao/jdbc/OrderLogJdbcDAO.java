@@ -3,6 +3,8 @@ package dao.jdbc;
 import DataConnection.Db;
 import dao.OrderLogDAO;
 import state.OrderLogEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -16,6 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class OrderLogJdbcDAO implements OrderLogDAO {
+
+    private static final Logger LOG = LoggerFactory.getLogger(OrderLogJdbcDAO.class);
 
     private final DataSource dataSource;
     private final Connection externalConnection;
@@ -127,7 +131,7 @@ public class OrderLogJdbcDAO implements OrderLogDAO {
                 synchronized (schemaLock) {
                     if (!tableMissing) {
                         tableMissing = true;
-                        System.err.println("Sipariş geçmişi tablosu (order_logs) bulunamadı. Günlükleme devre dışı bırakıldı. Ayrıntı: "
+                        LOG.warn("Sipariş geçmişi tablosu (order_logs) bulunamadı. Günlükleme devre dışı. Detay: "
                                 + ex.getMessage());
                     }
                 }

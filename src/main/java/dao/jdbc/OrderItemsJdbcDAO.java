@@ -64,6 +64,26 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
         try { it.setNetAmount(rs.getBigDecimal("net_amount")); } catch (SQLException ignore) {}
         try { it.setTaxAmount(rs.getBigDecimal("tax_amount")); } catch (SQLException ignore) {}
         try { it.setLineTotal(rs.getBigDecimal("line_total")); } catch (SQLException ignore) {}
+        try {
+            int v = rs.getInt("kitchen_override_id");
+            it.setKitchenOverrideId(rs.wasNull() ? null : v);
+        } catch (SQLException ignore) {}
+        try {
+            int pp = rs.getInt("pieces_per_portion");
+            it.setPiecesPerPortion(rs.wasNull() ? null : pp);
+        } catch (SQLException ignore) {}
+        try {
+            String lbl = rs.getString("unit_label");
+            it.setUnitLabel(lbl);
+        } catch (SQLException ignore) {}
+        try {
+            Timestamp pa = rs.getTimestamp("printed_at");
+            if (pa != null) it.setPrintedAt(pa.toLocalDateTime());
+        } catch (SQLException ignore) {}
+        try {
+            String n = rs.getString("note");
+            if (n != null) it.setNote(n);
+        } catch (SQLException ignore) {}
 
         try {
             Timestamp c = rs.getTimestamp("created_at");
@@ -210,6 +230,12 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
 
     @Override
     public void addOrIncrement(Long orderId, Long productId, String productName, int quantity, BigDecimal unitPrice) {
+        addOrIncrement(orderId, productId, productName, quantity, unitPrice, null, null);
+    }
+
+    @Override
+    public void addOrIncrement(Long orderId, Long productId, String productName, int quantity,
+                               BigDecimal unitPrice, Integer piecesPerPortion, String unitLabel) {
         Connection connection = null;
         try {
             connection = acquireConnection();
@@ -235,12 +261,40 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
                         ins.setBigDecimal(5, unitPrice);
                         ins.executeUpdate();
                     }
+                    // Snapshot alanları varsa atayalım (best-effort)
+                    if (piecesPerPortion != null || unitLabel != null) {
+                        applyPortionSnapshotBestEffort(connection, orderId, productId,
+                                piecesPerPortion, unitLabel);
+                    }
                 }
             }
         } catch (SQLException ex) {
             throw new RuntimeException(ex);
         } finally {
             close(connection);
+        }
+    }
+
+    /**
+     * Yeni eklenen order_items satırına pieces_per_portion + unit_label
+     * snapshot'ı yazmak için best-effort UPDATE. Sütunlar yoksa sessiz geç.
+     */
+    private void applyPortionSnapshotBestEffort(Connection connection,
+                                                Long orderId, Long productId,
+                                                Integer piecesPerPortion, String unitLabel) {
+        if (connection == null) return;
+        final String sql = "UPDATE order_items SET pieces_per_portion=?, unit_label=? " +
+                "WHERE order_id=? AND product_id=?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            if (piecesPerPortion == null) ps.setNull(1, Types.INTEGER);
+            else ps.setInt(1, piecesPerPortion);
+            if (unitLabel == null || unitLabel.isBlank()) ps.setNull(2, Types.VARCHAR);
+            else ps.setString(2, unitLabel);
+            ps.setLong(3, orderId);
+            ps.setLong(4, productId);
+            ps.executeUpdate();
+        } catch (SQLException ex) {
+            // Migration v3 uygulanmadıysa sütun yoktur — sessiz geç.
         }
     }
 
@@ -268,6 +322,69 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
             }
         } catch (SQLException ex) {
             throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    @Override
+    public void updateKitchenOverride(Long orderItemId, Integer printerId) {
+        final String sql = "UPDATE order_items SET kitchen_override_id=?, updated_at=NOW() WHERE id=?";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                if (printerId == null) {
+                    ps.setNull(1, Types.INTEGER);
+                } else {
+                    ps.setInt(1, printerId);
+                }
+                ps.setLong(2, orderItemId);
+                ps.executeUpdate();
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            close(connection);
+        }
+    }
+
+    @Override
+    public void updateNote(Long orderItemId, String note) {
+        final String sql = "UPDATE order_items SET note=?, updated_at=NOW() WHERE id=?";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                if (note == null || note.isBlank()) ps.setNull(1, Types.VARCHAR);
+                else ps.setString(1, note.length() > 255 ? note.substring(0, 255) : note);
+                ps.setLong(2, orderItemId);
+                ps.executeUpdate();
+            }
+        } catch (SQLException ex) {
+            // Migration uygulanmadıysa note sütunu yoktur — sessiz geç
+        } finally {
+            close(connection);
+        }
+    }
+
+    @Override
+    public int markItemsPrinted(Long orderId) {
+        // Sadece henüz basılmamış kalemleri işaretle (idempotent)
+        final String sql = "UPDATE order_items " +
+                "SET printed_at = NOW(), print_count = COALESCE(print_count, 0) + 1, " +
+                "    updated_at = NOW() " +
+                "WHERE order_id = ? AND printed_at IS NULL";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setLong(1, orderId);
+                return ps.executeUpdate();
+            }
+        } catch (SQLException ex) {
+            // Migration uygulanmadıysa printed_at sütunu yoktur — sessiz geç
+            return 0;
         } finally {
             close(connection);
         }

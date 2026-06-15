@@ -5,10 +5,20 @@ import java.math.BigDecimal;
 public class Product extends BaseEntity {
     private String name;
     private Long categoryId;           // basit JDBC için FK id
-    private BigDecimal unitPrice;      // NET fiyat (KDV hariç)
+    private BigDecimal unitPrice;      // NET fiyat (KDV hariç) — bir PORSİYON fiyatı
     private BigDecimal vatRate;        // örn: 0.20 (yüzde 20)
     private Integer stock = 0;
     private boolean active = true;
+    /**
+     * 1 porsiyonda kaç birim (örn. şiş) var?
+     * <ul>
+     *   <li>{@code null} → ürün porsiyon bazlı; quantity = porsiyon sayısı</li>
+     *   <li>{@code >=1} → 1 porsiyon = N şiş (ör. ciğer=4, adana=2)</li>
+     * </ul>
+     */
+    private Integer piecesPerPortion;
+    /** Birim etiketi: "porsiyon", "şiş", "adet", "kg" vb. — UI gösterimi içindir. */
+    private String unitLabel;
     public static final int NAME_MAX = 100;
     public static final int SKU_MAX = 64;
     public static final java.math.BigDecimal DEFAULT_VAT = new java.math.BigDecimal("0.20");
@@ -96,5 +106,47 @@ public class Product extends BaseEntity {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public Integer getPiecesPerPortion() {
+        return piecesPerPortion;
+    }
+
+    public void setPiecesPerPortion(Integer piecesPerPortion) {
+        if (piecesPerPortion != null && piecesPerPortion <= 0) {
+            throw new IllegalArgumentException("Porsiyondaki birim sayısı 1 veya üzeri olmalı");
+        }
+        this.piecesPerPortion = piecesPerPortion;
+    }
+
+    public String getUnitLabel() {
+        return unitLabel;
+    }
+
+    public void setUnitLabel(String unitLabel) {
+        if (unitLabel == null) {
+            this.unitLabel = null;
+            return;
+        }
+        String trimmed = unitLabel.trim();
+        this.unitLabel = trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** True → bu ürün şiş/birim bazlı (1 porsiyon = N birim) fiyatlandırılır. */
+    public boolean isPieceBased() {
+        return piecesPerPortion != null && piecesPerPortion > 0;
+    }
+
+    /**
+     * Şiş bazlı fiyatlandırma için "1 birim (şiş)" fiyatını döndürür.
+     * Ürün porsiyon bazlıysa unitPrice ile aynı.
+     */
+    public BigDecimal getPerPiecePrice() {
+        if (!isPieceBased() || unitPrice == null) {
+            return unitPrice;
+        }
+        return MoneyUtil.two(unitPrice.divide(
+                new java.math.BigDecimal(piecesPerPortion),
+                4, java.math.RoundingMode.HALF_UP));
     }
 }

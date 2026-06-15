@@ -36,3 +36,35 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Güvenlik: gerçek secret içeren dosyalar repo'ya GİRMESİN ###
+# Bunlar yerel olarak ~/.budget/ altında veya geliştirici makinesinde tutulur.
+# Repo içinde sadece .example versiyonları paylaşılır.
+src/main/resources/db.properties
+src/main/resources/email-config.properties
+
+# Yedekler (mysqldump çıktıları, şifreli olsalar dahi commit edilmez)
+logs/
+backups/
+*.sql
+*.sql.gz
+*.sql.enc
+
+# Lokal güvenlik anahtarları
+*.pem
+*.key
+*.crt
+*.jks
+*.p12
+
+# Yerel kullanım için backup script (gerçek MySQL şifresi içerebilir)
+# Repo'ya örnek olan scripts/backup_posdb.bat.example commit edilir.
+scripts/backup_posdb.bat
+
+# Özel/ticari hassas belgeler — repo'da tutulmaz
+# (PDF/DOCX dosya adları Türkçe karakterli olduğu için NFC↔NFD normalize
+#  farkı pattern eşleşmesini bozar; bu yüzden tüm pdf/docx'leri ignore'a
+#  alıyoruz. Gerçekten commit edilmesi gereken bir döküman olursa
+#  `!docs/<dosya>.pdf` gibi negation ile dahil edilebilir.)
+*.pdf
+*.docx

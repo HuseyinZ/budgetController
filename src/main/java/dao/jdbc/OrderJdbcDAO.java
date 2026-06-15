@@ -4,6 +4,8 @@ import DataConnection.Db;
 import dao.OrderDAO;
 import model.Order;
 import model.OrderStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -19,6 +21,7 @@ import java.util.Set;
 
 public class OrderJdbcDAO implements OrderDAO {
 
+    private static final Logger LOG = LoggerFactory.getLogger(OrderJdbcDAO.class);
     private static final OrderStatus[] STATUS_VALUES = OrderStatus.values();
 
     private final DataSource dataSource;
@@ -132,13 +135,13 @@ public class OrderJdbcDAO implements OrderDAO {
             if ("created_at".equalsIgnoreCase(column)) {
                 if (!missingCreatedAtColumn) {
                     missingCreatedAtColumn = true;
-                    System.err.println("Sipariş tablosunda 'created_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Ayrıntı: "
+                    LOG.warn("Sipariş tablosunda 'created_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Detay: "
                             + ex.getMessage());
                 }
             } else if ("updated_at".equalsIgnoreCase(column)) {
                 if (!missingUpdatedAtColumn) {
                     missingUpdatedAtColumn = true;
-                    System.err.println("Sipariş tablosunda 'updated_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Ayrıntı: "
+                    LOG.warn("Sipariş tablosunda 'updated_at' sütunu bulunamadı. Sipariş tarihi kullanılacak. Detay: "
                             + ex.getMessage());
                 }
             }
@@ -223,7 +226,7 @@ public class OrderJdbcDAO implements OrderDAO {
         String key = value == null ? "null" : value;
         synchronized (statusLock) {
             if (unknownStatusValues.add(key)) {
-                System.err.println("Bilinmeyen sipariş durumu değeri ('" + key
+                LOG.warn("Bilinmeyen sipariş durumu değeri ('" + key
                         + "'). 'PENDING' varsayıldı.");
             }
         }
@@ -552,7 +555,7 @@ public class OrderJdbcDAO implements OrderDAO {
         if (detail != null && !detail.isBlank()) {
             message.append(" Ayrıntı: ").append(detail);
         }
-        System.err.println(message);
+        LOG.warn(message.toString());
     }
 
     private boolean handleUnsupportedStatus(OrderStatus status, SQLException ex) {
@@ -880,7 +883,7 @@ public class OrderJdbcDAO implements OrderDAO {
                 if (detail != null && !detail.isBlank()) {
                     message.append(" Ayrıntı: ").append(detail);
                 }
-                System.err.println(message);
+                LOG.warn(message.toString());
             } else if (!statusModeDetermined) {
                 statusModeDetermined = true;
             }

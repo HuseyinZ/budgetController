@@ -3,6 +3,8 @@ package service;
 import model.Payment;
 import model.PaymentMethod;
 import model.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -20,6 +22,9 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 public class SaleService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SaleService.class);
+
     private final PaymentService paymentService;
     private final UserService userService;
 
@@ -73,7 +78,10 @@ public class SaleService {
             int rowIndex = 1;
             for (Payment p : payments) {
                 Row row = sheet.createRow(rowIndex++);
-                row.createCell(0).setCellValue(p.getOrderId());
+                // Order ID'yi STRING olarak yaz — sayısal hücre dönüşümleri
+                // (örn. "1" yerine "1.0") önlemek için.
+                Long orderId = p.getOrderId();
+                row.createCell(0).setCellValue(orderId == null ? "" : String.valueOf(orderId));
 
                 BigDecimal amount = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
                 amount = amount.setScale(2, RoundingMode.HALF_UP);
@@ -101,7 +109,7 @@ public class SaleService {
             fileOut.flush();
             return true;
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.error("Satış Excel'e aktarılamadı: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -157,7 +165,7 @@ public class SaleService {
             fileOut.flush();
             return true;
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.error("Satış Excel'e aktarılamadı: {}", e.getMessage(), e);
             return false;
         }
     }

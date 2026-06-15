@@ -1,0 +1,40 @@
+# ============================================================================
+#   ÖRNEK YAPILANDIRMA — gerçek değerleri bu dosyaya YAZMAYIN
+# ============================================================================
+#
+#   GERÇEK email-config.properties dosyasını şuraya koyun:
+#
+#       Windows: C:\Users\<kullanıcı>\.budget\email-config.properties
+#       Linux/Mac: ~/.budget/email-config.properties
+#
+#   Gmail kullanıyorsanız:
+#     1) Google hesabınızda 2FA açın → https://myaccount.google.com/security
+#     2) Uygulama Şifresi oluşturun → https://myaccount.google.com/apppasswords
+#     3) Aşağıya gerçek şifrenizi koyun.
+#
+#   Outlook / Office365:
+#       smtp.host = smtp.office365.com
+#       smtp.port = 587
+#
+#   Yandex:
+#       smtp.host = smtp.yandex.com.tr
+#       smtp.port = 465
+#       smtp.starttls = false
+#       smtp.ssl = true
+#
+# ============================================================================
+
+smtp.host = smtp.gmail.com
+smtp.port = 587
+smtp.starttls = true
+smtp.ssl = false
+
+smtp.user = CHANGE_ME@example.com
+smtp.password = CHANGE_ME_APP_PASSWORD
+
+smtp.from = Dağkapı Ciğercisi POS <CHANGE_ME@example.com>
+report.to = patron@example.com
+
+# Otomatik Gün Sonu gönderimi
+report.auto.enabled = false
+report.auto.time = 23:55

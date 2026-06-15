@@ -1,0 +1,65 @@
+@echo off
+REM =====================================================================
+REM  posdb Otomatik Yedekleme — ÖRNEK YAPILANDIRMA
+REM  --------------------------------------------------------------------
+REM  Bu .example dosyasini "backup_posdb.bat" olarak kopyalayin ve
+REM  asagidaki degiskenleri kendi sisteminize gore doldurun.
+REM  Gercek "backup_posdb.bat" dosyasi .gitignore'da — repo'ya commit
+REM  edilmez. Boylece yerel MySQL sifreniz repo geçmisine sizmaz.
+REM
+REM  ALTERNATIF: Bu yerine uygulamanin kendi sifreli yedek mekanizmasini
+REM  kullanin (BackupService + tools.BackupDecrypt CLI, bkz. SECURITY.md §4).
+REM
+REM  KURULUM:
+REM   1) Bu dosyayi "backup_posdb.bat" olarak kopyala:
+REM         copy backup_posdb.bat.example backup_posdb.bat
+REM   2) Asagidaki MYSQL_BIN, BACKUP_DIR, MYSQL_USER ve MYSQL_PASS
+REM      degiskenlerini kendi sisteminize gore duzenle.
+REM   3) Komut satirinda bir kez test et:   backup_posdb.bat
+REM      Beklenen: BACKUP_DIR altinda "posdb-YYYY-MM-DD-HHMM.sql" olusur.
+REM   4) Windows "Gorev Zamanlayicisi"nda (taskschd.msc) yeni bir gorev:
+REM         Tetikleyici: Gunluk, gece 03:00
+REM         Eylem      : Program baslat -> bu .bat dosyasinin yolunu ver
+REM         Calisma yeri: bu dosyanin bulundugu klasor
+REM
+REM  Onerilen: 30 gunden eski yedekleri silen ek bir adim eklemek.
+REM =====================================================================
+
+REM --- Yapilandirma (PLACEHOLDER — kendi degerlerinizle degistirin) ---
+set "MYSQL_BIN=C:\Program Files\MySQL\MySQL Server 9.3\bin"
+set "BACKUP_DIR=%USERPROFILE%\OneDrive\posdb-yedekleri"
+set "MYSQL_USER=root"
+set "MYSQL_PASS=CHANGE_ME"
+set "DB_NAME=posdb"
+set "RETENTION_DAYS=30"
+
+REM --- Tarih damgasi: YYYY-MM-DD-HHMM ---
+for /f "tokens=2 delims==" %%I in ('"wmic os get localdatetime /value"') do set DT=%%I
+set "STAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%-%DT:~8,2%%DT:~10,2%"
+set "OUT=%BACKUP_DIR%\posdb-%STAMP%.sql"
+
+REM --- Klasor yoksa olustur ---
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+
+echo [%date% %time%] Yedekleme baslatildi -> %OUT%
+
+REM --- mysqldump ---
+"%MYSQL_BIN%\mysqldump.exe" ^
+    --default-character-set=utf8mb4 ^
+    --routines --triggers --events ^
+    --single-transaction ^
+    -u%MYSQL_USER% -p%MYSQL_PASS% ^
+    %DB_NAME% > "%OUT%"
+
+if errorlevel 1 (
+    echo [HATA] mysqldump basarisiz! Cikis kodu: %errorlevel%
+    exit /b %errorlevel%
+)
+
+echo [OK] Yedek olusturuldu: %OUT%
+
+REM --- Eski yedekleri sil (30 gunden eski) ---
+forfiles /p "%BACKUP_DIR%" /m "posdb-*.sql" /d -%RETENTION_DAYS% /c "cmd /c del @path" 2>nul
+echo [TEMIZLIK] %RETENTION_DAYS% gunden eski yedekler silindi (varsa).
+
+exit /b 0

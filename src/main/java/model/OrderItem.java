@@ -1,6 +1,7 @@
 package model;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 /**
@@ -21,6 +22,37 @@ public class OrderItem extends BaseEntity {
     private BigDecimal netAmount;    // quantity * unit_price
     private BigDecimal taxAmount;    // netAmount * 0.20
     private BigDecimal lineTotal;    // netAmount * 1.20
+
+    /**
+     * Garson bu satırı kategorinin varsayılan mutfağı dışında bir mutfağa
+     * yönlendirdiyse, yazıcı id'si burada saklanır. Null → kategori default'u.
+     * DB sütunu: order_items.kitchen_override_id
+     */
+    private Integer kitchenOverrideId;
+
+    /**
+     * Sipariş anındaki "1 porsiyonda kaç birim" snapshot'ı.
+     * Ürün ileride değişse bile sipariş raporu doğru kalsın diye.
+     * DB sütunu: order_items.pieces_per_portion (NULL → ürün şiş bazlı değildi)
+     */
+    private Integer piecesPerPortion;
+
+    /** Sipariş anındaki birim etiketi snapshot'ı (örn. "şiş"). */
+    private String unitLabel;
+
+    /**
+     * Bu kalem en son hangi tarihte mutfak yazıcısına basıldı?
+     * {@code null} → henüz basılmamış (yeni eklenen "ek sipariş" kalemi).
+     * DB sütunu: order_items.printed_at
+     */
+    private LocalDateTime printedAt;
+
+    /**
+     * Bu satıra özel not / özelleştirmeler.
+     * Örn. "Az pişmiş", "Soğansız, tuzsuz", "Bibersiz, acılı".
+     * DB sütunu: order_items.note
+     */
+    private String note;
 
     public OrderItem() {}
 
@@ -69,6 +101,30 @@ public class OrderItem extends BaseEntity {
     public BigDecimal getLineTotal() { return lineTotal; }
     /** DAO map eder (SELECT'te). */
     public void setLineTotal(BigDecimal lineTotal) { this.lineTotal = MoneyUtil.two(lineTotal); }
+
+    public Integer getKitchenOverrideId() { return kitchenOverrideId; }
+    public void setKitchenOverrideId(Integer id) { this.kitchenOverrideId = id; }
+
+    public Integer getPiecesPerPortion() { return piecesPerPortion; }
+    public void setPiecesPerPortion(Integer piecesPerPortion) { this.piecesPerPortion = piecesPerPortion; }
+
+    public String getUnitLabel() { return unitLabel; }
+    public void setUnitLabel(String unitLabel) { this.unitLabel = unitLabel; }
+
+    public LocalDateTime getPrintedAt() { return printedAt; }
+    public void setPrintedAt(LocalDateTime printedAt) { this.printedAt = printedAt; }
+
+    /** Bu kalem henüz mutfağa düşürülmedi mi? (Yeni eklenen "ek" kalem) */
+    public boolean isPending() { return printedAt == null; }
+
+    public String getNote() { return note; }
+    public void setNote(String note) {
+        if (note == null) { this.note = null; return; }
+        String trimmed = note.trim();
+        if (trimmed.isEmpty()) { this.note = null; return; }
+        if (trimmed.length() > 255) trimmed = trimmed.substring(0, 255);
+        this.note = trimmed;
+    }
 
     /** Ürün değiştiyse kolay snapshot güncellemesi (oran yok!). */
     public void updateSnapshotFrom(Product product) {

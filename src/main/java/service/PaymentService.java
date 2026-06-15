@@ -3,6 +3,8 @@ package service;
 import dao.PaymentDAO;
 import dao.jdbc.PaymentJdbcDAO;
 import model.Payment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -16,6 +18,9 @@ import java.util.List;
 import java.util.Objects;
 
 public class PaymentService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PaymentService.class);
+
     private final PaymentDAO paymentDAO;
 
     public PaymentService() {
@@ -41,6 +46,30 @@ public class PaymentService {
     public List<Payment> getPaymentsInMonth(int year, int month) {
         LocalDate firstDay = LocalDate.of(year, month, 1);
         return paymentDAO.findByDateRange(firstDay, firstDay.plusMonths(1));
+    }
+
+    /**
+     * Tek bir ödeme parçası kaydı ekler — hesap bölme için.
+     * Order kapatma işlemini YAPMAZ; caller tarafında Order COMPLETED yapılmalı.
+     */
+    public Long recordPayment(Long orderId, Long cashierId, java.math.BigDecimal amount,
+                              model.PaymentMethod method) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("orderId gerekli");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("Tutar > 0 olmalı");
+        }
+        if (method == null) {
+            throw new IllegalArgumentException("Ödeme yöntemi gerekli");
+        }
+        Payment p = new Payment();
+        p.setOrderId(orderId);
+        p.setCashierId(cashierId);
+        p.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
+        p.setMethod(method);
+        p.setPaidAt(java.time.LocalDateTime.now());
+        return paymentDAO.create(p);
     }
 
     public boolean exportPaymentsToExcel(List<Payment> payments, String filePath) {
@@ -75,7 +104,7 @@ public class PaymentService {
             }
             return true;
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.error("Ödemeler Excel'e aktarılamadı: {}", e.getMessage(), e);
             return false;
         }
     }

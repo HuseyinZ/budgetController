@@ -37,7 +37,7 @@ public final class Db {
         cfg.setPoolName("budgetController");
         cfg.addDataSourceProperty("cachePrepStmts", "true");
         cfg.addDataSourceProperty("prepStmtCacheSize", "250");
-        cfg.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        cfg.addDataSourceProperty("prepStmtCacheSqlLimiét", "2048");
 
         DS = new HikariDataSource(cfg);
 
@@ -65,10 +65,30 @@ public final class Db {
         return EXTERNAL_CONFIG_PATH;
     }
 
+    /**
+     * Mevcut konfigürasyonun MASKE'lenmiş bir kopyasını döner.
+     *
+     * <p>Şifre alanları her zaman {@code ****} olarak gösterilir; JDBC URL
+     * içinde gömülü {@code user=...&password=...} parametreleri varsa onlar
+     * da maskelenir. Bu metod log/debug ve UI için güvenlidir; gerçek şifre
+     * hiçbir koşulda dışarı çıkmaz.
+     */
     public static Properties currentConfiguration() {
         Properties copy = new Properties();
         copy.putAll(CONFIG_SNAPSHOT);
+        copy.setProperty("db.password", "****");
+        String url = copy.getProperty("db.url", "");
+        copy.setProperty("db.url", maskUrlSecrets(url));
         return copy;
+    }
+
+    /** URL içindeki user/password query parametrelerini maskele. Test'ten erişilebilir olması için public. */
+    public static String maskUrlSecrets(String url) {
+        if (url == null || url.isEmpty()) return url == null ? "" : url;
+        // user=... ve password=... parametrelerini bul ve maskele
+        String out = url.replaceAll("(?i)(password=)([^&]*)", "$1****");
+        out = out.replaceAll("(?i)(user=)([^&]*)", "$1****");
+        return out;
     }
 
     public static <T> T tx(Function<Connection, T> work) {

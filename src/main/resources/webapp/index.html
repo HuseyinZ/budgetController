@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#c62828">
+  <title>BudgetController POS</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dağkapı Ciğercisi">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- =========== LOGIN VIEW =========== -->
+  <section id="view-login" class="view active">
+    <div class="login-card">
+      <h1>🍽️ Dağkapı Ciğercisi</h1>
+      <p class="subtitle">Restoran sipariş yönetimi</p>
+      <form id="loginForm">
+        <label>
+          <span>Kullanıcı Adı</span>
+          <input type="text" id="loginUsername" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Şifre</span>
+          <input type="password" id="loginPassword" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-large">Giriş Yap</button>
+        <div id="loginError" class="error"></div>
+      </form>
+      <p class="hint">Bu uygulama restoranın yerel ağına bağlıyken çalışır.<br>
+         Uzaktan erişim için Tailscale gerekir.</p>
+    </div>
+  </section>
+
+  <!-- =========== HEADER (her view'da görünür) =========== -->
+  <header id="appHeader" class="hidden">
+    <div class="header-left">
+      <button id="menuBtn" class="icon-btn">☰</button>
+      <button id="backBtn" class="icon-btn hidden">←</button>
+      <h1 id="headerTitle">Masalar</h1>
+    </div>
+    <div class="header-right">
+      <span id="liveClock" class="live-clock"></span>
+      <span id="headerUser"></span>
+      <button id="soundToggleBtn" class="icon-btn" title="Sesi aç/kapat">🔊</button>
+      <button id="logoutBtn" class="icon-btn">↪</button>
+    </div>
+  </header>
+
+  <!-- =========== SIDE NAV MENU =========== -->
+  <nav id="sideMenu" class="side-menu hidden">
+    <div class="side-menu-header">
+      <span>Menü</span>
+      <button class="icon-btn" id="sideMenuClose">×</button>
+    </div>
+    <button class="side-menu-item" data-view="dashboard">📊 Gösterge Paneli</button>
+    <button class="side-menu-item" data-view="tables">🪑 Masalar</button>
+    <button class="side-menu-item" data-view="sales" data-role="ADMIN,KASIYER">💰 Satışlar</button>
+    <button class="side-menu-item" data-view="expenses" data-role="ADMIN,KASIYER">📝 Giderler</button>
+    <button class="side-menu-item" data-view="daily" data-role="ADMIN">📅 Gün Sonu</button>
+    <button class="side-menu-item" data-view="refunds" data-role="ADMIN">🗂 İşlem Geçmişi</button>
+    <button class="side-menu-item" data-view="hourly" data-role="ADMIN">📈 Saatlik Yoğunluk</button>
+    <button class="side-menu-item" data-view="product-admin" data-role="ADMIN,KASIYER">🛒 Ürün Yönetimi</button>
+    <button class="side-menu-item" data-view="user-admin" data-role="ADMIN,KASIYER">👥 Kullanıcı Yönetimi</button>
+    <button class="side-menu-item" data-view="suggestions" data-role="ADMIN">💡 Öneriler</button>
+    <button class="side-menu-item" data-view="reservations">📆 Rezervasyonlar</button>
+  </nav>
+  <div id="sideMenuOverlay" class="side-menu-overlay hidden"></div>
+
+  <main id="appMain" class="hidden">
+
+    <!-- =========== DASHBOARD (sahip için) =========== -->
+    <section id="view-dashboard" class="view">
+      <div class="card">
+        <h2>📊 Günün Özeti</h2>
+        <div class="stat-grid">
+          <!-- "Bugünkü Ciro" kutusu sadece ADMIN'e gösterilir; kasiyere gizli -->
+          <div class="stat-box stat-green" id="statSalesBox">
+            <span class="stat-value" id="statSalesTotal">—</span>
+            <span class="stat-label">Bugünkü Ciro</span>
+          </div>
+          <div class="stat-box stat-blue">
+            <span class="stat-value" id="statTableOccupied">—</span>
+            <span class="stat-label">Dolu Masa</span>
+          </div>
+          <div class="stat-box stat-orange">
+            <span class="stat-value" id="statOrderCount">—</span>
+            <span class="stat-label">Açık Sipariş</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hızlı İstatistik chip'leri — sadece ADMIN'e -->
+      <div class="card" id="quickStatsBox">
+        <h3>⚡ Hızlı İstatistik</h3>
+        <div class="quick-stats-grid">
+          <button class="quick-stat-btn" data-stat="today-sales">💰 Bugün Ne Sattım?</button>
+          <button class="quick-stat-btn" data-stat="week-sales">📈 Bu Hafta Ciro</button>
+          <button class="quick-stat-btn" data-stat="month-sales">📅 Bu Ay Ciro</button>
+          <button class="quick-stat-btn" data-stat="today-expenses">📝 Bugün Gider</button>
+          <button class="quick-stat-btn" data-stat="net-profit">💎 Net Kar (Bugün)</button>
+          <button class="quick-stat-btn" data-stat="top-products">🏆 En Çok Satılan</button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-large" id="goToTablesBtn">
+        Masalara Git →
+      </button>
+
+      <!-- Hızlı istatistik sonuç modalı -->
+      <div id="quickStatModal" class="modal hidden">
+        <div class="modal-content">
+          <h2 id="quickStatTitle">Sonuç</h2>
+          <div id="quickStatBody" class="quick-stat-body">Yükleniyor...</div>
+          <button class="btn btn-secondary" id="quickStatCloseBtn">Kapat</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========== TABLES VIEW =========== -->
+    <section id="view-tables" class="view">
+      <div class="filter-bar">
+        <select id="buildingFilter"></select>
+        <select id="floorFilter"></select>
+      </div>
+      <div class="status-filter-bar">
+        <button class="status-btn active" data-status="all">Tümü</button>
+        <button class="status-btn status-empty-btn" data-status="EMPTY">Boş</button>
+        <button class="status-btn status-occupied-btn" data-status="OCCUPIED">Dolu</button>
+        <span id="statusCounts" class="status-counts"></span>
+      </div>
+      <div id="tablesGrid" class="tables-grid"></div>
+    </section>
+
+    <!-- =========== TABLE DETAIL =========== -->
+    <section id="view-table-detail" class="view">
+      <div class="card" id="tableInfoCard">
+        <h2 id="tableInfoTitle">Masa</h2>
+        <div id="tableInfoMeta" class="meta"></div>
+      </div>
+      <div class="card">
+        <h3>Sipariş Kalemleri</h3>
+        <div id="orderItems" class="order-items"></div>
+        <div class="total-row">
+          <span>TOPLAM</span>
+          <span id="orderTotal">₺0,00</span>
+        </div>
+      </div>
+      <div class="action-bar action-bar-grid">
+        <button class="btn btn-primary" id="addProductBtn">+ Ürün</button>
+        <button class="btn btn-orange" id="sendKitchenBtn">🍳 Mutfak</button>
+        <button class="btn btn-green" id="markServedBtn">✓ Teslim Edildi</button>
+        <button class="btn btn-green" id="saleBtn">💰 Satış</button>
+        <button class="btn btn-purple" id="splitBtn">✂️ Hesap Böl</button>
+        <button class="btn btn-blue" id="transferBtn">↔ Masa Taşı</button>
+        <button class="btn btn-danger" id="clearTableBtn">🗑 Masa Temizle</button>
+      </div>
+    </section>
+
+    <!-- =========== ÖDEME YÖNTEMİ DIALOG =========== -->
+    <div id="paymentDialog" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="paymentDialogTitle">Ödeme Yöntemi</h2>
+        <p id="paymentDialogAmount" class="modal-amount">₺0,00</p>
+
+        <!-- Hızlı tutar şablonları (yuvarlama / indirim / ikram) -->
+        <div class="quick-amount-row">
+          <button class="quick-amount-btn" data-action="round-50">↗ 50₺ Yuvarla</button>
+          <button class="quick-amount-btn" data-action="round-100">↗ 100₺ Yuvarla</button>
+          <button class="quick-amount-btn" data-action="disc-5">−5%</button>
+          <button class="quick-amount-btn" data-action="disc-10">−10%</button>
+          <button class="quick-amount-btn" data-action="free">🎁 Bedava (İkram)</button>
+          <button class="quick-amount-btn" data-action="reset">↺ Orijinal</button>
+        </div>
+
+        <div class="payment-options">
+          <button class="btn btn-green btn-large" data-method="CASH">💵 Nakit</button>
+          <button class="btn btn-blue btn-large" data-method="CREDIT_CARD">💳 Kart</button>
+          <button class="btn btn-purple btn-large" data-method="TRANSFER">🏦 EFT</button>
+        </div>
+        <button class="btn btn-secondary" id="paymentCancelBtn">İptal</button>
+      </div>
+    </div>
+
+    <!-- =========== HESAP BÖL DIALOG =========== -->
+    <div id="splitDialog" class="modal hidden">
+      <div class="modal-content">
+        <h2>✂️ Hesap Böl</h2>
+        <div id="splitStep1">
+          <p>Toplam: <strong id="splitTotalAmount">₺0,00</strong></p>
+          <p>Kaç kişiye bölünsün?</p>
+          <div class="split-quick">
+            <button class="btn btn-green btn-large" data-persons="2">2 Kişi</button>
+            <button class="btn btn-green btn-large" data-persons="3">3 Kişi</button>
+            <button class="btn btn-green btn-large" data-persons="4">4 Kişi</button>
+          </div>
+          <label>
+            <span>veya manuel kişi sayısı:</span>
+            <input type="number" id="splitManualCount" min="2" max="20" value="5">
+          </label>
+          <button class="btn btn-primary btn-large" id="splitManualGo">Devam →</button>
+        </div>
+        <div id="splitStep2" class="hidden">
+          <p>Her kişi için ödeme yöntemi:</p>
+          <div id="splitPersonsList"></div>
+          <button class="btn btn-primary btn-large" id="splitConfirmBtn">Onayla ve Tahsil Et</button>
+        </div>
+        <button class="btn btn-secondary" id="splitCancelBtn">İptal</button>
+      </div>
+    </div>
+
+    <!-- =========== KALEM EYLEM MENÜSÜ (alt-sheet) =========== -->
+    <div id="itemActionSheet" class="modal hidden">
+      <div class="modal-content">
+        <h3 id="itemActionTitle">Kalem</h3>
+        <button class="btn btn-orange btn-large" id="itemDecreaseBtn">− 1 Adet Azalt</button>
+        <button class="btn btn-danger btn-large" id="itemRemoveBtn">🗑 Tamamen Sil</button>
+        <button class="btn btn-secondary" id="itemCancelBtn">İptal</button>
+      </div>
+    </div>
+
+    <!-- =========== MASA TRANSFER DIALOG =========== -->
+    <div id="transferDialog" class="modal hidden">
+      <div class="modal-content">
+        <h2>↔ Masa Taşı</h2>
+        <p>Hedef masa seçin:</p>
+        <select id="transferTargetSelect" class="full-width-select"></select>
+        <button class="btn btn-primary btn-large" id="transferConfirmBtn">Taşı</button>
+        <button class="btn btn-secondary" id="transferCancelBtn">İptal</button>
+      </div>
+    </div>
+
+    <!-- =========== ÜRÜN EKLE DIALOG (porsiyon + şiş + not) =========== -->
+    <div id="addItemDialog" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="addItemProductName">Ürün</h2>
+        <p id="addItemPriceInfo" class="meta"></p>
+
+        <div class="qty-row">
+          <span class="qty-label">Porsiyon</span>
+          <div class="qty-controls">
+            <button class="qty-btn" data-action="portion-minus">−</button>
+            <input type="number" id="addItemPortion" min="0" max="50" value="1">
+            <button class="qty-btn" data-action="portion-plus">+</button>
+          </div>
+        </div>
+
+        <div class="qty-row" id="addItemPiecesRow" style="display:none;">
+          <span class="qty-label" id="addItemPiecesLabel">+ Şiş</span>
+          <div class="qty-controls">
+            <button class="qty-btn qty-blue" data-action="pieces-minus">−</button>
+            <input type="number" id="addItemExtraPieces" min="0" max="50" value="0">
+            <button class="qty-btn qty-blue" data-action="pieces-plus">+</button>
+          </div>
+        </div>
+
+        <div class="total-preview">
+          Toplam: <strong id="addItemTotalPreview">₺0,00</strong>
+        </div>
+
+        <label>
+          <span>Not (opsiyonel):</span>
+          <div class="note-presets">
+            <button type="button" class="note-chip" data-note="Soğansız">Soğansız</button>
+            <button type="button" class="note-chip" data-note="Tuzsuz">Tuzsuz</button>
+            <button type="button" class="note-chip" data-note="Acılı">Acılı</button>
+            <button type="button" class="note-chip" data-note="Acısız">Acısız</button>
+            <button type="button" class="note-chip" data-note="Az pişmiş">Az pişmiş</button>
+            <button type="button" class="note-chip" data-note="Çok pişmiş">Çok pişmiş</button>
+          </div>
+          <textarea id="addItemNote" rows="2" placeholder="özel istek..."></textarea>
+        </label>
+
+        <button class="btn btn-primary btn-large" id="addItemConfirmBtn">Siparişe Ekle</button>
+        <button class="btn btn-secondary" id="addItemCancelBtn">İptal</button>
+      </div>
+    </div>
+
+    <!-- =========== PRODUCT PICKER =========== -->
+    <section id="view-products" class="view">
+      <div id="addedSummary" class="added-summary">
+        <span>📋 Masa seçiliyor...</span>
+        <span class="added-total">₺0,00</span>
+      </div>
+      <input type="search" id="productSearch" placeholder="Ürün ara..." class="search-input">
+      <div id="categoryFilterBar" class="category-filter-bar"></div>
+      <div id="productsList" class="products-list"></div>
+      <div class="action-bar">
+        <button class="btn btn-primary btn-large" id="finishOrderBtn">
+          ✓ Bitti — Masaya Dön
+        </button>
+      </div>
+    </section>
+
+    <!-- =========== SALES VIEW (Tüm Satışlar) =========== -->
+    <section id="view-sales" class="view">
+      <div class="card">
+        <div class="row-between">
+          <h2>💰 Satışlar</h2>
+          <input type="date" id="salesDate" class="date-input">
+        </div>
+        <div class="big-totals" id="salesSummary"></div>
+      </div>
+      <div class="card">
+        <h3>Satış Listesi</h3>
+        <div id="salesList" class="record-list"></div>
+      </div>
+    </section>
+
+    <!-- =========== SALE DETAIL MODAL =========== -->
+    <div id="saleDetailModal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="saleDetailTitle">Satış Detayı</h2>
+        <div id="saleDetailMeta" class="meta"></div>
+        <h3>Sipariş Kalemleri</h3>
+        <div id="saleDetailItems" class="order-items"></div>
+        <div class="total-row">
+          <span>TOPLAM</span>
+          <span id="saleDetailTotal">₺0,00</span>
+        </div>
+        <button class="btn btn-secondary" id="saleDetailCloseBtn">Kapat</button>
+      </div>
+    </div>
+
+    <!-- =========== EXPENSES VIEW (Giderler) =========== -->
+    <section id="view-expenses" class="view">
+      <div class="card">
+        <div class="row-between">
+          <h2>📝 Giderler</h2>
+          <input type="date" id="expensesDate" class="date-input">
+        </div>
+        <div class="big-totals" id="expensesSummary"></div>
+      </div>
+
+      <div class="card">
+        <h3>Hızlı Seçim</h3>
+        <p class="meta">Bir kalemi seç → tutar/kg sorulacak</p>
+        <div id="expenseTemplates" class="expense-templates"></div>
+      </div>
+
+      <div class="card">
+        <h3>Yeni Gider Ekle (Manuel)</h3>
+        <div class="hourly-mode-bar">
+          <button class="mode-btn active" data-exp-mode="manual">💵 Manuel Tutar</button>
+          <button class="mode-btn" data-exp-mode="kg">⚖️ Kg Bazlı</button>
+        </div>
+
+        <label>
+          <span>Açıklama</span>
+          <input type="text" id="newExpDescription" placeholder="Domates, kömür vb.">
+        </label>
+
+        <!-- Manuel mod -->
+        <div id="expManualFields">
+          <label>
+            <span>Tutar (₺)</span>
+            <input type="text" inputmode="decimal" id="newExpAmount" placeholder="100.00">
+          </label>
+        </div>
+
+        <!-- Kg modu -->
+        <div id="expKgFields" class="hidden">
+          <label>
+            <span>Kilo (kg)</span>
+            <input type="text" inputmode="decimal" id="newExpKg" placeholder="3">
+          </label>
+          <label>
+            <span>Kg Fiyatı (₺/kg)</span>
+            <input type="text" inputmode="decimal" id="newExpUnitPrice" placeholder="25">
+          </label>
+          <div class="total-preview">
+            Hesaplanan: <strong id="expKgTotalPreview">₺0,00</strong>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-large" id="addExpenseBtn">+ Gider Ekle</button>
+      </div>
+
+      <div class="card">
+        <h3>Bugünkü Giderler</h3>
+        <div id="expensesList" class="record-list"></div>
+      </div>
+    </section>
+
+    <!-- =========== DAILY/MONTHLY REPORT VIEW =========== -->
+    <section id="view-daily" class="view">
+      <div class="card">
+        <div class="row-between">
+          <h2 id="dailyReportTitle">📅 Gün Sonu Raporu</h2>
+          <div class="hourly-mode-bar" style="margin:0;">
+            <button class="mode-btn active" data-period="day">Günlük</button>
+            <button class="mode-btn" data-period="month">Aylık</button>
+          </div>
+        </div>
+        <div class="row-between">
+          <input type="date" id="dailyDate" class="date-input">
+          <input type="month" id="dailyMonth" class="date-input hidden">
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-box stat-green">
+          <span class="stat-value" id="dailySalesTotal">—</span>
+          <span class="stat-label">Toplam Satış</span>
+        </div>
+        <div class="stat-box stat-orange">
+          <span class="stat-value" id="dailyExpenseTotal">—</span>
+          <span class="stat-label">Toplam Gider</span>
+        </div>
+        <div class="stat-box stat-blue">
+          <span class="stat-value" id="dailyNetProfit">—</span>
+          <span class="stat-label">Net Sonuç</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Detay</h3>
+        <div id="dailyDetailInfo" class="meta"></div>
+      </div>
+
+      <!-- ÜRÜN SATIŞ ÖZETİ -->
+      <div class="card">
+        <h3>📊 Ürün Satış Özeti</h3>
+        <p class="meta">Bu dönemde satılan ürünler — porsiyon karşılıklarıyla</p>
+        <div class="product-summary-table">
+          <table id="productSummaryTable">
+            <thead>
+              <tr><th>Ürün</th><th>Birim</th><th>Satılan</th><th>Porsiyon Karş.</th></tr>
+            </thead>
+            <tbody id="productSummaryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========== REFUND HISTORY VIEW (İşlem Geçmişi) =========== -->
+    <section id="view-refunds" class="view">
+      <div class="card">
+        <div class="row-between">
+          <h2>🗂 İşlem Geçmişi</h2>
+          <span id="refundsCount" class="meta"></span>
+        </div>
+        <p class="meta">Tüm iade / iptal / silme işlemleri kaydı</p>
+      </div>
+      <div id="refundsList" class="record-list"></div>
+    </section>
+
+    <!-- =========== HOURLY HEATMAP =========== -->
+    <section id="view-hourly" class="view">
+      <div class="card">
+        <div class="row-between">
+          <h2>📈 Saatlik Yoğunluk</h2>
+          <input type="date" id="hourlyDate" class="date-input">
+        </div>
+        <div class="hourly-mode-bar">
+          <button class="mode-btn active" data-mode="count">Adet</button>
+          <button class="mode-btn" data-mode="amount">Tutar (₺)</button>
+        </div>
+      </div>
+      <div class="card">
+        <svg id="hourlyChart" viewBox="0 0 720 320" preserveAspectRatio="xMidYMid meet"
+             style="width:100%; height:auto;"></svg>
+      </div>
+    </section>
+
+    <!-- =========== PRODUCT ADMIN =========== -->
+    <section id="view-product-admin" class="view">
+      <div class="card">
+        <h2>🛒 Ürün Yönetimi</h2>
+        <p class="meta">Tükendi olarak işaretle, fiyat değiştir, yeni ürün ekle</p>
+      </div>
+      <div class="card">
+        <h3>Yeni Ürün</h3>
+        <label><span>Ad</span>
+          <input type="text" id="newProdName" placeholder="örn. Adana Kebap">
+        </label>
+        <label><span>Porsiyon Fiyatı (₺)</span>
+          <input type="text" inputmode="decimal" id="newProdPrice" placeholder="120">
+        </label>
+        <label><span>Kategori</span>
+          <select id="newProdCategory" class="full-width-select"></select>
+        </label>
+        <label><span>Birim (porsiyon/şiş/adet/tabak/kg)</span>
+          <select id="newProdUnitLabel" class="full-width-select">
+            <option value="porsiyon">porsiyon</option>
+            <option value="şiş">şiş</option>
+            <option value="adet">adet</option>
+            <option value="tabak">tabak</option>
+            <option value="kase">kase</option>
+            <option value="kg">kg</option>
+          </select>
+        </label>
+        <label><span>Porsiyondaki şiş adeti
+            <span style="font-weight:normal;color:#999;">(0 = şiş bazlı değil)</span>
+          </span>
+          <input type="number" min="0" max="50" id="newProdPiecesPerPortion" value="0">
+        </label>
+        <button class="btn btn-primary btn-large" id="createProdBtn">+ Ürün Ekle</button>
+      </div>
+      <div class="card">
+        <h3>Mevcut Ürünler</h3>
+        <input type="search" id="prodAdminSearch" placeholder="Ara..." class="search-input">
+        <div id="prodAdminList" class="record-list"></div>
+      </div>
+    </section>
+
+    <!-- =========== SUGGESTIONS (Admin önerileri) =========== -->
+    <section id="view-suggestions" class="view">
+      <div class="card">
+        <h2>💡 Öneriler</h2>
+        <p class="meta">Geçmiş 30 günün verisinden otomatik üretilmiş tavsiyeler</p>
+      </div>
+      <div class="card">
+        <h3>👥 Saatlik Personel Önerisi</h3>
+        <p class="meta">Geçmiş veriden hangi saatte kaç garson olmalı</p>
+        <div id="staffSuggestionsList" class="record-list"></div>
+      </div>
+    </section>
+
+    <!-- =========== RESERVATIONS =========== -->
+    <section id="view-reservations" class="view">
+      <div class="card">
+        <h2>📆 Rezervasyonlar</h2>
+        <button id="newReservationBtn" class="btn-primary btn-large-action">+ Yeni Rezervasyon</button>
+        <label><span>Tarih</span>
+          <input type="date" id="reservationDate" class="date-input">
+        </label>
+      </div>
+      <div id="reservationsList" class="record-list"></div>
+    </section>
+
+    <!-- =========== NEW RESERVATION MODAL =========== -->
+    <div id="newReservationModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="row-between">
+          <h3>📆 Yeni Rezervasyon</h3>
+          <button class="icon-btn" id="closeReservationModal">✖</button>
+        </div>
+        <label><span>Masa</span>
+          <button type="button" id="resvTablePickBtn" class="btn-secondary btn-table-pick">Masa Seç …</button>
+          <input type="hidden" id="resvTableNo" value="0">
+        </label>
+        <label><span>Başlangıç</span>
+          <input type="datetime-local" id="resvStart">
+        </label>
+        <label><span>Bitiş</span>
+          <input type="datetime-local" id="resvEnd">
+        </label>
+        <label><span>Müşteri Adı</span>
+          <input type="text" id="resvName" autocomplete="off">
+        </label>
+        <label><span>Telefon</span>
+          <input type="tel" id="resvPhone" autocomplete="off">
+        </label>
+        <label><span>Kişi Sayısı</span>
+          <input type="number" id="resvParty" min="1" value="2">
+        </label>
+        <label><span>Notlar</span>
+          <textarea id="resvNotes" rows="2"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="resvCancelBtn">Vazgeç</button>
+          <button class="btn-primary" id="resvSaveBtn">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========== TABLE PICKER MODAL =========== -->
+    <div id="tablePickerModal" class="modal hidden">
+      <div class="modal-content modal-wide">
+        <div class="row-between">
+          <h3>🪑 Masa Seç</h3>
+          <button class="icon-btn" id="closeTablePickerBtn">✖</button>
+        </div>
+        <div id="tablePickerGrid" class="table-picker-grid"></div>
+      </div>
+    </div>
+
+    <!-- =========== USER ADMIN =========== -->
+    <section id="view-user-admin" class="view">
+      <div class="card">
+        <h2>👥 Kullanıcı Yönetimi</h2>
+        <p class="meta">Kasiyer ve garson kullanıcıları (Admin gizlidir)</p>
+      </div>
+      <div class="card">
+        <h3>Yeni Kullanıcı</h3>
+        <label><span>Kullanıcı Adı</span>
+          <input type="text" id="newUserName" autocomplete="off">
+        </label>
+        <label><span>Ad Soyad</span>
+          <input type="text" id="newUserFullName" autocomplete="off">
+        </label>
+        <label><span>Rol</span>
+          <select id="newUserRole" class="full-width-select">
+            <option value="KASIYER">Kasiyer</option>
+            <option value="GARSON">Garson</option>
+          </select>
+        </label>
+        <label><span>Şifre</span>
+          <input type="password" id="newUserPassword" autocomplete="new-password">
+        </label>
+        <button class="btn btn-primary btn-large" id="createUserBtn">+ Kullanıcı Oluştur</button>
+      </div>
+      <div class="card">
+        <h3>Mevcut Kullanıcılar</h3>
+        <div id="userAdminList" class="record-list"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast / bildirim -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="sound.js"></script>
+  <script src="app.js"></script>
+  <!-- Service worker kaydı app.js'in sonunda — inline script CSP tarafından bloklanır -->
+</body>
+</html>

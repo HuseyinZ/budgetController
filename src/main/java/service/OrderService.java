@@ -7,18 +7,23 @@ import dao.OrderItemsDAO;
 import dao.PaymentDAO;
 import dao.ProductDAO;
 import dao.RestaurantTableDAO;
+import dao.UserDAO;
 import dao.jdbc.OrderItemsJdbcDAO;
 import dao.jdbc.OrderJdbcDAO;
 import dao.jdbc.PaymentJdbcDAO;
 import dao.jdbc.ProductJdbcDAO;
 import dao.jdbc.RestaurantTableJdbcDAO;
+import dao.jdbc.UserJdbcDAO;
 import model.Order;
 import model.OrderItem;
 import model.OrderStatus;
 import model.Payment;
 import model.PaymentMethod;
 import model.Product;
+import model.RestaurantTable;
 import model.TableStatus;
+import model.User;
+import service.print.PrintingService;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -149,6 +154,26 @@ public class OrderService {
     }
 
     public void addItemToOrder(Long orderId, Long productId, int quantity) {
+        addItemToOrder(orderId, productId, quantity, null);
+    }
+
+    /**
+     * Şiş/birim bazlı eklemeyi destekleyen overload.
+     *
+     * <p>{@code pieces} parametresi {@code null} ise ürün PORSİYON bazlı kabul edilir
+     * (eski davranış; quantity = porsiyon, unitPrice = porsiyon fiyatı).
+     *
+     * <p>{@code pieces} dolu ise ürün ŞİŞ bazlı kabul edilir:
+     * <ul>
+     *   <li>order_items.quantity = pieces (toplam şiş)</li>
+     *   <li>order_items.unit_price = porsiyon_fiyatı / pieces_per_portion (şiş başına)</li>
+     *   <li>order_items.pieces_per_portion ve unit_label snapshot olarak yazılır</li>
+     * </ul>
+     *
+     * <p>Fiyat hesabı: line_total = quantity × unit_price = pieces × (porsiyon_fiyatı / pieces_per_portion)
+     * — yani <i>porsiyon ücreti × (sipariş şiş / porsiyon şiş)</i>.
+     */
+    public void addItemToOrder(Long orderId, Long productId, int quantity, Integer pieces) {
         if (quantity <= 0) throw new IllegalArgumentException("quantity > 0 olmalı");
 
         txExecutor.execute(conn -> {
@@ -156,14 +181,28 @@ public class OrderService {
             OrderItemsDAO txItems = orderItemsDaoFactory.apply(conn);
 
             Product product = txProduct.findById(productId).orElseThrow();
-            Integer stock = product.getStock();
-            if (stock != null && stock < quantity) {
-                throw new IllegalStateException("Stok yetersiz");
-            }
+            // Stok kontrolü iptal edildi — sistem stok yönetmiyor (UI'dan gizli).
 
-            BigDecimal unitPrice = product.getUnitPrice();
-            txItems.addOrIncrement(orderId, productId, product.getName(), quantity, unitPrice);
-            txProduct.updateStock(productId, -quantity);
+            BigDecimal unitPrice;
+            Integer ppSnapshot;
+            String labelSnapshot;
+            int qtyForDb;
+            if (pieces != null && pieces > 0 && product.isPieceBased()) {
+                // Şiş bazlı: birim fiyatı = porsiyon / piecesPerPortion
+                unitPrice = product.getPerPiecePrice();
+                qtyForDb = pieces;
+                ppSnapshot = product.getPiecesPerPortion();
+                labelSnapshot = product.getUnitLabel();
+            } else {
+                // Porsiyon bazlı (eski davranış)
+                unitPrice = product.getUnitPrice();
+                qtyForDb = quantity;
+                ppSnapshot = null;
+                labelSnapshot = product.getUnitLabel();
+            }
+            txItems.addOrIncrement(orderId, productId, product.getName(),
+                    qtyForDb, unitPrice, ppSnapshot, labelSnapshot);
+            txProduct.updateStock(productId, -qtyForDb);
             return null;
         });
     }
@@ -242,5 +281,110 @@ public class OrderService {
 
     public void updateOrderStatus(Long orderId, OrderStatus status) {
         orderDAO.updateStatus(orderId, status);
+    }
+
+    /**
+     * Bir siparişin tüm bekleyen (printed_at IS NULL) kalemlerini "basıldı"
+     * olarak işaretler. "Sipariş hazır" akışında çağrılır — UI'da YENİ
+     * etiketinin temizlenmesini sağlar.
+     */
+    public void markAllItemsPrinted(Long orderId) {
+        if (orderId == null) return;
+        orderItemsDAO.markItemsPrinted(orderId);
+    }
+
+    /** Bir sipariş kaleminin notunu günceller. */
+    public void updateItemNote(Long orderItemId, String note) {
+        if (orderItemId == null) return;
+        orderItemsDAO.updateNote(orderItemId, note);
+    }
+
+    // ============================================================
+    //   Mutfak fişi gönderimi (2026-05-15 entegrasyonu)
+    // ============================================================
+
+    /**
+     * Bir siparişin tüm kalemlerini ürün kategorisine göre gruplayıp
+     * ilgili mutfak yazıcılarına basar.
+     *
+     * <p>Çağrı şekli:
+     * <pre>{@code
+     *   orderService.sendToKitchens(orderId, new PrintingService());
+     * }</pre>
+     *
+     * <p>PrintingService null verilirse hiçbir şey yapılmaz — bu sayede
+     * yazıcı donanımı henüz takılmadığında uygulama çökmez.
+     *
+     * @return printingService.PrintResult listesi (loglama / UI için).
+     *         Servis null ise boş liste.
+     */
+    public List<PrintingService.PrintResult> sendToKitchens(Long orderId,
+                                                            PrintingService printingService) {
+        return sendToKitchens(orderId, /*salonName*/ null, printingService);
+    }
+
+    /**
+     * Aynı fonksiyonun salon adını dışarıdan geçirebilen overload'ı.
+     * <p>UI tarafı {@code TableSnapshot.getBuilding() + " / " + getSection()}
+     * birleşimini buraya geçirebilir.
+     */
+    public List<PrintingService.PrintResult> sendToKitchens(Long orderId,
+                                                            String salonName,
+                                                            PrintingService printingService) {
+        if (orderId == null) {
+            throw new IllegalArgumentException("orderId null olamaz");
+        }
+        if (printingService == null) {
+            return List.of();   // yazıcı yokken sessiz geç
+        }
+
+        Order order = orderDAO.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order bulunamadı: " + orderId));
+
+        List<OrderItem> allItems = orderItemsDAO.findByOrderId(orderId);
+        if (allItems.isEmpty()) {
+            return List.of();
+        }
+
+        // ➜ Sadece henüz mutfağa basılmamış (printed_at IS NULL) kalemleri gönder.
+        //   Bu sayede "ek sipariş" senaryosunda eski kalemler yeniden basılmaz.
+        List<OrderItem> pendingItems = new java.util.ArrayList<>();
+        for (OrderItem it : allItems) {
+            if (it.isPending()) pendingItems.add(it);
+        }
+        if (pendingItems.isEmpty()) {
+            return List.of();   // gönderilecek yeni kalem yok
+        }
+
+        String tableNo = "-";
+        if (order.getTableId() != null) {
+            RestaurantTable t = tableDAO.findById(order.getTableId()).orElse(null);
+            if (t != null && t.getTableNo() != null) {
+                tableNo = String.valueOf(t.getTableNo());
+            }
+        }
+
+        String waiterName = "-";
+        if (order.getWaiterId() != null) {
+            UserDAO userDAO = new UserJdbcDAO();
+            Optional<User> u = userDAO.findById(order.getWaiterId());
+            if (u.isPresent()) {
+                User w = u.get();
+                waiterName = (w.getFullName() != null && !w.getFullName().isBlank())
+                        ? w.getFullName() : w.getUsername();
+            }
+        }
+
+        String note = order.getNote();
+        List<PrintingService.PrintResult> results = printingService.sendOrderToKitchens(orderId,
+                salonName == null ? "" : salonName,
+                tableNo, waiterName, note, pendingItems);
+
+        // Başarılı baskı(lar) varsa kalemleri "basıldı" olarak işaretle
+        boolean anySuccess = results.stream().anyMatch(r -> r.success);
+        if (anySuccess) {
+            orderItemsDAO.markItemsPrinted(orderId);
+        }
+        return results;
     }
 }

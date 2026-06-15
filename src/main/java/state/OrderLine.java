@@ -8,8 +8,23 @@ public class OrderLine {
     private final String productName;
     private final BigDecimal unitPrice;
     private int quantity;
+    /**
+     * {@code true} → bu kalem henüz mutfağa basılmadı (yeni eklendi).
+     * UI tarafında vurgulu/farklı renkli gösterilir.
+     */
+    private boolean pending = true;
+    /** Bu satıra ait not / özelleştirme (örn. "Soğansız, az pişmiş"). */
+    private String note;
 
     public OrderLine(String productName, BigDecimal unitPrice, int quantity) {
+        this(productName, unitPrice, quantity, true, null);
+    }
+
+    public OrderLine(String productName, BigDecimal unitPrice, int quantity, boolean pending) {
+        this(productName, unitPrice, quantity, pending, null);
+    }
+
+    public OrderLine(String productName, BigDecimal unitPrice, int quantity, boolean pending, String note) {
         if (productName == null || productName.isBlank()) {
             throw new IllegalArgumentException("productName");
         }
@@ -22,6 +37,16 @@ public class OrderLine {
         this.productName = productName.trim();
         this.unitPrice = unitPrice.setScale(2, RoundingMode.HALF_UP);
         this.quantity = quantity;
+        this.pending = pending;
+        this.note = (note == null || note.isBlank()) ? null : note.trim();
+    }
+
+    public boolean isPending() { return pending; }
+    public void setPending(boolean pending) { this.pending = pending; }
+
+    public String getNote() { return note; }
+    public void setNote(String note) {
+        this.note = (note == null || note.isBlank()) ? null : note.trim();
     }
 
     public String getProductName() {

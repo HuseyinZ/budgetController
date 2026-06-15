@@ -40,6 +40,11 @@ public class ExpensesPanel extends JPanel {
     private final JTable table;
     private final JTextField descriptionField = new JTextField(20);
     private final JSpinner amountSpinner = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 1_000_000.0, 5.0));
+    private final JSpinner kgSpinner = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 10_000.0, 0.5));
+    private final JSpinner kgPriceSpinner = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 100_000.0, 1.0));
+    private final JLabel kgCalcLabel = new JLabel("0,00 ₺");
+    private final JRadioButton modeManual = new JRadioButton("Manuel (sadece tutar)", true);
+    private final JRadioButton modeKg = new JRadioButton("Kilo bazlı (kg × kg fiyatı)");
     private final JSpinner filterDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
     private final JSpinner expenseDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
     private final JButton deleteButton = new JButton("Gider kaldır");
@@ -61,7 +66,11 @@ public class ExpensesPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.getSelectionModel().addListSelectionListener(e -> updateDeleteButtonState());
         hideIdColumn();
-        add(buildFilterPanel(), BorderLayout.NORTH);
+        // Üst: Hızlı seçim + filtre (dikey)
+        JPanel topPanel = new JPanel(new BorderLayout(0, 4));
+        topPanel.add(buildQuickTemplatesPanel(), BorderLayout.NORTH);
+        topPanel.add(buildFilterPanel(), BorderLayout.CENTER);
+        add(topPanel, BorderLayout.NORTH);
         add(new JScrollPane(table), BorderLayout.CENTER);
         add(buildFormPanel(), BorderLayout.SOUTH);
 
@@ -90,25 +99,191 @@ public class ExpensesPanel extends JPanel {
         return toolbar;
     }
 
+    /**
+     * Hızlı şablon paneli — PWA'daki gibi chip butonlar.
+     * Şablonlar {@code expense-templates.properties} dosyasından okunur.
+     * Kullanıcı bu dosyayı şu yola kopyalayıp düzenleyebilir:
+     * {@code C:\Users\<kullanıcı>\.budget\expense-templates.properties}
+     */
+    private JComponent buildQuickTemplatesPanel() {
+        JPanel container = new JPanel(new BorderLayout(0, 4));
+        container.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Hızlı Seçim — tıkla, kg/tutar sorulsun"),
+                BorderFactory.createEmptyBorder(4, 4, 4, 4)));
+
+        // Şablon listesi
+        List<service.expense.ExpenseTemplate> templates =
+                service.expense.ExpenseTemplateService.loadTemplates();
+
+        // WrapLayout — pencere darsa alt satıra geçer
+        JPanel chipBar = new JPanel(new UI.WrapLayout(FlowLayout.LEFT, 10, 10));
+        for (service.expense.ExpenseTemplate t : templates) {
+            JButton btn = new JButton(t.icon() + "  " + t.name());
+            // Daha büyük, dokunmatik-dostu
+            btn.setFont(btn.getFont().deriveFont(Font.BOLD, 18f));
+            btn.setPreferredSize(new Dimension(180, 60));
+            btn.setMinimumSize(new Dimension(160, 60));
+            // Belirgin renkler: kg → turuncu, manuel → yeşil
+            Color base = t.isKgMode() ? new Color(255, 167, 38) : new Color(76, 175, 80);
+            btn.setBackground(base);
+            btn.setForeground(Color.WHITE);
+            btn.setOpaque(true);
+            btn.setBorderPainted(false);
+            btn.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(base.darker(), 2, true),
+                    BorderFactory.createEmptyBorder(8, 16, 8, 16)));
+            btn.setFocusPainted(false);
+            btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            btn.setHorizontalAlignment(SwingConstants.CENTER);
+            btn.setToolTipText(t.isKgMode()
+                    ? "Kg ve kg fiyatı sorulur (otomatik hesaplanır)"
+                    : "Toplam tutar sorulur (manuel)");
+            btn.addActionListener(e -> useTemplate(t));
+            chipBar.add(btn);
+        }
+
+        JScrollPane scroll = new JScrollPane(chipBar,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        // Daha kompakt yükseklik — tablo + form yer kalsın
+        scroll.setPreferredSize(new Dimension(900, 140));
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getVerticalScrollBar().setUnitIncrement(20);
+        container.add(scroll, BorderLayout.CENTER);
+
+        // Düzenleme açıklaması
+        JLabel hint = new JLabel(
+                "<html><i>Düzenlemek için:</i> "
+              + "<code>C:\\Users\\&lt;kullanıcı&gt;\\.budget\\expense-templates.properties</code> "
+              + "dosyasını açıp yeni satır ekleyin/silin.</html>");
+        hint.setFont(hint.getFont().deriveFont(11f));
+        hint.setForeground(Color.GRAY);
+        hint.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
+        container.add(hint, BorderLayout.SOUTH);
+        return container;
+    }
+
+    /** Bir şablona tıklayınca prompt'larla gider ekler. */
+    private void useTemplate(service.expense.ExpenseTemplate t) {
+        if (t.isKgMode()) {
+            String kgStr = JOptionPane.showInputDialog(this,
+                    t.name() + " — Kaç kg alındı?", "Kg Miktarı",
+                    JOptionPane.QUESTION_MESSAGE);
+            if (kgStr == null) return;
+            BigDecimal kg = parseDecimal(kgStr);
+            if (kg == null || kg.signum() <= 0) {
+                JOptionPane.showMessageDialog(this, "Geçerli kg girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            String priceStr = JOptionPane.showInputDialog(this,
+                    t.name() + " — Kg fiyatı kaç ₺?", "Kg Fiyatı",
+                    JOptionPane.QUESTION_MESSAGE);
+            if (priceStr == null) return;
+            BigDecimal price = parseDecimal(priceStr);
+            if (price == null || price.signum() < 0) {
+                JOptionPane.showMessageDialog(this, "Geçerli fiyat girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                appState.addKgBasedExpense(t.name(), kg, price, LocalDate.now(), currentUser);
+                BigDecimal total = kg.multiply(price);
+                JOptionPane.showMessageDialog(this,
+                        "✓ " + t.name() + " gideri eklendi (" + total + " ₺)",
+                        "Eklendi", JOptionPane.INFORMATION_MESSAGE);
+                reloadExpenses();
+            } catch (RuntimeException ex) {
+                JOptionPane.showMessageDialog(this, "Gider eklenemedi: " + ex.getMessage(),
+                        "Hata", JOptionPane.ERROR_MESSAGE);
+            }
+        } else {
+            String amtStr = JOptionPane.showInputDialog(this,
+                    t.name() + " — Toplam tutar (₺)?", "Tutar",
+                    JOptionPane.QUESTION_MESSAGE);
+            if (amtStr == null) return;
+            BigDecimal amount = parseDecimal(amtStr);
+            if (amount == null || amount.signum() <= 0) {
+                JOptionPane.showMessageDialog(this, "Geçerli tutar girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                appState.addExpense(amount, t.name(), LocalDate.now(), currentUser);
+                JOptionPane.showMessageDialog(this,
+                        "✓ " + t.name() + " gideri eklendi (" + amount + " ₺)",
+                        "Eklendi", JOptionPane.INFORMATION_MESSAGE);
+                reloadExpenses();
+            } catch (RuntimeException ex) {
+                JOptionPane.showMessageDialog(this, "Gider eklenemedi: " + ex.getMessage(),
+                        "Hata", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    /** "10,50" veya "10.50" parsing. */
+    private static BigDecimal parseDecimal(String s) {
+        if (s == null) return null;
+        String cleaned = s.replace(',', '.').replaceAll("[^0-9.]", "").trim();
+        if (cleaned.isEmpty()) return null;
+        try { return new BigDecimal(cleaned); }
+        catch (NumberFormatException ex) { return null; }
+    }
+
     private JComponent buildFormPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Yeni Gider Ekle (Manuel form)"),
+                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
         GridBagConstraints gc = new GridBagConstraints();
-        gc.insets = new Insets(4, 4, 4, 4);
+        gc.insets = new Insets(4, 6, 4, 6);
         gc.anchor = GridBagConstraints.WEST;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        gc.weightx = 1.0;
+
+        // Spinner ve textfield'ları okunaklı ama kompakt
+        Font formFont = panel.getFont().deriveFont(Font.PLAIN, 14f);
+        Dimension fieldSize = new Dimension(180, 30);
+        descriptionField.setFont(formFont);
+        descriptionField.setPreferredSize(fieldSize);
+        amountSpinner.setFont(formFont);
+        amountSpinner.setPreferredSize(fieldSize);
+        kgSpinner.setFont(formFont);
+        kgSpinner.setPreferredSize(fieldSize);
+        kgPriceSpinner.setFont(formFont);
+        kgPriceSpinner.setPreferredSize(fieldSize);
+        expenseDateSpinner.setFont(formFont);
+        expenseDateSpinner.setPreferredSize(fieldSize);
+
+        // Mod seçici (Manuel / Kg bazlı) — büyük radio butonlar
+        ButtonGroup modeGroup = new ButtonGroup();
+        modeGroup.add(modeManual);
+        modeGroup.add(modeKg);
+        modeManual.setFont(formFont.deriveFont(Font.BOLD));
+        modeKg.setFont(formFont.deriveFont(Font.BOLD));
+        modeManual.addActionListener(e -> refreshExpenseFormMode());
+        modeKg.addActionListener(e -> refreshExpenseFormMode());
 
         int row = 0;
         gc.gridx = 0; gc.gridy = row;
+        panel.add(new JLabel("Mod"), gc);
+        gc.gridx = 1;
+        JPanel modePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        modePanel.add(modeManual);
+        modePanel.add(modeKg);
+        panel.add(modePanel, gc);
+
+        row++;
+        gc.gridx = 0; gc.gridy = row;
         panel.add(new JLabel("Gider Tarihi"), gc);
-        expenseDateSpinner.setEditor(new JSpinner.DateEditor(expenseDateSpinner, "dd-MM-yyyy")); //yyyy-MM-dd
+        expenseDateSpinner.setEditor(new JSpinner.DateEditor(expenseDateSpinner, "dd-MM-yyyy"));
         gc.gridx = 1;
         panel.add(expenseDateSpinner, gc);
 
         row++;
         gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Açıklama"), gc);
+        panel.add(new JLabel("Açıklama / Ürün"), gc);
         gc.gridx = 1;
         panel.add(descriptionField, gc);
 
+        // -- Manuel mod alanı --
         row++;
         gc.gridx = 0; gc.gridy = row;
         panel.add(new JLabel("Tutar"), gc);
@@ -116,13 +291,75 @@ public class ExpensesPanel extends JPanel {
         gc.gridx = 1;
         panel.add(amountSpinner, gc);
 
+        // -- Kg modu alanları --
         row++;
-        gc.gridx = 1; gc.gridy = row; gc.anchor = GridBagConstraints.EAST;
-        JButton addButton = new JButton("Ekle");
+        gc.gridx = 0; gc.gridy = row;
+        panel.add(new JLabel("Kilo (kg)"), gc);
+        kgSpinner.setEditor(new JSpinner.NumberEditor(kgSpinner, "#,##0.000"));
+        gc.gridx = 1;
+        panel.add(kgSpinner, gc);
+
+        row++;
+        gc.gridx = 0; gc.gridy = row;
+        panel.add(new JLabel("Kg Fiyatı (₺/kg)"), gc);
+        kgPriceSpinner.setEditor(new JSpinner.NumberEditor(kgPriceSpinner, "#,##0.00"));
+        gc.gridx = 1;
+        panel.add(kgPriceSpinner, gc);
+
+        row++;
+        gc.gridx = 0; gc.gridy = row;
+        panel.add(new JLabel("Toplam"), gc);
+        kgCalcLabel.setFont(kgCalcLabel.getFont().deriveFont(Font.BOLD));
+        gc.gridx = 1;
+        panel.add(kgCalcLabel, gc);
+
+        // Toplam canlı hesaplama
+        javax.swing.event.ChangeListener calc = e -> refreshKgTotal();
+        kgSpinner.addChangeListener(calc);
+        kgPriceSpinner.addChangeListener(calc);
+
+        row++;
+        gc.gridx = 0; gc.gridy = row; gc.gridwidth = 2;
+        gc.anchor = GridBagConstraints.CENTER; gc.fill = GridBagConstraints.HORIZONTAL;
+        JButton addButton = new JButton("+ Gider Ekle");
+        addButton.setFont(addButton.getFont().deriveFont(Font.BOLD, 14f));
+        addButton.setBackground(new Color(46, 125, 50));
+        addButton.setForeground(Color.WHITE);
+        addButton.setOpaque(true);
+        addButton.setBorderPainted(false);
+        addButton.setFocusPainted(false);
+        addButton.setPreferredSize(new Dimension(260, 36));
+        addButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         addButton.addActionListener(e -> addExpense());
         panel.add(addButton, gc);
+        gc.gridwidth = 1;
 
+        // Tüm etiketleri büyüt (sadece JLabel'leri)
+        for (Component c : panel.getComponents()) {
+            if (c instanceof JLabel) c.setFont(formFont.deriveFont(Font.BOLD));
+        }
+        kgCalcLabel.setFont(formFont.deriveFont(Font.BOLD, 14f));
+        kgCalcLabel.setForeground(new Color(198, 40, 40));
+
+        refreshExpenseFormMode();
         return panel;
+    }
+
+    /** Mod değiştiğinde alanları aktif/pasif ayarlar. */
+    private void refreshExpenseFormMode() {
+        boolean kg = modeKg.isSelected();
+        amountSpinner.setEnabled(!kg);
+        kgSpinner.setEnabled(kg);
+        kgPriceSpinner.setEnabled(kg);
+        kgCalcLabel.setEnabled(kg);
+        refreshKgTotal();
+    }
+
+    private void refreshKgTotal() {
+        double kg = ((Number) kgSpinner.getValue()).doubleValue();
+        double price = ((Number) kgPriceSpinner.getValue()).doubleValue();
+        double total = kg * price;
+        kgCalcLabel.setText(String.format(Locale.getDefault(), "%,.2f ₺", total));
     }
 
     private void handleStateChange(PropertyChangeEvent event) {
@@ -137,15 +374,44 @@ public class ExpensesPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Açıklama gerekli", "Uyarı", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        double amountValue = ((Number) amountSpinner.getValue()).doubleValue();
-        if (amountValue <= 0) {
-            JOptionPane.showMessageDialog(this, "Tutar sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
         LocalDate date = convertToDate(expenseDateSpinner);
-        appState.addExpense(BigDecimal.valueOf(amountValue), description, date, currentUser);
-        descriptionField.setText("");
-        amountSpinner.setValue(0.0);
+
+        if (modeKg.isSelected()) {
+            double kg = ((Number) kgSpinner.getValue()).doubleValue();
+            double kgPrice = ((Number) kgPriceSpinner.getValue()).doubleValue();
+            if (kg <= 0) {
+                JOptionPane.showMessageDialog(this, "Kilo sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (kgPrice <= 0) {
+                JOptionPane.showMessageDialog(this, "Kg fiyatı sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                appState.addKgBasedExpense(description,
+                        BigDecimal.valueOf(kg),
+                        BigDecimal.valueOf(kgPrice),
+                        date, currentUser);
+            } catch (RuntimeException ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Gider eklenemedi: " + ex.getMessage(),
+                        "Hata", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            descriptionField.setText("");
+            kgSpinner.setValue(0.0);
+            kgPriceSpinner.setValue(0.0);
+            refreshKgTotal();
+        } else {
+            double amountValue = ((Number) amountSpinner.getValue()).doubleValue();
+            if (amountValue <= 0) {
+                JOptionPane.showMessageDialog(this, "Tutar sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            appState.addExpense(BigDecimal.valueOf(amountValue), description, date, currentUser);
+            descriptionField.setText("");
+            amountSpinner.setValue(0.0);
+        }
         reloadExpenses();
     }
 

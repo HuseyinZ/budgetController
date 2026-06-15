@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ===============================================================
+   Test ortamı için logback konfigürasyonu.
+   ===============================================================
+   logback-test.xml > logback.xml (test sırasında bu kullanılır).
+   Test sırasında loglar STDERR'e yazılır; bazı eski testler
+   System.setErr(buffer) ile uyarıları yakalıyor — bu sayede
+   o testler de geçer.
+  ===============================================================
+-->
+<configuration>
+
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="state"   level="WARN"/>
+    <logger name="service" level="WARN"/>
+    <logger name="dao"     level="WARN"/>
+    <logger name="UI"      level="WARN"/>
+
+    <logger name="com.zaxxer.hikari" level="OFF"/>
+    <logger name="org.apache.poi"    level="OFF"/>
+
+    <root level="WARN">
+        <appender-ref ref="STDERR"/>
+    </root>
+
+</configuration>

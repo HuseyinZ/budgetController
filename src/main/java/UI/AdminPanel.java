@@ -3,6 +3,7 @@ package UI;
 import model.Role;
 import model.User;
 import service.UserService;
+import state.AppState;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -53,13 +54,19 @@ public class AdminPanel extends JPanel {
         JButton createUserButton = new JButton("Yeni Kullanıcı");
         JButton toggleActiveButton = new JButton("Aktif/Pasif");
         JButton resetPasswordButton = new JButton("Parola Sıfırla");
+        JButton areaPermsButton = new JButton("Alan Yetkileri");
+        JButton kitchenRoutingButton = new JButton("Mutfak Eşleştirme");
         buttons.add(refreshButton);
         buttons.add(createUserButton);
         buttons.add(toggleActiveButton);
         buttons.add(resetPasswordButton);
+        buttons.add(areaPermsButton);
+        buttons.add(kitchenRoutingButton);
         deleteButton.setEnabled(false);
         buttons.add(deleteButton);
         add(buttons, BorderLayout.NORTH);
+        areaPermsButton.addActionListener(e -> openAreaPermissionsDialog());
+        kitchenRoutingButton.addActionListener(e -> openKitchenRoutingDialog());
 
         statusLabel.setForeground(Color.DARK_GRAY);
         add(statusLabel, BorderLayout.SOUTH);
@@ -75,8 +82,16 @@ public class AdminPanel extends JPanel {
 
     private void refreshUsers() {
         tableModel.setRowCount(0);
-        List<User> users = userService.getAllUsers();
-        for (User user : users) {
+        List<User> allUsers = userService.getAllUsers();
+        int hiddenAdmins = 0;
+        int shown = 0;
+        for (User user : allUsers) {
+            // ADMIN kullanıcılar listede asla görünmez — sadece DB/kod ile yönetilir.
+            // Bu sayede admin yetkisi UI'dan kaldırılamaz veya silinemez.
+            if (user.getRole() == Role.ADMIN) {
+                hiddenAdmins++;
+                continue;
+            }
             tableModel.addRow(new Object[]{
                     user.getId(),
                     user.getUsername(),
@@ -84,9 +99,47 @@ public class AdminPanel extends JPanel {
                     user.getRole(),
                     user.isActive() ? "Evet" : "Hayır"
             });
+            shown++;
         }
-        statusLabel.setText(users.isEmpty() ? "Henüz kullanıcı yok" : users.size() + " kullanıcı yüklendi");
+        if (shown == 0) {
+            statusLabel.setText("Henüz kasiyer/garson kullanıcı yok"
+                    + (hiddenAdmins > 0 ? " (" + hiddenAdmins + " admin gizli)" : ""));
+        } else {
+            statusLabel.setText(shown + " kullanıcı yüklendi"
+                    + (hiddenAdmins > 0 ? " (" + hiddenAdmins + " admin gizli — DB'den yönet)" : ""));
+        }
         updateDeleteButtonState();
+    }
+
+    private void openAreaPermissionsDialog() {
+        int row = table.getSelectedRow();
+        if (row < 0) {
+            showMessage("Önce bir kullanıcı seçin", true);
+            return;
+        }
+        Long id = (Long) tableModel.getValueAt(row, 0);
+        Object roleObj = tableModel.getValueAt(row, 3);
+        Role userRole = (roleObj instanceof Role) ? (Role) roleObj
+                : Role.valueOf(String.valueOf(roleObj));
+        if (userRole != Role.GARSON) {
+            JOptionPane.showMessageDialog(this,
+                    "Alan yetkileri sadece GARSON rolündeki kullanıcılar için anlamlıdır.\n"
+                  + "ADMIN ve KASIYER tüm alanları görür.",
+                    "Bilgi", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        User target = userService.getUserById(id).orElse(null);
+        if (target == null) {
+            showMessage("Kullanıcı bulunamadı", true);
+            return;
+        }
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        new UserAreaPermissionsDialog(owner, AppState.getInstance(), target).setVisible(true);
+    }
+
+    private void openKitchenRoutingDialog() {
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        new CategoryPrinterRoutingDialog(owner, AppState.getInstance()).setVisible(true);
     }
 
     private void toggleSelectedUser() {
@@ -164,7 +217,12 @@ public class AdminPanel extends JPanel {
     private void showCreateUserDialog() {
         JTextField usernameField = new JTextField(15);
         JTextField fullNameField = new JTextField(15);
-        JComboBox<Role> roleComboBox = new JComboBox<>(Role.values());
+        // ADMIN UI'dan oluşturulamaz — sadece KASIYER ve GARSON seçilebilir.
+        // Yeni admin gerekirse DB'den veya kod tarafından ekle.
+        Role[] uiRoles = java.util.Arrays.stream(Role.values())
+                .filter(r -> r != Role.ADMIN)
+                .toArray(Role[]::new);
+        JComboBox<Role> roleComboBox = new JComboBox<>(uiRoles);
         roleComboBox.setSelectedItem(Role.KASIYER);
         JPasswordField passwordField = new JPasswordField(15);
 
