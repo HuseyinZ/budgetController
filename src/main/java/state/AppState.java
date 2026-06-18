@@ -909,10 +909,14 @@ public class AppState {
         // Eski masayı boşalt, yenisini dolu yap
         try {
             tableService.markTableOccupied(fromTableId, false);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Source table occupancy cleanup failed after transfer; ignored: {}", e.toString());
+        }
         try {
             tableService.markTableOccupied(toTableId, true);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Target table occupancy update failed after transfer; ignored: {}", e.toString());
+        }
 
         String msg = "siparişi Masa " + fromTableNo + " → Masa " + toTableNo + " taşıdı";
         recordHistory(fromTableNo, fromOrder.getId(), historyEntry(user, msg));
@@ -1048,10 +1052,14 @@ public class AppState {
         try {
             orderService.updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
             orderService.reassignTable(order.getId(), null);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Empty order cancel/reassign cleanup failed; ignored: {}", e.toString());
+        }
         try {
             tableService.markTableOccupied(tableId, false);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Empty order table occupancy cleanup failed; ignored: {}", e.toString());
+        }
         recordHistory(tableNo, order.getId(),
                 "Sipariş tamamen boşaltıldığı için masa boş duruma alındı");
     }
@@ -1124,7 +1132,9 @@ public class AppState {
         // Masa durumunu EMPTY yap
         try {
             tableService.markTableOccupied(tableId, false);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Table cleanup state sync failed; ignored: {}", e.toString());
+        }
         recordHistory(tableNo, order.getId(), historyEntry(user, "masayı temizledi"));
 
         // Audit log
@@ -1271,7 +1281,9 @@ public class AppState {
         orderService.updateOrderStatus(order.getId(), OrderStatus.COMPLETED);
         try {
             tableService.markTableOccupied(tableId, false);
-        } catch (RuntimeException ignore) {}
+        } catch (RuntimeException e) {
+            LOG.debug("Split-payment table occupancy cleanup failed; ignored: {}", e.toString());
+        }
 
         StringBuilder summary = new StringBuilder("hesabı ").append(parts.size())
                 .append(" parça olarak böldü (toplam ").append(formatCurrency(expectedTotal)).append(")");
