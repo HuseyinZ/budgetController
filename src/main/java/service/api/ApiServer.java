@@ -1216,7 +1216,9 @@ public class ApiServer {
                     out.add(m);
                 }
             }
-        } catch (java.sql.SQLException ignore) {}
+        } catch (java.sql.SQLException e) {
+            LOG.warn("Product summary fallback query failed; returning partial/empty result: {}", e.toString());
+        }
     }
 
     /** GET /api/reports/monthly?month=YYYY-MM — aylık özet */

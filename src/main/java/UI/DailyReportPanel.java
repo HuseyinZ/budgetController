@@ -6,6 +6,9 @@ import model.PaymentMethod;
 import service.PaymentService;
 import state.AppState;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -46,6 +49,8 @@ import java.util.Locale;
  * gösterir; "Excel'e aktar" ile XLSX olarak dışa aktarır.
  */
 public class DailyReportPanel extends JPanel {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DailyReportPanel.class);
 
     private static final DateTimeFormatter HOUR_FMT = DateTimeFormatter.ofPattern("HH:00");
 
@@ -243,8 +248,9 @@ public class DailyReportPanel extends JPanel {
             // Snapshot sütunları yoksa eski şema için basit fallback dene
             try {
                 rows.addAll(loadProductSummaryFallback(date));
-            } catch (SQLException ignored) {
-                // sessiz geç — özet boş kalır
+            } catch (SQLException fallbackEx) {
+                // Özet boş kalır — yalnızca tanı için warn
+                LOG.warn("Daily product summary unavailable; primary={}, fallback={}", ex.toString(), fallbackEx.toString());
             }
         }
         return rows;
@@ -282,8 +288,9 @@ public class DailyReportPanel extends JPanel {
         } catch (SQLException ex) {
             try {
                 rows.addAll(loadProductSummaryFallback(start, end));
-            } catch (SQLException ignored) {
-                // sessiz geç — özet boş kalır
+            } catch (SQLException fallbackEx) {
+                // Özet boş kalır — yalnızca tanı için warn
+                LOG.warn("Monthly product summary unavailable; primary={}, fallback={}", ex.toString(), fallbackEx.toString());
             }
         }
         return rows;
