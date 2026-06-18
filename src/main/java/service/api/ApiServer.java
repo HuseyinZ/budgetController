@@ -1543,7 +1543,7 @@ public class ApiServer {
     //   Kullanıcı yönetimi
     // ============================================================
 
-    /** GET /api/users — admin gizli (Swing AdminPanel ile aynı politika) */
+    /** GET /api/users — ADMIN kullanıcılar listede gösterilmez (Swing AdminPanel ile aynı politika) */
     private void listUsers(Context ctx) {
         User user = requireUser(ctx);
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.KASIYER) {
@@ -1552,7 +1552,7 @@ public class ApiServer {
         List<User> users = userService.getAllUsers();
         List<Map<String, Object>> out = new java.util.ArrayList<>();
         for (User u : users) {
-            if (u.getRole() == Role.ADMIN) continue; // admin gizli
+            if (u.getRole() == Role.ADMIN) continue; // ADMIN kullanıcılar listede gösterilmez
             Map<String, Object> m = new java.util.HashMap<>();
             m.put("id", u.getId());
             m.put("username", u.getUsername());

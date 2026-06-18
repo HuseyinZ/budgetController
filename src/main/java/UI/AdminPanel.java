@@ -83,13 +83,11 @@ public class AdminPanel extends JPanel {
     private void refreshUsers() {
         tableModel.setRowCount(0);
         List<User> allUsers = userService.getAllUsers();
-        int hiddenAdmins = 0;
         int shown = 0;
         for (User user : allUsers) {
             // ADMIN kullanıcılar listede asla görünmez — sadece DB/kod ile yönetilir.
             // Bu sayede admin yetkisi UI'dan kaldırılamaz veya silinemez.
             if (user.getRole() == Role.ADMIN) {
-                hiddenAdmins++;
                 continue;
             }
             tableModel.addRow(new Object[]{
@@ -102,11 +100,9 @@ public class AdminPanel extends JPanel {
             shown++;
         }
         if (shown == 0) {
-            statusLabel.setText("Henüz kasiyer/garson kullanıcı yok"
-                    + (hiddenAdmins > 0 ? " (" + hiddenAdmins + " admin gizli)" : ""));
+            statusLabel.setText("Henüz kasiyer/garson kullanıcı yok");
         } else {
-            statusLabel.setText(shown + " kullanıcı yüklendi"
-                    + (hiddenAdmins > 0 ? " (" + hiddenAdmins + " admin gizli — DB'den yönet)" : ""));
+            statusLabel.setText(shown + " kullanıcı yüklendi");
         }
         updateDeleteButtonState();
     }
