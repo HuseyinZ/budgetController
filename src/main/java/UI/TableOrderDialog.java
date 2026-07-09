@@ -4,6 +4,8 @@ import model.PaymentMethod;
 import model.Product;
 import model.Role;
 import model.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import service.ProductService;
 import service.print.PrintingService;
 import state.AppState;
@@ -30,6 +32,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class TableOrderDialog extends JDialog {
+    private static final Logger LOG = LoggerFactory.getLogger(TableOrderDialog.class);
     private final AppState appState;
     private final User currentUser;
     private final int tableNo;
@@ -140,7 +143,9 @@ public class TableOrderDialog extends JDialog {
     @Override
     public void dispose() {
         try { appState.releaseTableLock(tableNo, currentUser); }
-        catch (RuntimeException ignored) {}
+        catch (RuntimeException ex) {
+            LOG.debug("Table lock release failed during dialog dispose: {}", ex.toString());
+        }
         super.dispose();
     }
 
@@ -246,7 +251,9 @@ public class TableOrderDialog extends JDialog {
                     if (p != null && p.getName() != null) {
                         appState.setItemNote(tableNo, p.getName(), n, currentUser);
                     }
-                } catch (RuntimeException ignore) {}
+                } catch (RuntimeException ex) {
+                    LOG.warn("Item note could not be applied after product selection: {}", ex.toString());
+                }
             }
         });
         dialog.setVisible(true);

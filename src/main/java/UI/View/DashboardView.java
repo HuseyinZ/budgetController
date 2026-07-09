@@ -12,6 +12,8 @@ import UI.RestaurantTablesPanel;
 import UI.WrapLayout;
 import model.Role;
 import model.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import state.AppState;
 
 import javax.swing.*;
@@ -23,6 +25,8 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public class DashboardView extends JFrame {
+    private static final Logger LOG = LoggerFactory.getLogger(DashboardView.class);
+
     private static final String CARD_FLOORS = "floors";
     private static final String CARD_USERS = "users";
     private static final String CARD_PRODUCTS = "products";
@@ -96,7 +100,9 @@ public class DashboardView extends JFrame {
             javax.swing.JOptionPane.showMessageDialog(this,
                     "Hareketsizlik nedeniyle oturumunuz kapatıldı.",
                     "Otomatik Çıkış", javax.swing.JOptionPane.INFORMATION_MESSAGE);
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException ex) {
+            LOG.debug("Idle logout notification dialog could not be shown: {}", ex.toString());
+        }
         // Login ekranını aç
         try {
             UI.View.LoginView login = new UI.View.LoginView();
