@@ -1,5 +1,6 @@
 package dao;
 
+import model.ItemNoteUpdateResult;
 import model.OrderItem;
 
 import java.math.BigDecimal;
@@ -35,6 +36,11 @@ public interface OrderItemsDAO extends CrudRepository<OrderItem, Long> {
      */
     int markItemsPrinted(Long orderId);
 
-    /** Bir kalemin notunu günceller. {@code note == null} → notu temizle. */
-    void updateNote(Long orderItemId, String note);
+    /**
+     * Bir kalemin notunu günceller. {@code note == null} → notu temizle.
+     *
+     * @return sonucun sınıflandırması — {@link ItemNoteUpdateResult#APPLIED} yalnızca
+     *         UPDATE gerçekten bir satırla eşleştiğinde döner.
+     */
+    ItemNoteUpdateResult updateNote(Long orderItemId, String note);
 }

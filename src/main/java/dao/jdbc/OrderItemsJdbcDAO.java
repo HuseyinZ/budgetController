@@ -2,7 +2,10 @@ package dao.jdbc;
 
 import DataConnection.Db;
 import dao.OrderItemsDAO;
+import model.ItemNoteUpdateResult;
 import model.OrderItem;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -12,6 +15,11 @@ import java.util.List;
 import java.util.Optional;
 
 public class OrderItemsJdbcDAO implements OrderItemsDAO {
+
+    private static final Logger LOG = LoggerFactory.getLogger(OrderItemsJdbcDAO.class);
+
+    /** MySQL ER_BAD_FIELD_ERROR — "Unknown column" (SQLState 42S22). */
+    private static final int MYSQL_ER_BAD_FIELD_ERROR = 1054;
 
     private final DataSource dataSource;
     private final Connection externalConnection;
@@ -350,7 +358,7 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
     }
 
     @Override
-    public void updateNote(Long orderItemId, String note) {
+    public ItemNoteUpdateResult updateNote(Long orderItemId, String note) {
         final String sql = "UPDATE order_items SET note=?, updated_at=NOW() WHERE id=?";
         Connection connection = null;
         try {
@@ -359,10 +367,25 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
                 if (note == null || note.isBlank()) ps.setNull(1, Types.VARCHAR);
                 else ps.setString(1, note.length() > 255 ? note.substring(0, 255) : note);
                 ps.setLong(2, orderItemId);
-                ps.executeUpdate();
+                int rows = ps.executeUpdate();
+                if (rows == 0) {
+                    LOG.debug("Order item note update matched no rows");
+                    return ItemNoteUpdateResult.NOT_FOUND;
+                }
+                return ItemNoteUpdateResult.APPLIED;
             }
         } catch (SQLException ex) {
-            // Migration uygulanmadıysa note sütunu yoktur — sessiz geç
+            // Migration uygulanmadıysa note sütunu yoktur (ER_BAD_FIELD_ERROR / 42S22)
+            if (ex.getErrorCode() == MYSQL_ER_BAD_FIELD_ERROR || "42S22".equals(ex.getSQLState())) {
+                LOG.debug("Order item note updates are unsupported by the current schema");
+                return ItemNoteUpdateResult.UNSUPPORTED_SCHEMA;
+            }
+            LOG.warn(
+                    "Order item note update failed (SQLState={}, vendorCode={})",
+                    ex.getSQLState(),
+                    ex.getErrorCode()
+            );
+            return ItemNoteUpdateResult.FAILED;
         } finally {
             close(connection);
         }

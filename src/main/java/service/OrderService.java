@@ -14,6 +14,7 @@ import dao.jdbc.PaymentJdbcDAO;
 import dao.jdbc.ProductJdbcDAO;
 import dao.jdbc.RestaurantTableJdbcDAO;
 import dao.jdbc.UserJdbcDAO;
+import model.ItemNoteUpdateResult;
 import model.Order;
 import model.OrderItem;
 import model.OrderStatus;
@@ -293,10 +294,10 @@ public class OrderService {
         orderItemsDAO.markItemsPrinted(orderId);
     }
 
-    /** Bir sipariş kaleminin notunu günceller. */
-    public void updateItemNote(Long orderItemId, String note) {
-        if (orderItemId == null) return;
-        orderItemsDAO.updateNote(orderItemId, note);
+    /** Bir sipariş kaleminin notunu günceller. Sonucu DAO'dan aynen aktarır. */
+    public ItemNoteUpdateResult updateItemNote(Long orderItemId, String note) {
+        if (orderItemId == null) return ItemNoteUpdateResult.NOT_FOUND;
+        return orderItemsDAO.updateNote(orderItemId, note);
     }
 
     // ============================================================

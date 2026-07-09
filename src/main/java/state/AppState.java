@@ -2,6 +2,7 @@ package state;
 
 import model.Category;
 import model.Expense;
+import model.ItemNoteUpdateResult;
 import model.Order;
 import model.OrderItem;
 import model.OrderStatus;
@@ -1071,14 +1072,18 @@ public class AppState {
      * @param productName kalemin ürün adı (snapshot)
      * @param note  boş string → notu temizle; null → işlem iptal
      */
-    public synchronized void setItemNote(int tableNo, String productName, String note, User user) {
+    public synchronized ItemNoteUpdateResult setItemNote(int tableNo, String productName, String note, User user) {
         Long tableId = ensureTableExists(tableNo);
         Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
-        if (order == null) return;
+        if (order == null) return ItemNoteUpdateResult.NOT_FOUND;
         OrderItem item = findOrderItem(order.getId(), productName);
-        if (item == null) return;
+        if (item == null) return ItemNoteUpdateResult.NOT_FOUND;
 
-        orderService.updateItemNote(item.getId(), note);
+        ItemNoteUpdateResult result = orderService.updateItemNote(item.getId(), note);
+        if (result != ItemNoteUpdateResult.APPLIED) {
+            // Not gerçekten uygulanmadı — history/orderLog yazma, UI event yayma.
+            return result;
+        }
         String summary = (note == null || note.isBlank())
                 ? productName + " notu temizlendi"
                 : productName + " notu: \"" + note + "\"";
@@ -1086,6 +1091,7 @@ public class AppState {
         orderLogService.append(order.getId(), historyEntry(user, summary));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
+        return ItemNoteUpdateResult.APPLIED;
     }
 
     public synchronized void clearTable(int tableNo, User user) {
