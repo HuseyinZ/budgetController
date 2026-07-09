@@ -43,4 +43,18 @@ public interface OrderItemsDAO extends CrudRepository<OrderItem, Long> {
      *         UPDATE gerçekten bir satırla eşleştiğinde döner.
      */
     ItemNoteUpdateResult updateNote(Long orderItemId, String note);
+
+    /**
+     * Stage 0G guard'ının uygulanabilirlik kontrolü: {@code order_items.note}
+     * capability'si KESİN olarak doğrulandı mı?
+     *
+     * <ul>
+     *   <li>{@code true}: capability başarıyla ve kesin olarak doğrulandı.</li>
+     *   <li>{@code false}: capability desteklenmiyor VEYA şu anda güvenilir
+     *       biçimde doğrulanamadı (örn. geçici DB hatası). İki durum bilinçli
+     *       olarak ayrıştırılmaz — {@code false} yalnızca "guard uygulama"
+     *       anlamına gelir; not yazma davranışını B1/B2 zinciri belirler.</li>
+     * </ul>
+     */
+    boolean isNoteColumnConfirmedAvailable();
 }

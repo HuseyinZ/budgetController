@@ -2,6 +2,7 @@ package state;
 
 import model.Category;
 import model.Expense;
+import model.ItemAddWithNoteResult;
 import model.ItemNoteUpdateResult;
 import model.Order;
 import model.OrderItem;
@@ -41,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.util.Locale;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -634,6 +636,88 @@ public class AppState {
             return;
         }
         addItemInternalPieces(tableNo, product, pieces, user);
+    }
+
+    /** Not çakışma karşılaştırmasında Türkçe case-folding için (İ/ı doğru katlansın). */
+    private static final Locale TR_NOTE_LOCALE = Locale.forLanguageTag("tr-TR");
+
+    /**
+     * Stage 0G — Pre-add not çakışması korumalı ekleme (orchestration wrapper).
+     *
+     * <p>Aynı ürün için mevcut satırın notu ile yeni notun normalize edilmiş halleri
+     * farklıysa ürün HİÇ eklenmez ({@code itemAdded=false}): quantity artmaz,
+     * history/orderLog yazılmaz, UI event yayınlanmaz. Çakışma yoksa mevcut
+     * {@link #addItem(int, Long, int, User)} / {@link #addItemByPieces} ve not
+     * istendiyse {@link #setItemNote} davranışları aynen kullanılır (intrinsic
+     * monitor reentrant olduğundan iç çağrılar güvenlidir).
+     *
+     * <p>Guard + add + not tek synchronized blokta çalıştığı için in-process
+     * yarışlara kapalıdır; DB-level tutarlılık garantisi DEĞİLDİR (Stage 0G
+     * safety mitigation).
+     *
+     * @param pieces {@code null} → porsiyon bazlı ekleme ({@code quantity} kullanılır);
+     *               non-null → mevcut şiş bazlı {@code addItemByPieces} yolu.
+     */
+    public synchronized ItemAddWithNoteResult addItemWithNote(int tableNo, Long productId,
+                                                              int quantity, Integer pieces,
+                                                              String note, User user) {
+        // --- Guard: quantity artmadan ÖNCE not kimliği karşılaştırması ---
+        if (productId != null && productId > 0) {
+            Long tableId = ensureTableExists(tableNo);
+            Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+            if (order != null) {
+                for (OrderItem item : orderService.getItemsForOrder(order.getId())) {
+                    if (item != null && productId.equals(item.getProductId())) {
+                        boolean notesDiffer = !normalizeNoteForCompare(item.getNote())
+                                .equals(normalizeNoteForCompare(note));
+                        // Capability YALNIZ potansiyel conflict anında doğrulanır.
+                        // Doğrulanamadıysa (unsupported VEYA geçici hata) guard atlanır:
+                        // note kolonu okunamayan şemada "note=null" görünümü gerçek bir
+                        // çakışma değildir — davranışı B1/B2 zinciri belirler.
+                        if (notesDiffer && orderService.isNoteColumnConfirmedAvailable()) {
+                            return new ItemAddWithNoteResult(false, null);
+                        }
+                        break; // mevcut modelde order+product için tek satır varsayımı
+                    }
+                }
+            }
+        }
+        // --- Çakışma yok: mevcut add davranışı aynen ---
+        if (pieces != null) {
+            addItemByPieces(tableNo, productId, pieces, user);
+        } else {
+            addItem(tableNo, productId, quantity, user);
+        }
+        // --- Not istendiyse mevcut setItemNote davranışı aynen ---
+        ItemNoteUpdateResult noteResult = null;
+        if (note != null && !note.isBlank()) {
+            try {
+                Product p = productService.getProductById(productId);
+                String productName = (p == null) ? null : p.getName();
+                noteResult = (productName == null)
+                        ? ItemNoteUpdateResult.NOT_FOUND
+                        : setItemNote(tableNo, productName, note, user);
+            } catch (RuntimeException ex) {
+                // Ürün eklendi; not aşaması hatası ekleme başarısını bozmamalı.
+                // Güvenli log: yalnız exception sınıf adı (DB diagnostic/SQL metni sızmasın).
+                LOG.warn(
+                        "Item note application failed after add ({})",
+                        ex.getClass().getSimpleName()
+                );
+                noteResult = ItemNoteUpdateResult.FAILED;
+            }
+        }
+        return new ItemAddWithNoteResult(true, noteResult);
+    }
+
+    /**
+     * Not çakışma karşılaştırması normalizasyonu: null→"", trim, ardışık
+     * whitespace→tek boşluk, Türkçe locale lowercase. Token sort / virgül
+     * parse YAPILMAZ (false-positive kabul, false-negative istenmiyor).
+     */
+    private static String normalizeNoteForCompare(String note) {
+        if (note == null) return "";
+        return note.trim().replaceAll("\\s+", " ").toLowerCase(TR_NOTE_LOCALE);
     }
 
     private void addItemInternalPieces(int tableNo, Product product, int pieces, User user) {

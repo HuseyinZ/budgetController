@@ -300,6 +300,11 @@ public class OrderService {
         return orderItemsDAO.updateNote(orderItemId, note);
     }
 
+    /** Stage 0G guard kapısı — saf pass-through, ek iş mantığı yok. */
+    public boolean isNoteColumnConfirmedAvailable() {
+        return orderItemsDAO.isNoteColumnConfirmedAvailable();
+    }
+
     // ============================================================
     //   Mutfak fişi gönderimi (2026-05-15 entegrasyonu)
     // ============================================================

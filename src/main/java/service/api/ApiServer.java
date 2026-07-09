@@ -600,28 +600,17 @@ public class ApiServer {
             return;
         }
         try {
-            // Şiş bazlı → addItemByPieces; aksi halde addItem
-            if (pieces != null && pieces > 0) {
-                appState.addItemByPieces(tableNo, productId, pieces, user);
-            } else {
-                appState.addItem(tableNo, productId, qty, user);
-            }
-            // Not eklendiyse setItemNote çağır (ürün adına göre)
-            model.ItemNoteUpdateResult noteResult = null;
-            if (note != null && !note.isBlank()) {
-                model.Product p = new service.ProductService().getProductById(productId);
-                String productName = (p == null) ? null : p.getName();
-                if (productName != null) {
-                    try {
-                        noteResult = appState.setItemNote(tableNo, productName, note, user);
-                    } catch (RuntimeException ex) {
-                        LOG.warn("Not eklenemedi: {}", ex.getMessage());
-                        noteResult = model.ItemNoteUpdateResult.FAILED;
-                    }
-                } else {
-                    // Ürün adı çözülemedi — not hiç denenemedi
-                    noteResult = model.ItemNoteUpdateResult.NOT_FOUND;
-                }
+            // Stage 0G: guard + add + not tek AppState wrapper'ında.
+            // Şiş bazlı yol wrapper'a non-null pieces ile seçilir (mevcut >0 kuralı korunur).
+            Integer piecesArg = (pieces != null && pieces > 0) ? pieces : null;
+            model.ItemAddWithNoteResult result =
+                    appState.addItemWithNote(tableNo, productId, qty, piecesArg, note, user);
+            if (!result.itemAdded()) {
+                // Not çakışması — ürün HİÇ eklenmedi; noteStatus üretilmez.
+                ctx.status(409).json(Map.of("error",
+                        "Ürün siparişte farklı bir notla zaten bulunuyor. "
+                        + "Farklı notlu ürünler henüz ayrı satır olarak desteklenmediği için ürün eklenmedi."));
+                return;
             }
             Map<String, Object> resp = new java.util.LinkedHashMap<>();
             resp.put("status", "added");
@@ -630,8 +619,8 @@ public class ApiServer {
             resp.put("quantity", qty);
             resp.put("pieces", pieces == null ? 0 : pieces);
             resp.put("note", note == null ? "" : note);
-            if (noteResult != null) {
-                resp.put("noteStatus", noteResult.name());
+            if (result.noteResult() != null) {
+                resp.put("noteStatus", result.noteResult().name());
             }
             ctx.json(resp);
         } catch (RuntimeException ex) {

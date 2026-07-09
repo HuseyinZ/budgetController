@@ -21,6 +21,13 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
     /** MySQL ER_BAD_FIELD_ERROR — "Unknown column" (SQLState 42S22). */
     private static final int MYSQL_ER_BAD_FIELD_ERROR = 1054;
 
+    /**
+     * Note capability memoization (Stage 0G):
+     * {@code null} → henüz kesin sonuç yok; {@code TRUE} → doğrulandı;
+     * {@code FALSE} → kesin unsupported. Geçici/generic hatalar memoize edilmez.
+     */
+    private volatile Boolean noteColumnConfirmed;
+
     private final DataSource dataSource;
     private final Connection externalConnection;
 
@@ -386,6 +393,40 @@ public class OrderItemsJdbcDAO implements OrderItemsDAO {
                     ex.getErrorCode()
             );
             return ItemNoteUpdateResult.FAILED;
+        } finally {
+            close(connection);
+        }
+    }
+
+    @Override
+    public boolean isNoteColumnConfirmedAvailable() {
+        Boolean cached = noteColumnConfirmed;
+        if (cached != null) {
+            return cached;
+        }
+        final String sql = "SELECT note FROM order_items WHERE 1 = 0";
+        Connection connection = null;
+        try {
+            connection = acquireConnection();
+            try (PreparedStatement ps = connection.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                // Satır beklenmez — sorgunun başarılı çalışması capability kanıtıdır.
+            }
+            noteColumnConfirmed = Boolean.TRUE;
+            return true;
+        } catch (SQLException ex) {
+            if (ex.getErrorCode() == MYSQL_ER_BAD_FIELD_ERROR || "42S22".equals(ex.getSQLState())) {
+                LOG.debug("Order item note updates are unsupported by the current schema");
+                noteColumnConfirmed = Boolean.FALSE;
+                return false;
+            }
+            // Geçici/generic hata: capability belirsiz — memoize ETME, guard atlansın.
+            LOG.debug(
+                    "Item note schema capability could not be confirmed (SQLState={}, vendorCode={})",
+                    ex.getSQLState(),
+                    ex.getErrorCode()
+            );
+            return false;
         } finally {
             close(connection);
         }

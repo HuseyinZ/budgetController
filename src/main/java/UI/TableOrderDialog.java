@@ -1,13 +1,12 @@
 package UI;
 
+import model.ItemAddWithNoteResult;
 import model.ItemNoteUpdateResult;
 import model.PaymentMethod;
-import model.Product;
 import model.Role;
 import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import service.ProductService;
 import service.print.PrintingService;
 import state.AppState;
 import state.OrderLine;
@@ -235,43 +234,53 @@ public class TableOrderDialog extends JDialog {
     private void openProductPicker() {
         Window owner = SwingUtilities.getWindowAncestor(this);
         ProductPickerDialog dialog = new ProductPickerDialog(owner, tableNo);
-        // Batch içindeki not hatalarını biriktir — picker kapandıktan sonra TEK özet dialog.
+        // Batch içindeki not hatalarını ve Stage 0G çakışmalarını biriktir —
+        // picker kapandıktan sonra en fazla TEK özet dialog.
         EnumSet<ItemNoteUpdateResult> noteFailures = EnumSet.noneOf(ItemNoteUpdateResult.class);
+        boolean[] noteConflict = {false};
         dialog.setOnSelect(selection -> {
             if (selection == null) return;
-            if (selection.piecesOverride() != null) {
-                // Şiş bazlı ürün: pieces toplam birimdir
-                appState.addItemByPieces(tableNo, selection.productId(),
-                        selection.piecesOverride(), currentUser);
-            } else {
-                appState.addItem(tableNo, selection.productId(),
-                        selection.quantity(), currentUser);
+            // Stage 0G: guard + add + not tek AppState wrapper'ında (quantity
+            // artmadan önce çakışma kontrolü; pieces null → porsiyon yolu).
+            ItemAddWithNoteResult result = appState.addItemWithNote(
+                    tableNo, selection.productId(), selection.quantity(),
+                    selection.piecesOverride(), selection.note(), currentUser);
+            if (!result.itemAdded()) {
+                // Çakışma: ürün eklenmedi, not uygulanmadı — diğer ürünler işlenmeye devam eder.
+                noteConflict[0] = true;
+                return;
             }
-            // "İçerik" dialog'undan not seçilmişse, eklendikten sonra notu uygula
-            String n = selection.note();
-            if (n != null && !n.isBlank() && selection.productId() != null) {
-                try {
-                    Product p = new ProductService().getProductById(selection.productId());
-                    if (p != null && p.getName() != null) {
-                        ItemNoteUpdateResult result =
-                                appState.setItemNote(tableNo, p.getName(), n, currentUser);
-                        if (result != ItemNoteUpdateResult.APPLIED) {
-                            noteFailures.add(result);
-                        }
-                    }
-                } catch (RuntimeException ex) {
-                    LOG.warn("Item note could not be applied after product selection: {}", ex.toString());
-                    noteFailures.add(ItemNoteUpdateResult.FAILED);
-                }
+            if (result.noteResult() != null && result.noteResult() != ItemNoteUpdateResult.APPLIED) {
+                noteFailures.add(result.noteResult());
             }
         });
         dialog.setVisible(true);
         // APPLICATION_MODAL: buraya gelindiğinde picker kapanmıştır (EDT'deyiz).
-        if (!noteFailures.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    batchNoteFailureMessage(noteFailures),
-                    "Uyarı", JOptionPane.WARNING_MESSAGE);
+        String warning = pickerBatchWarningMessage(noteConflict[0], noteFailures);
+        if (warning != null) {
+            JOptionPane.showMessageDialog(this, warning, "Uyarı", JOptionPane.WARNING_MESSAGE);
         }
+    }
+
+    /**
+     * Picker batch'i için birleşik uyarı mesajı — batch başına en fazla TEK modal.
+     * {@code null} → uyarı gerekmez.
+     */
+    private static String pickerBatchWarningMessage(boolean noteConflict,
+                                                    EnumSet<ItemNoteUpdateResult> noteFailures) {
+        boolean hasFailures = !noteFailures.isEmpty();
+        if (!noteConflict && !hasFailures) {
+            return null;
+        }
+        if (noteConflict && !hasFailures) {
+            return "Bir veya daha fazla ürün siparişte farklı bir notla zaten bulunuyor. "
+                    + "Farklı notlu ürünler henüz ayrı satır olarak desteklenmediği için bu ürünler eklenmedi.";
+        }
+        if (!noteConflict) {
+            return batchNoteFailureMessage(noteFailures);
+        }
+        return "Bazı ürünler farklı not çakışması nedeniyle eklenmedi.\n\n"
+                + "Ayrıca bir veya daha fazla ürün notu kaydedilemedi. Siparişi kontrol edin.";
     }
 
     /**
