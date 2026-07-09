@@ -1,5 +1,6 @@
 package UI;
 
+import model.ItemNoteUpdateResult;
 import model.PaymentMethod;
 import model.Product;
 import model.Role;
@@ -26,6 +27,7 @@ import java.beans.PropertyChangeListener;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -233,6 +235,8 @@ public class TableOrderDialog extends JDialog {
     private void openProductPicker() {
         Window owner = SwingUtilities.getWindowAncestor(this);
         ProductPickerDialog dialog = new ProductPickerDialog(owner, tableNo);
+        // Batch içindeki not hatalarını biriktir — picker kapandıktan sonra TEK özet dialog.
+        EnumSet<ItemNoteUpdateResult> noteFailures = EnumSet.noneOf(ItemNoteUpdateResult.class);
         dialog.setOnSelect(selection -> {
             if (selection == null) return;
             if (selection.piecesOverride() != null) {
@@ -249,14 +253,49 @@ public class TableOrderDialog extends JDialog {
                 try {
                     Product p = new ProductService().getProductById(selection.productId());
                     if (p != null && p.getName() != null) {
-                        appState.setItemNote(tableNo, p.getName(), n, currentUser);
+                        ItemNoteUpdateResult result =
+                                appState.setItemNote(tableNo, p.getName(), n, currentUser);
+                        if (result != ItemNoteUpdateResult.APPLIED) {
+                            noteFailures.add(result);
+                        }
                     }
                 } catch (RuntimeException ex) {
                     LOG.warn("Item note could not be applied after product selection: {}", ex.toString());
+                    noteFailures.add(ItemNoteUpdateResult.FAILED);
                 }
             }
         });
         dialog.setVisible(true);
+        // APPLICATION_MODAL: buraya gelindiğinde picker kapanmıştır (EDT'deyiz).
+        if (!noteFailures.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    batchNoteFailureMessage(noteFailures),
+                    "Uyarı", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    /**
+     * Picker batch'inde biriken not hataları için tek kullanıcı mesajı.
+     * Öncelik: UNSUPPORTED_SCHEMA > FAILED > NOT_FOUND.
+     */
+    private static String batchNoteFailureMessage(EnumSet<ItemNoteUpdateResult> failures) {
+        if (failures.contains(ItemNoteUpdateResult.UNSUPPORTED_SCHEMA)) {
+            return "Ürünler siparişe eklendi ancak ürün notları bu kurulumda desteklenmediği için notlar kaydedilemedi.";
+        }
+        if (failures.contains(ItemNoteUpdateResult.FAILED)) {
+            return "Ürünler siparişe eklendi ancak bir veya daha fazla not kaydedilemedi. Siparişi kontrol edip \"Not Ekle\" ile tekrar deneyin.";
+        }
+        return "Ürünler siparişe eklendi ancak bir veya daha fazla not ilgili sipariş kalemine uygulanamadı. Siparişi kontrol edin.";
+    }
+
+    /** Tek kalemlik not sonucu için kullanıcı mesajı. {@code APPLIED} için çağrılmamalı. */
+    private static String noteResultWarning(ItemNoteUpdateResult result) {
+        return switch (result) {
+            case NOT_FOUND -> "Not uygulanamadı. Sipariş kalemi artık mevcut olmayabilir.";
+            case UNSUPPORTED_SCHEMA -> "Ürün notları bu kurulumda desteklenmiyor. Not kaydedilemedi.";
+            case FAILED -> "Not kaydedilemedi. Lütfen \"Not Ekle\" ile tekrar deneyin.";
+            case APPLIED -> "";
+        };
     }
 
     private JComponent buildFooter() {
@@ -401,7 +440,12 @@ public class TableOrderDialog extends JDialog {
         if (picked == null) return;   // İptal
 
         try {
-            appState.setItemNote(tableNo, product, picked, currentUser);
+            ItemNoteUpdateResult result = appState.setItemNote(tableNo, product, picked, currentUser);
+            if (result != ItemNoteUpdateResult.APPLIED) {
+                JOptionPane.showMessageDialog(this,
+                        noteResultWarning(result),
+                        "Uyarı", JOptionPane.WARNING_MESSAGE);
+            }
         } catch (RuntimeException ex) {
             JOptionPane.showMessageDialog(this,
                     "Not kaydedilemedi: " + ex.getMessage(),

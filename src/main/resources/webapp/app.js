@@ -1173,8 +1173,20 @@ document.getElementById('addItemConfirmBtn').addEventListener('click', async () 
     const body = { productId: p.id, quantity };
     if (pieces !== null) body.pieces = pieces;
     if (note) body.note = note;
-    await api('POST', `/tables/${App.currentTable.tableNo}/items`, body);
-    toast(`✓ ${p.name} eklendi`, 'success');
+    const r = await api('POST', `/tables/${App.currentTable.tableNo}/items`, body);
+    const noteStatus = (note && r) ? r.noteStatus : null;
+    if (noteStatus && noteStatus !== 'APPLIED') {
+      // Ürün eklendi ama not uygulanamadı — success toast yerine uyarı.
+      if (noteStatus === 'UNSUPPORTED_SCHEMA') {
+        toast('Ürün eklendi ancak ürün notları bu kurulumda desteklenmiyor.', 'error');
+      } else if (noteStatus === 'FAILED') {
+        toast('Ürün eklendi ancak not kaydedilemedi. Lütfen tekrar deneyin.', 'error');
+      } else {
+        toast('Ürün eklendi ancak not sipariş kalemine uygulanamadı.', 'error');
+      }
+    } else {
+      toast(`✓ ${p.name} eklendi`, 'success');
+    }
     document.getElementById('addItemDialog').classList.add('hidden');
     // ÖNEMLİ: masa detayına geri dönme — kullanıcı picker'da kalır
     // başka ürün eklemek için. Sadece picker üstündeki "ekleme özeti"ni güncelle.

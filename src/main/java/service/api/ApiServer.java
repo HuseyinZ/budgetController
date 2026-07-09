@@ -607,22 +607,33 @@ public class ApiServer {
                 appState.addItem(tableNo, productId, qty, user);
             }
             // Not eklendiyse setItemNote çağır (ürün adına göre)
+            model.ItemNoteUpdateResult noteResult = null;
             if (note != null && !note.isBlank()) {
                 model.Product p = new service.ProductService().getProductById(productId);
                 String productName = (p == null) ? null : p.getName();
                 if (productName != null) {
                     try {
-                        appState.setItemNote(tableNo, productName, note, user);
+                        noteResult = appState.setItemNote(tableNo, productName, note, user);
                     } catch (RuntimeException ex) {
                         LOG.warn("Not eklenemedi: {}", ex.getMessage());
+                        noteResult = model.ItemNoteUpdateResult.FAILED;
                     }
+                } else {
+                    // Ürün adı çözülemedi — not hiç denenemedi
+                    noteResult = model.ItemNoteUpdateResult.NOT_FOUND;
                 }
             }
-            ctx.json(Map.of("status", "added", "tableNo", tableNo,
-                    "productId", productId,
-                    "quantity", qty,
-                    "pieces", pieces == null ? 0 : pieces,
-                    "note", note == null ? "" : note));
+            Map<String, Object> resp = new java.util.LinkedHashMap<>();
+            resp.put("status", "added");
+            resp.put("tableNo", tableNo);
+            resp.put("productId", productId);
+            resp.put("quantity", qty);
+            resp.put("pieces", pieces == null ? 0 : pieces);
+            resp.put("note", note == null ? "" : note);
+            if (noteResult != null) {
+                resp.put("noteStatus", noteResult.name());
+            }
+            ctx.json(resp);
         } catch (RuntimeException ex) {
             ctx.status(400).json(Map.of("error", ex.getMessage()));
         }
