@@ -319,12 +319,19 @@ public class BackupService {
             try (var in = Files.newInputStream(userFile)) {
                 p.load(in);
                 return p;
-            } catch (IOException ignore) {}
+            } catch (IOException ex) {
+                LOG.debug(
+                        "User override db.properties could not be loaded; falling back to classpath config: {}",
+                        ex.toString()
+                );
+            }
         }
         // 2. Classpath default
         try (var in = BackupService.class.getResourceAsStream("/db.properties")) {
             if (in != null) p.load(in);
-        } catch (IOException ignore) {}
+        } catch (IOException ex) {
+            LOG.debug("Classpath db.properties could not be loaded: {}", ex.toString());
+        }
         return p;
     }
 }
