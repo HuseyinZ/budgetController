@@ -810,6 +810,45 @@ public class AppState {
         if (item == null) {
             return;
         }
+        decreaseItemInternal(tableNo, tableId, order, item, productName, quantity, user, reason);
+    }
+
+    /**
+     * Stage 1B (öne çekilen parça): kalemi {@code order_items.id} kimliğiyle azaltır.
+     *
+     * <p><b>Ownership:</b> {@code orderItemId} yalnız BU masanın açık siparişinin
+     * kalemleri içinde aranır — başka masaya ait id hiçbir mutasyon yapmadan
+     * {@code false} döner. {@link #ensureMayModifyItem} aynen uygulanır
+     * (ownership onun yerine geçmez; yetkisizlikte SecurityException).
+     *
+     * @return {@code true} = mutasyon uygulandı; {@code false} = açık sipariş yok
+     *         veya kalem bu siparişte bulunamadı (mutasyon yapılmadı).
+     */
+    public synchronized boolean decreaseItemById(int tableNo, long orderItemId, int quantity,
+                                                 User user, String reason) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Adet sıfır olamaz");
+        }
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (order == null) {
+            return false;
+        }
+        OrderItem item = findOrderItemById(order.getId(), orderItemId);
+        if (item == null) {
+            return false; // bu masanın açık siparişinde yok (cross-table id dahil) — mutasyon YOK
+        }
+        decreaseItemInternal(tableNo, tableId, order, item, displayName(item), quantity, user, reason);
+        return true;
+    }
+
+    /**
+     * Azaltmanın ortak gövdesi — name-based ve id-based yollar için birebir aynı
+     * davranış (yetki, stok iadesi, totals, history/orderLog, refund audit,
+     * boş sipariş kapatma, refresh+notify).
+     */
+    private void decreaseItemInternal(int tableNo, Long tableId, Order order, OrderItem item,
+                                      String productLabel, int quantity, User user, String reason) {
         // Yetki kontrolü: garson sadece pending (mutfağa gönderilmemiş) kalemi azaltabilir
         ensureMayModifyItem(user, item, "kalem azalt");
         orderService.decrementItem(item.getId(), quantity);
@@ -817,15 +856,15 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
-        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productName + " azalttı"));
+        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " azalttı"));
+        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " azalttı"));
 
         // Audit log — iade kaydı tut
         java.math.BigDecimal lineRefund = resolveUnitPrice(item)
                 .multiply(java.math.BigDecimal.valueOf(quantity))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         writeRefundLog(user, RefundLog.ActionType.DECREASE_ITEM,
-                tableNo, order.getId(), productName, quantity, lineRefund, reason);
+                tableNo, order.getId(), productLabel, quantity, lineRefund, reason);
 
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             // Tüm kalemler silindi → siparişi kapat ve masayı boşalt
@@ -858,6 +897,38 @@ public class AppState {
         if (item == null) {
             return;
         }
+        removeItemInternal(tableNo, tableId, order, item, productName, user, reason);
+    }
+
+    /**
+     * Stage 1B (öne çekilen parça): kalemi {@code order_items.id} kimliğiyle tamamen siler.
+     *
+     * <p><b>Ownership:</b> {@code orderItemId} yalnız BU masanın açık siparişinin
+     * kalemleri içinde aranır — başka masaya ait id hiçbir mutasyon yapmadan
+     * {@code false} döner. {@link #ensureMayModifyItem} aynen uygulanır.
+     *
+     * @return {@code true} = silindi; {@code false} = açık sipariş yok veya kalem
+     *         bu siparişte bulunamadı (mutasyon yapılmadı).
+     */
+    public synchronized boolean removeItemById(int tableNo, long orderItemId, User user, String reason) {
+        Long tableId = ensureTableExists(tableNo);
+        Order order = orderService.getOpenOrderByTable(tableId).orElse(null);
+        if (order == null) {
+            return false;
+        }
+        OrderItem item = findOrderItemById(order.getId(), orderItemId);
+        if (item == null) {
+            return false; // bu masanın açık siparişinde yok (cross-table id dahil) — mutasyon YOK
+        }
+        removeItemInternal(tableNo, tableId, order, item, displayName(item), user, reason);
+        return true;
+    }
+
+    /**
+     * Silmenin ortak gövdesi — name-based ve id-based yollar için birebir aynı davranış.
+     */
+    private void removeItemInternal(int tableNo, Long tableId, Order order, OrderItem item,
+                                    String productLabel, User user, String reason) {
         // Yetki kontrolü
         ensureMayModifyItem(user, item, "kalem sil");
         int qty = item.getQuantity();
@@ -866,15 +937,15 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        recordHistory(tableNo, order.getId(), historyEntry(user, productName + " ürününü sildi"));
-        orderLogService.append(order.getId(), historyEntry(user, productName + " ürününü sildi"));
+        recordHistory(tableNo, order.getId(), historyEntry(user, productLabel + " ürününü sildi"));
+        orderLogService.append(order.getId(), historyEntry(user, productLabel + " ürününü sildi"));
 
         // Audit log
         java.math.BigDecimal refundAmount = resolveUnitPrice(item)
                 .multiply(java.math.BigDecimal.valueOf(Math.max(0, qty)))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         writeRefundLog(user, RefundLog.ActionType.REMOVE_ITEM,
-                tableNo, order.getId(), productName, qty, refundAmount, reason);
+                tableNo, order.getId(), productLabel, qty, refundAmount, reason);
 
         if (orderService.getItemsForOrder(order.getId()).isEmpty()) {
             // Son kalem de silindi → siparişi kapat, masayı boşalt
@@ -882,6 +953,22 @@ public class AppState {
         }
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
+    }
+
+    /** Kalemi {@code order_items.id} ile — yalnız verilen siparişin kalemleri içinde — bulur. */
+    private OrderItem findOrderItemById(Long orderId, long orderItemId) {
+        for (OrderItem item : orderService.getItemsForOrder(orderId)) {
+            if (item != null && item.getId() != null && item.getId() == orderItemId) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /** History/audit metinleri için ürün adı (id-based yol) — çözülemezse "Ürün". */
+    private String displayName(OrderItem item) {
+        String name = resolveProductName(item);
+        return (name == null || name.isBlank()) ? "Ürün" : name;
     }
 
     // ============================================================
