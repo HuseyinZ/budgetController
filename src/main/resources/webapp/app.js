@@ -521,7 +521,7 @@ function renderTableDetail(snap) {
       const noteHtml = it.note ? `<div class="item-meta">${escapeHtml(it.note)}</div>` : '';
       const lineTotal = (Number(it.unitPrice) * Number(it.quantity)).toFixed(2);
       const safeName = escapeHtml(it.productName || '');
-      return `<div class="${cls}" data-item="${safeName}">
+      return `<div class="${cls}" data-item-id="${it.itemId ?? ''}" data-item-name="${safeName}">
                 <div>
                   <div class="item-name">${safeName}</div>
                   <div class="item-meta">${escapeHtml(it.quantityLabel || String(it.quantity))} × ₺${Number(it.unitPrice).toFixed(2)}</div>
@@ -530,10 +530,10 @@ function renderTableDetail(snap) {
                 <div class="item-amount">₺${lineTotal}</div>
               </div>`;
     }).join('');
-    // Her kaleme tıklayınca azalt/sil eylem sheet'i açılır
+    // Her kaleme tıklayınca azalt/sil eylem sheet'i açılır — kimlik: itemId
     itemsEl.querySelectorAll('.order-item').forEach(row => {
       row.addEventListener('click', () => {
-        openItemActionSheet(row.dataset.item);
+        openItemActionSheet(Number(row.dataset.itemId), row.dataset.itemName);
       });
     });
   }
@@ -917,14 +917,36 @@ document.getElementById('transferCancelBtn').addEventListener('click', () => {
 });
 
 // ========== Kalem eylem sheet (azalt/sil) ==========
-let actionItemName = null;
-function openItemActionSheet(productName) {
-  actionItemName = productName;
-  document.getElementById('itemActionTitle').textContent = productName;
+// itemId = mutation identity (order_items.id); productName YALNIZ display.
+let actionItemId = null;
+let actionItemName = '';
+function openItemActionSheet(itemId, productName) {
+  actionItemId = itemId;
+  actionItemName = productName || '';
+  document.getElementById('itemActionTitle').textContent = actionItemName;
   document.getElementById('itemActionSheet').classList.remove('hidden');
+}
+/** Mutation öncesi defensive kontrol: finite positive integer değilse null. */
+function validActionItemId() {
+  const id = Number(actionItemId);
+  return (Number.isInteger(id) && id > 0) ? id : null;
+}
+/** Azalt/Sil başarısı sonrası view-aware refresh — picker'da kal, detayda navigate. */
+async function refreshAfterItemMutation() {
+  const active = document.querySelector('.view.active');
+  if (active && active.id === 'view-products') {
+    await refreshAddedSummary();
+  } else {
+    openTable(App.currentTable.tableNo);
+  }
 }
 document.getElementById('itemDecreaseBtn').addEventListener('click', async () => {
   document.getElementById('itemActionSheet').classList.add('hidden');
+  const itemId = validActionItemId();
+  if (itemId === null) {
+    toast('Kalem kimliği geçersiz — ekranı yenileyip tekrar deneyin', 'error');
+    return;
+  }
   let reason = null;
   if (App.user.role === 'ADMIN' || App.user.role === 'KASIYER') {
     reason = prompt('İade nedeni:', '');
@@ -933,15 +955,20 @@ document.getElementById('itemDecreaseBtn').addEventListener('click', async () =>
   }
   try {
     await api('POST', `/tables/${App.currentTable.tableNo}/decrease-item`,
-              { productName: actionItemName, quantity: 1, reason });
+              { itemId, quantity: 1, reason });
     toast('1 adet azaltıldı', 'success');
-    openTable(App.currentTable.tableNo);
+    await refreshAfterItemMutation();
   } catch (err) {
     toast('Azalt: ' + err.message, 'error');
   }
 });
 document.getElementById('itemRemoveBtn').addEventListener('click', async () => {
   document.getElementById('itemActionSheet').classList.add('hidden');
+  const itemId = validActionItemId();
+  if (itemId === null) {
+    toast('Kalem kimliği geçersiz — ekranı yenileyip tekrar deneyin', 'error');
+    return;
+  }
   if (!confirm(`'${actionItemName}' tamamen silinsin mi?`)) return;
   let reason = null;
   if (App.user.role === 'ADMIN' || App.user.role === 'KASIYER') {
@@ -951,9 +978,9 @@ document.getElementById('itemRemoveBtn').addEventListener('click', async () => {
   }
   try {
     await api('POST', `/tables/${App.currentTable.tableNo}/remove-item`,
-              { productName: actionItemName, reason });
+              { itemId, reason });
     toast('Kalem silindi', 'success');
-    openTable(App.currentTable.tableNo);
+    await refreshAfterItemMutation();
   } catch (err) {
     toast('Sil: ' + err.message, 'error');
   }
@@ -1211,7 +1238,7 @@ async function refreshAddedSummary() {
       const linesHtml = lines.length === 0 ? '' : `
         <div class="added-summary-lines">
           ${lines.map(it =>
-            `<div>${escapeHtml(it.productName || '')} — ${escapeHtml(it.quantityLabel || String(it.quantity))}</div>`
+            `<div data-item-id="${it.itemId ?? ''}" data-item-name="${escapeHtml(it.productName || '')}">${escapeHtml(it.productName || '')} — ${escapeHtml(it.quantityLabel || String(it.quantity))}</div>`
           ).join('')}
         </div>`;
       bar.innerHTML = `
@@ -1219,6 +1246,12 @@ async function refreshAddedSummary() {
         <span class="added-total">₺${Number(snap.total || 0).toFixed(2)}</span>
         ${linesHtml}
       `;
+      // Satıra dokununca mevcut Azalt/Sil/Vazgeç sheet'i açılır — kimlik: itemId
+      bar.querySelectorAll('.added-summary-lines > div').forEach(row => {
+        row.addEventListener('click', () => {
+          openItemActionSheet(Number(row.dataset.itemId), row.dataset.itemName);
+        });
+      });
     }
   } catch (err) {
     // sessiz geç — refresh önemli değil

@@ -589,6 +589,14 @@ header h1 { margin: 0; font-size: 18px; }
   font-weight: 400;
   line-height: 1.5;
 }
+/* Satırlar tıklanabilir — Azalt/Sil/Vazgeç sheet'ini açar */
+.added-summary-lines > div {
+  cursor: pointer;
+  padding: 2px 0;
+}
+.added-summary-lines > div:active {
+  opacity: 0.7;
+}
 
 /* Category filter bar — ürün picker üstünde yatay kaydırılabilir butonlar */
 .category-filter-bar {
