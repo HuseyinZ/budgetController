@@ -1204,10 +1204,20 @@ async function refreshAddedSummary() {
     App.currentTable = snap;
     const bar = document.getElementById('addedSummary');
     if (bar) {
-      const itemCount = (snap.lines || []).reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+      const lines = (snap.lines || []);
+      const itemCount = lines.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+      // Masadaki TÜM ürünler — snapshot sırası aynen, sort/truncate/gizleme yok.
+      // Server snapshot source of truth: local quantity tahmini yapılmaz.
+      const linesHtml = lines.length === 0 ? '' : `
+        <div class="added-summary-lines">
+          ${lines.map(it =>
+            `<div>${escapeHtml(it.productName || '')} — ${escapeHtml(it.quantityLabel || String(it.quantity))}</div>`
+          ).join('')}
+        </div>`;
       bar.innerHTML = `
         <span>📋 <strong>Masa ${snap.tableNo}</strong> — ${itemCount} kalem</span>
         <span class="added-total">₺${Number(snap.total || 0).toFixed(2)}</span>
+        ${linesHtml}
       `;
     }
   } catch (err) {
