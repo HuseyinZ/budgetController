@@ -21,6 +21,10 @@ public class OrderLine {
      * {@code productId} ile karıştırılmamalıdır.
      */
     private final Long itemId;
+    /** Sipariş-anı snapshot: 1 porsiyondaki birim (şiş) sayısı. {@code null} → porsiyon bazlı. */
+    private final Integer piecesPerPortion;
+    /** Sipariş-anı snapshot: birim etiketi ("şiş", "porsiyon", ...). Nullable. */
+    private final String unitLabel;
 
     public OrderLine(String productName, BigDecimal unitPrice, int quantity) {
         this(productName, unitPrice, quantity, true, null);
@@ -36,6 +40,11 @@ public class OrderLine {
 
     public OrderLine(String productName, BigDecimal unitPrice, int quantity, boolean pending, String note,
                      Long itemId) {
+        this(productName, unitPrice, quantity, pending, note, itemId, null, null);
+    }
+
+    public OrderLine(String productName, BigDecimal unitPrice, int quantity, boolean pending, String note,
+                     Long itemId, Integer piecesPerPortion, String unitLabel) {
         if (productName == null || productName.isBlank()) {
             throw new IllegalArgumentException("productName");
         }
@@ -51,6 +60,8 @@ public class OrderLine {
         this.pending = pending;
         this.note = (note == null || note.isBlank()) ? null : note.trim();
         this.itemId = itemId;
+        this.piecesPerPortion = piecesPerPortion;
+        this.unitLabel = (unitLabel == null || unitLabel.isBlank()) ? null : unitLabel.trim();
     }
 
     public boolean isPending() { return pending; }
@@ -58,6 +69,40 @@ public class OrderLine {
 
     /** DB kimliği ({@code order_items.id}); in-memory satırlarda {@code null}. */
     public Long getItemId() { return itemId; }
+
+    public Integer getPiecesPerPortion() { return piecesPerPortion; }
+
+    public String getUnitLabel() { return unitLabel; }
+
+    /**
+     * Kullanıcıya gösterilecek adet metni (Swing "Adet" hücresi + PWA quantity text).
+     *
+     * <ul>
+     *   <li>Şiş bazlı ({@code piecesPerPortion > 0}): {@code "6 şiş (3 porsiyon)"} —
+     *       porsiyon = quantity / piecesPerPortion; en çok 2 ondalık, HALF_UP,
+     *       trailing zero'suz, Türkçe virgül.</li>
+     *   <li>Porsiyon bazlı + unitLabel dolu: {@code "2 porsiyon"}.</li>
+     *   <li>Aksi hâlde mevcut görünüm: {@code "2"}.</li>
+     * </ul>
+     */
+    public String getQuantityLabel() {
+        if (piecesPerPortion != null && piecesPerPortion > 0) {
+            String unit = (unitLabel == null || unitLabel.isBlank()) ? "şiş" : unitLabel;
+            return quantity + " " + unit + " (" + formatPortions() + " porsiyon)";
+        }
+        if (unitLabel != null && !unitLabel.isBlank()) {
+            return quantity + " " + unitLabel;
+        }
+        return String.valueOf(quantity);
+    }
+
+    private String formatPortions() {
+        return BigDecimal.valueOf(quantity)
+                .divide(BigDecimal.valueOf(piecesPerPortion), 2, RoundingMode.HALF_UP)
+                .stripTrailingZeros()
+                .toPlainString()      // stripTrailingZeros'un E-notasyonuna karşı
+                .replace('.', ',');
+    }
 
     public String getNote() { return note; }
     public void setNote(String note) {

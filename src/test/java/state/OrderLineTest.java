@@ -58,4 +58,51 @@ class OrderLineTest {
         assertTrue(json.has("itemId"), "null itemId must still appear (no NON_NULL config)");
         assertTrue(json.get("itemId").isNull(), "legacy line must serialize itemId as null");
     }
+
+    // ------------------------------------------------------------------
+    //   F1/F2 — quantityLabel formatting
+    // ------------------------------------------------------------------
+
+    private static OrderLine pieceLine(int quantity, Integer piecesPerPortion, String unitLabel) {
+        return new OrderLine("Adana Kebap", new BigDecimal("41.67"), quantity,
+                true, null, 101L, piecesPerPortion, unitLabel);
+    }
+
+    @Test
+    void quantityLabelWholePortions() {
+        assertEquals("6 şiş (3 porsiyon)", pieceLine(6, 2, "şiş").getQuantityLabel());
+    }
+
+    @Test
+    void quantityLabelHalfPortionUsesTurkishComma() {
+        assertEquals("3 şiş (1,5 porsiyon)", pieceLine(3, 2, "şiş").getQuantityLabel());
+    }
+
+    @Test
+    void quantityLabelRoundsToTwoDecimalsHalfUp() {
+        // 1/3 = 0,333... → HALF_UP 2 ondalık → 0,33
+        assertEquals("1 şiş (0,33 porsiyon)", pieceLine(1, 3, "şiş").getQuantityLabel());
+    }
+
+    @Test
+    void quantityLabelPortionBasedWithUnitLabel() {
+        assertEquals("2 porsiyon", pieceLine(2, null, "porsiyon").getQuantityLabel());
+    }
+
+    @Test
+    void quantityLabelPlainWhenNoUnitInfo() {
+        assertEquals("2", pieceLine(2, null, null).getQuantityLabel());
+    }
+
+    @Test
+    void quantityLabelBlankUnitLabelFallsBackToSis() {
+        assertEquals("2 şiş (1 porsiyon)", pieceLine(2, 2, "   ").getQuantityLabel());
+    }
+
+    @Test
+    void jacksonSerializesQuantityLabelProperty() throws Exception {
+        JsonNode json = new ObjectMapper().valueToTree(pieceLine(6, 2, "şiş"));
+        assertTrue(json.has("quantityLabel"), "JSON must expose 'quantityLabel' for the PWA");
+        assertEquals("6 şiş (3 porsiyon)", json.get("quantityLabel").asText());
+    }
 }

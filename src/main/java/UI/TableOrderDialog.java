@@ -890,7 +890,7 @@ public class TableOrderDialog extends JDialog {
             }
             tableModel.addRow(new Object[]{
                     label,
-                    line.getQuantity(),
+                    line.getQuantityLabel(),
                     currencyFormat.format(line.getUnitPrice()),
                     currencyFormat.format(line.getLineTotal()),
                     status

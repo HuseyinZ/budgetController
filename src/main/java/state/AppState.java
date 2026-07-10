@@ -1697,7 +1697,8 @@ public class AppState {
         BigDecimal unitPrice = resolveUnitPrice(item);
         int qty = Math.max(1, item.getQuantity());
         // pending = mutfağa henüz basılmadı (yeni "ek sipariş" kalemi)
-        return new OrderLine(name, unitPrice, qty, item.isPending(), item.getNote(), item.getId());
+        return new OrderLine(name, unitPrice, qty, item.isPending(), item.getNote(), item.getId(),
+                item.getPiecesPerPortion(), item.getUnitLabel());
     }
 
     private BigDecimal lineTotal(OrderItem item) {

@@ -524,7 +524,7 @@ function renderTableDetail(snap) {
       return `<div class="${cls}" data-item="${safeName}">
                 <div>
                   <div class="item-name">${safeName}</div>
-                  <div class="item-meta">${it.quantity} × ₺${Number(it.unitPrice).toFixed(2)}</div>
+                  <div class="item-meta">${escapeHtml(it.quantityLabel || String(it.quantity))} × ₺${Number(it.unitPrice).toFixed(2)}</div>
                   ${noteHtml}
                 </div>
                 <div class="item-amount">₺${lineTotal}</div>
