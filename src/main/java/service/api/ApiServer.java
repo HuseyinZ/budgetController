@@ -765,16 +765,37 @@ public class ApiServer {
 
     /**
      * POST /api/tables/{tableNo}/decrease-item
-     * Body: {"productName":"...", "quantity":1, "reason":"..."}
+     * Body (yeni): {"itemId": 123, "quantity":1, "reason":"..."}
+     * Body (legacy): {"productName":"...", "quantity":1, "reason":"..."}
+     *
+     * <p>{@code itemId} alanı body'de VARSA yalnız itemId yolu kullanılır —
+     * geçersiz/bulunamayan itemId asla productName fallback'ine düşmez
+     * (yanlış kalem mutasyon riski). Legacy yol yalnız alan hiç yoksa çalışır
+     * ve separate-note rows (Stage 3) öncesi kaldırılmalıdır.
      */
     private void decreaseItem(Context ctx) {
         User user = requireUser(ctx);
         int tableNo = Integer.parseInt(ctx.pathParam("tableNo"));
         Map<String, Object> body = ctx.bodyAsClass(Map.class);
-        String productName = String.valueOf(body.getOrDefault("productName", ""));
         int qty = toInt(body.get("quantity"), 1);
         String reason = body.get("reason") == null ? null : body.get("reason").toString();
         try {
+            if (body.containsKey("itemId")) {
+                Long itemId = toLong(body.get("itemId"));
+                if (itemId == null || itemId <= 0) {
+                    ctx.status(400).json(Map.of("error", "Geçerli itemId gerekli"));
+                    return;
+                }
+                boolean mutated = appState.decreaseItemById(tableNo, itemId, qty, user, reason);
+                if (!mutated) {
+                    ctx.status(404).json(Map.of("error", "Kalem bulunamadı"));
+                    return;
+                }
+                ctx.json(Map.of("status", "decreased", "itemId", itemId, "quantity", qty));
+                return;
+            }
+            // Legacy: itemId alanı hiç yok → geçici productName yolu (Stage 3 öncesi kaldırılacak)
+            String productName = String.valueOf(body.getOrDefault("productName", ""));
             appState.decreaseItem(tableNo, productName, qty, user, reason);
             ctx.json(Map.of("status", "decreased", "productName", productName, "quantity", qty));
         } catch (SecurityException ex) {
@@ -786,15 +807,33 @@ public class ApiServer {
 
     /**
      * POST /api/tables/{tableNo}/remove-item
-     * Body: {"productName":"...", "reason":"..."}
+     * Body (yeni): {"itemId": 123, "reason":"..."}
+     * Body (legacy): {"productName":"...", "reason":"..."}
+     *
+     * <p>Branching kuralı decrease-item ile aynı: itemId varsa fallback yok.
      */
     private void removeItem(Context ctx) {
         User user = requireUser(ctx);
         int tableNo = Integer.parseInt(ctx.pathParam("tableNo"));
         Map<String, Object> body = ctx.bodyAsClass(Map.class);
-        String productName = String.valueOf(body.getOrDefault("productName", ""));
         String reason = body.get("reason") == null ? null : body.get("reason").toString();
         try {
+            if (body.containsKey("itemId")) {
+                Long itemId = toLong(body.get("itemId"));
+                if (itemId == null || itemId <= 0) {
+                    ctx.status(400).json(Map.of("error", "Geçerli itemId gerekli"));
+                    return;
+                }
+                boolean mutated = appState.removeItemById(tableNo, itemId, user, reason);
+                if (!mutated) {
+                    ctx.status(404).json(Map.of("error", "Kalem bulunamadı"));
+                    return;
+                }
+                ctx.json(Map.of("status", "removed", "itemId", itemId));
+                return;
+            }
+            // Legacy: itemId alanı hiç yok → geçici productName yolu (Stage 3 öncesi kaldırılacak)
+            String productName = String.valueOf(body.getOrDefault("productName", ""));
             appState.removeItem(tableNo, productName, user, reason);
             ctx.json(Map.of("status", "removed", "productName", productName));
         } catch (SecurityException ex) {
