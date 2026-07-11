@@ -524,7 +524,7 @@ function renderTableDetail(snap) {
       return `<div class="${cls}" data-item-id="${it.itemId ?? ''}" data-item-name="${safeName}">
                 <div>
                   <div class="item-name">${safeName}</div>
-                  <div class="item-meta">${escapeHtml(it.quantityLabel || String(it.quantity))} × ₺${Number(it.unitPrice).toFixed(2)}</div>
+                  <div class="item-meta">${quantityText(it)} × ₺${Number(it.unitPrice).toFixed(2)}</div>
                   ${noteHtml}
                 </div>
                 <div class="item-amount">₺${lineTotal}</div>
@@ -931,6 +931,22 @@ function validActionItemId() {
   const id = Number(actionItemId);
   return (Number.isInteger(id) && id > 0) ? id : null;
 }
+/** Action sheet'i kapatır — decrease/remove/cancel ortak. */
+function closeItemActionSheet() {
+  document.getElementById('itemActionSheet').classList.add('hidden');
+}
+/**
+ * ADMIN/KASIYER için iade nedeni ister.
+ * Dönüş: string = neden ile devam; null = garson, nedensiz devam;
+ * false = işlem iptal (kullanıcı vazgeçti veya neden boş — istek GÖNDERİLMEZ).
+ */
+function promptRefundReason() {
+  if (App.user.role !== 'ADMIN' && App.user.role !== 'KASIYER') return null;
+  const reason = prompt('İade nedeni:', '');
+  if (reason === null) return false;
+  if (!reason.trim()) { toast('Neden gerekli', 'error'); return false; }
+  return reason;
+}
 /** Azalt/Sil başarısı sonrası view-aware refresh — picker'da kal, detayda navigate. */
 async function refreshAfterItemMutation() {
   const active = document.querySelector('.view.active');
@@ -941,18 +957,14 @@ async function refreshAfterItemMutation() {
   }
 }
 document.getElementById('itemDecreaseBtn').addEventListener('click', async () => {
-  document.getElementById('itemActionSheet').classList.add('hidden');
+  closeItemActionSheet();
   const itemId = validActionItemId();
   if (itemId === null) {
     toast('Kalem kimliği geçersiz — ekranı yenileyip tekrar deneyin', 'error');
     return;
   }
-  let reason = null;
-  if (App.user.role === 'ADMIN' || App.user.role === 'KASIYER') {
-    reason = prompt('İade nedeni:', '');
-    if (reason === null) return;
-    if (!reason.trim()) { toast('Neden gerekli', 'error'); return; }
-  }
+  const reason = promptRefundReason();
+  if (reason === false) return;
   try {
     await api('POST', `/tables/${App.currentTable.tableNo}/decrease-item`,
               { itemId, quantity: 1, reason });
@@ -963,19 +975,15 @@ document.getElementById('itemDecreaseBtn').addEventListener('click', async () =>
   }
 });
 document.getElementById('itemRemoveBtn').addEventListener('click', async () => {
-  document.getElementById('itemActionSheet').classList.add('hidden');
+  closeItemActionSheet();
   const itemId = validActionItemId();
   if (itemId === null) {
     toast('Kalem kimliği geçersiz — ekranı yenileyip tekrar deneyin', 'error');
     return;
   }
   if (!confirm(`'${actionItemName}' tamamen silinsin mi?`)) return;
-  let reason = null;
-  if (App.user.role === 'ADMIN' || App.user.role === 'KASIYER') {
-    reason = prompt('İade nedeni:', '');
-    if (reason === null) return;
-    if (!reason.trim()) { toast('Neden gerekli', 'error'); return; }
-  }
+  const reason = promptRefundReason();
+  if (reason === false) return;
   try {
     await api('POST', `/tables/${App.currentTable.tableNo}/remove-item`,
               { itemId, reason });
@@ -985,9 +993,7 @@ document.getElementById('itemRemoveBtn').addEventListener('click', async () => {
     toast('Sil: ' + err.message, 'error');
   }
 });
-document.getElementById('itemCancelBtn').addEventListener('click', () => {
-  document.getElementById('itemActionSheet').classList.add('hidden');
-});
+document.getElementById('itemCancelBtn').addEventListener('click', closeItemActionSheet);
 
 // ====================================================================
 //   Ürün seçici
@@ -1238,7 +1244,7 @@ async function refreshAddedSummary() {
       const linesHtml = lines.length === 0 ? '' : `
         <div class="added-summary-lines">
           ${lines.map(it =>
-            `<div data-item-id="${it.itemId ?? ''}" data-item-name="${escapeHtml(it.productName || '')}">${escapeHtml(it.productName || '')} — ${escapeHtml(it.quantityLabel || String(it.quantity))}</div>`
+            `<div data-item-id="${it.itemId ?? ''}" data-item-name="${escapeHtml(it.productName || '')}">${escapeHtml(it.productName || '')} — ${quantityText(it)}</div>`
           ).join('')}
         </div>`;
       bar.innerHTML = `
@@ -1321,6 +1327,11 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/** Kalem adet metni: öncelik server'ın quantityLabel'ı, fallback ham quantity. Escape'li. */
+function quantityText(it) {
+  return escapeHtml(it.quantityLabel || String(it.quantity));
 }
 
 // ====================================================================
