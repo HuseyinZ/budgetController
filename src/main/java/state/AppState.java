@@ -735,9 +735,9 @@ public class AppState {
         orderService.recomputeTotals(order.getId());
         tableService.markTableOccupied(tableId, true);
         String label = product.getUnitLabel() == null ? "şiş" : product.getUnitLabel();
-        String desc = pieces + " " + label + " " + safeProductName(product);
-        recordHistory(tableNo, order.getId(), historyEntry(user, desc + " ekledi"));
-        orderLogService.append(order.getId(), historyEntry(user, desc + " ekledi"));
+        String msg = pieces + " " + label + " " + safeProductName(product) + " ekledi";
+        recordHistory(tableNo, order.getId(), historyEntry(user, msg));
+        orderLogService.append(order.getId(), historyEntry(user, msg));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -772,8 +772,9 @@ public class AppState {
         if (productLabel.isEmpty()) {
             productLabel = "Ürün";
         }
-        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
-        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " ekledi"));
+        String msg = quantity + " x " + productLabel + " ekledi";
+        recordHistory(tableNo, order.getId(), historyEntry(user, msg));
+        orderLogService.append(order.getId(), historyEntry(user, msg));
         refreshTableSignature(tableNo);
         notifyTableChanged(tableNo);
     }
@@ -852,8 +853,9 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), quantity);
         }
         orderService.recomputeTotals(order.getId());
-        recordHistory(tableNo, order.getId(), historyEntry(user, quantity + " x " + productLabel + " azalttı"));
-        orderLogService.append(order.getId(), historyEntry(user, quantity + " x " + productLabel + " azalttı"));
+        String msg = quantity + " x " + productLabel + " azalttı";
+        recordHistory(tableNo, order.getId(), historyEntry(user, msg));
+        orderLogService.append(order.getId(), historyEntry(user, msg));
 
         // Audit log — iade kaydı tut
         java.math.BigDecimal lineRefund = resolveUnitPrice(item)
@@ -933,8 +935,9 @@ public class AppState {
             productService.decreaseProductStock(item.getProductId(), qty);
         }
         orderService.recomputeTotals(order.getId());
-        recordHistory(tableNo, order.getId(), historyEntry(user, productLabel + " ürününü sildi"));
-        orderLogService.append(order.getId(), historyEntry(user, productLabel + " ürününü sildi"));
+        String msg = productLabel + " ürününü sildi";
+        recordHistory(tableNo, order.getId(), historyEntry(user, msg));
+        orderLogService.append(order.getId(), historyEntry(user, msg));
 
         // Audit log
         java.math.BigDecimal refundAmount = resolveUnitPrice(item)
