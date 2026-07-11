@@ -764,11 +764,7 @@ public class AppState {
         // Stok yönetimi UI'dan kaldırıldı → virtual restock'a gerek yok.
         // OrderService.addItemToOrder içinde stok azaltması zaten yapılıyor;
         // CHECK constraint patlarsa ProductJdbcDAO.updateStock clamp ile geçer.
-        try {
-            orderService.addItemToOrder(order.getId(), productId, quantity);
-        } catch (RuntimeException ex) {
-            throw ex;
-        }
+        orderService.addItemToOrder(order.getId(), productId, quantity);
         orderService.updateOrderStatus(order.getId(), OrderStatus.IN_PROGRESS);
         orderService.recomputeTotals(order.getId());
         tableService.markTableOccupied(tableId, true);
@@ -1777,10 +1773,7 @@ public class AppState {
     }
 
     private OrderLine toOrderLine(OrderItem item) {
-        String name = resolveProductName(item);
-        if (name == null || name.isBlank()) {
-            name = "Ürün";
-        }
+        String name = displayName(item); // ad çözme + "Ürün" fallback (tek yerde)
         BigDecimal unitPrice = resolveUnitPrice(item);
         int qty = Math.max(1, item.getQuantity());
         // pending = mutfağa henüz basılmadı (yeni "ek sipariş" kalemi)
