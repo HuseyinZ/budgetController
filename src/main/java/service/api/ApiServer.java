@@ -764,6 +764,17 @@ public class ApiServer {
     }
 
     /**
+     * Body'den gelen {@code itemId} değerini parse eder ve doğrular (dedup helper).
+     * Yalnız parse/validate yapar — response yazmaz, fallback kararı vermez.
+     *
+     * @return pozitif long ise değer; aksi hâlde (null / sayı değil / <= 0) {@code null}
+     */
+    private Long parsePositiveItemId(Object value) {
+        Long itemId = toLong(value);
+        return (itemId == null || itemId <= 0) ? null : itemId;
+    }
+
+    /**
      * POST /api/tables/{tableNo}/decrease-item
      * Body (yeni): {"itemId": 123, "quantity":1, "reason":"..."}
      * Body (legacy): {"productName":"...", "quantity":1, "reason":"..."}
@@ -781,8 +792,8 @@ public class ApiServer {
         String reason = body.get("reason") == null ? null : body.get("reason").toString();
         try {
             if (body.containsKey("itemId")) {
-                Long itemId = toLong(body.get("itemId"));
-                if (itemId == null || itemId <= 0) {
+                Long itemId = parsePositiveItemId(body.get("itemId"));
+                if (itemId == null) {
                     ctx.status(400).json(Map.of("error", "Geçerli itemId gerekli"));
                     return;
                 }
@@ -819,8 +830,8 @@ public class ApiServer {
         String reason = body.get("reason") == null ? null : body.get("reason").toString();
         try {
             if (body.containsKey("itemId")) {
-                Long itemId = toLong(body.get("itemId"));
-                if (itemId == null || itemId <= 0) {
+                Long itemId = parsePositiveItemId(body.get("itemId"));
+                if (itemId == null) {
                     ctx.status(400).json(Map.of("error", "Geçerli itemId gerekli"));
                     return;
                 }
