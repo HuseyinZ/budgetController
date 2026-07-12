@@ -355,7 +355,8 @@
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <version>10.0.4</version>
+                <!-- 12.2.2: NVD 'Value too long for column URL VARCHAR(1000)' upstream fix -->
+                <version>12.2.2</version>
                 <configuration>
                     <!-- CVSS >= 7 olan high/critical varsa build fail -->
                     <failBuildOnCVSS>7</failBuildOnCVSS>

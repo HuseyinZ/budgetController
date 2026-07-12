@@ -47,8 +47,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
-          key: dep-check-${{ runner.os }}-${{ hashFiles('pom.xml') }}
-          restore-keys: dep-check-${{ runner.os }}-
+          # v12 prefiksi: eski v10 H2 verisinin restore edilip şema uyumsuzluğu
+          # üretmesini engeller (major yükseltmede cache bilinçli sıfırlanır)
+          key: dep-check-v12-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: dep-check-v12-${{ runner.os }}-
 
       - name: Run OWASP Dependency-Check
         run: |
