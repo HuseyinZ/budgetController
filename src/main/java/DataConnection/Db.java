@@ -2,6 +2,7 @@ package DataConnection;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import service.util.Mask;
 
 import javax.sql.DataSource;
 import java.io.IOException;
@@ -82,13 +83,13 @@ public final class Db {
         return copy;
     }
 
-    /** URL içindeki user/password query parametrelerini maskele. Test'ten erişilebilir olması için public. */
+    /**
+     * URL içindeki user/password query parametrelerini maskele.
+     * Gövde {@link Mask#urlSecrets(String)}'e taşındı (DB bootstrap'sız test
+     * edilebilsin diye); bu metod geriye dönük uyumluluk için delege eder.
+     */
     public static String maskUrlSecrets(String url) {
-        if (url == null || url.isEmpty()) return url == null ? "" : url;
-        // user=... ve password=... parametrelerini bul ve maskele
-        String out = url.replaceAll("(?i)(password=)([^&]*)", "$1****");
-        out = out.replaceAll("(?i)(user=)([^&]*)", "$1****");
-        return out;
+        return Mask.urlSecrets(url);
     }
 
     public static <T> T tx(Function<Connection, T> work) {

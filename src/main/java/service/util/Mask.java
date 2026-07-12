@@ -69,4 +69,18 @@ public final class Mask {
         if (s.length() <= 2) return "**";
         return s.charAt(0) + "***" + s.charAt(s.length() - 1);
     }
+
+    /**
+     * JDBC URL içindeki {@code user=...} / {@code password=...} query
+     * parametrelerini maskele. Gövde {@code DataConnection.Db}'den birebir
+     * taşındı (CI testleri DB bootstrap'ı tetiklemesin diye); Db tarafı
+     * geriye dönük uyumluluk için buraya delege eder.
+     */
+    public static String urlSecrets(String url) {
+        if (url == null || url.isEmpty()) return url == null ? "" : url;
+        // user=... ve password=... parametrelerini bul ve maskele
+        String out = url.replaceAll("(?i)(password=)([^&]*)", "$1****");
+        out = out.replaceAll("(?i)(user=)([^&]*)", "$1****");
+        return out;
+    }
 }
