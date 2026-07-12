@@ -1,0 +1,76 @@
+# ============================================================================
+#   Risk Gate (Phase B) — PR korumalı alana dokunuyorsa FAIL.
+#
+#   AGENTS.md'deki "protected areas" listesinin MEKANİK karşılığıdır:
+#   agent kendini yanlış LOW sınıflasa bile bu check auto-merge'ü kilitler.
+#
+#   - Secret ve third-party action KULLANMAZ (yalnız actions/checkout)
+#   - pull_request + contents:read → fork PR'larında güvenlidir
+#   - Dosya listesi NUL-delimited işlenir (boşluklu/özel karakterli path'ler)
+#   - Diff-filter yok: add/modify/delete/rename (— --no-renames ile
+#     rename'ler delete+add görünür, eski VE yeni path yakalanır)
+# ============================================================================
+name: risk-gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protected-paths:
+    name: Protected paths (risk gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if protected paths changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          violations=0
+          count=0
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
+            echo "changed: $f"
+            case "$f" in
+              src/main/java/state/AppState.java|\
+              src/main/java/service/api/*|\
+              src/main/java/dao/*|\
+              src/main/java/service/security/*|\
+              src/main/java/service/audit/*|\
+              src/main/java/service/UserService.java|\
+              src/main/java/service/BackupService.java|\
+              src/main/java/service/util/Mask.java|\
+              src/main/java/tools/BackupDecrypt.java|\
+              src/main/java/DataConnection/Db.java|\
+              src/main/resources/db/*|\
+              *.sql|\
+              *.sql.bak|\
+              src/main/resources/db.properties*|\
+              src/main/resources/email-config.properties*|\
+              scripts/*|\
+              pom.xml|\
+              .github/workflows/*|\
+              AGENTS.md)
+                echo "::error file=$f::Protected path changed: $f"
+                violations=1
+                ;;
+            esac
+          done < <(git diff --name-only -z --no-renames "$BASE_SHA...$HEAD_SHA")
+          echo "Toplam degisen dosya: $count"
+          if [ "$violations" -ne 0 ]; then
+            echo "Korumalı alan değişti — bu PR LOW risk sayılamaz (AGENTS.md)."
+            exit 1
+          fi
+          echo "OK: korumalı alanlara dokunulmadı."
