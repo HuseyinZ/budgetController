@@ -33,7 +33,7 @@
         <!-- Güvenlik: transitive sürüm override'ları için -->
         <javalin.version>6.4.0</javalin.version>
         <jetty.version>11.0.25</jetty.version>
-        <jackson.version>2.18.0</jackson.version>
+        <jackson.version>2.18.8</jackson.version>
         <jakarta.mail.version>2.1.4</jakarta.mail.version>
         <angus.mail.version>2.0.4</angus.mail.version>
         <log4j.version>2.24.3</log4j.version>

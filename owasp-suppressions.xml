@@ -35,6 +35,30 @@
     </suppress>
 
     <!-- ============================================================
+         kotlin-stdlib 2.0.21 — CVE-2026-53914
+         Kotlin build-tooling/compiler CVE'si. Bu proje saf Java:
+         kotlin-maven-plugin yok, Kotlin derlemesi yok; kotlin-stdlib
+         yalnız Javalin'in runtime bağımlılığı. Uygulanmaz.
+         ============================================================ -->
+    <suppress until="2026-10-18Z">
+        <notes>Saf Java proje — Kotlin compiler/build cache kullanılmıyor; stdlib yalnız Javalin runtime dep'i. CVE build-tooling içindir. 3 ayda re-evaluate.</notes>
+        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib@.*$</packageUrl>
+        <cve>CVE-2026-53914</cve>
+    </suppress>
+
+    <!-- ============================================================
+         log4j-to-slf4j 2.24.3 — CVE-2026-34479 (artifact mismatch)
+         CVE log4j-CORE implementasyonuna aittir. log4j-core classpath'te
+         YOK; log4j-to-slf4j yalnız köprü, tüm loglar Logback'e gider.
+         DC 12.x CPE eşlemesi bridge artifact'ine yanlış yapışıyor.
+         ============================================================ -->
+    <suppress until="2026-10-18Z">
+        <notes>log4j-to-slf4j yalnız bridge — log4j-core classpath'te yok, loglar Logback'e yönlendiriliyor. CVE core içindir; CPE mismatch. 3 ayda re-evaluate.</notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j-to-slf4j@.*$</packageUrl>
+        <cve>CVE-2026-34479</cve>
+    </suppress>
+
+    <!-- ============================================================
          log4j-api 2.24.3 — CVE-2026-34477..34481, CVE-2025-68161
          Bu CVE'ler log4j-CORE içindir (log4j2 kendi appender'ları).
          Biz log4j-CORE KULLANMIYORUZ — sadece log4j-to-slf4j bridge'i
