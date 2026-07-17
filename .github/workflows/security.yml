@@ -31,8 +31,10 @@ jobs:
   # ============================================================
   dependency-check:
     name: OWASP Dependency-Check
+    # PR'larda çalışmaz — NVD taraması uzun; master push + gece cron yeterli
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -43,19 +45,29 @@ jobs:
           java-version: '22'
           cache: maven
 
-      - name: Cache NVD database
-        uses: actions/cache@v4
+      - name: Restore NVD database cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
-          # v12 prefiksi: eski v10 H2 verisinin restore edilip şema uyumsuzluğu
-          # üretmesini engeller (major yükseltmede cache bilinçli sıfırlanır)
-          key: dep-check-v12-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          # run_id ile her koşuya benzersiz key: save hiçbir zaman "key exists"
+          # no-op'una düşmez; restore en güncel veriyi prefix'ten alır.
+          # v12 prefiksi: eski v10 H2 verisinin şema uyumsuzluğunu engeller.
+          key: dep-check-v12-${{ runner.os }}-${{ github.run_id }}
           restore-keys: dep-check-v12-${{ runner.os }}-
 
       - name: Run OWASP Dependency-Check
         run: |
           mvn -B org.owasp:dependency-check-maven:check \
               -DnvdApiKey=${{ secrets.NVD_API_KEY }}
+
+      # Tarama fail olsa bile indirilen NVD verisi kaydedilsin — bir sonraki
+      # koşu sıfırdan indirmesin (restore/save ayrımının amacı bu)
+      - name: Save NVD database cache
+        uses: actions/cache/save@v4
+        if: ${{ always() && !cancelled() }}
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: dep-check-v12-${{ runner.os }}-${{ github.run_id }}
 
       - name: Upload report
         uses: actions/upload-artifact@v4
