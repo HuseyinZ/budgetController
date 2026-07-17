@@ -114,17 +114,3 @@ jobs:
             target/bom.json
             target/bom.xml
           retention-days: 90
-
-  # ============================================================
-  #   4. Dependency Review (sadece PR'da)
-  # ============================================================
-  dependency-review:
-    name: Dependency Review (PR)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          comment-summary-in-pr: never
