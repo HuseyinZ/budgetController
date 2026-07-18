@@ -45,8 +45,8 @@ class RbacIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // 1 saat absolute + 200 ms idle (idle timeout testi için kısa)
-        sessions = new SessionStore(3_600_000L, 200L);
+        // 1 saat absolute + 2 saniye idle (HTTP başlangıç gecikmelerine toleranslı)
+        sessions = new SessionStore(3_600_000L, 2_000L);
 
         app = Javalin.create(cfg -> cfg.showJavalinBanner = false);
 
@@ -191,8 +191,8 @@ class RbacIntegrationTest {
         String token = sessions.issue(userOf("alice", Role.ADMIN));
         // İlk istek geçer
         assertEquals(200, call("GET", "/api/me", token).statusCode());
-        // 200ms idle — eşiği aş
-        Thread.sleep(300);
+        // 2 saniyelik idle eşiğini güvenli payla aş
+        Thread.sleep(2_300);
         // Token idle timeout sebebiyle düştü
         assertEquals(401, call("GET", "/api/me", token).statusCode());
     }
