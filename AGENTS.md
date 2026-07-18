@@ -224,4 +224,4 @@ Do not start these as autonomous cleanup:
 - product+note identity
 - atomic add+note
 - AppState decomposition
-- TableOrder / OrderLine.copy dead-code deletion
+- TableOrder / OrderLine.copy dead-code deletion< risk gate smoke test -->
