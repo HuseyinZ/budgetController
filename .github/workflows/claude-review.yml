@@ -26,6 +26,39 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Determine review protocol
+        id: protocol
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body="${PR_BODY//$'\r'/}"
+          risk="LOW"
+          round="1"
+          behavior="NO"
+
+          medium_count="$(grep -Fxc 'AGENT_RISK: MEDIUM' <<<"$body" || true)"
+          round_lines="$(grep -Ec '^AGENT_ROUND: [123]$' <<<"$body" || true)"
+
+          if [[ "$medium_count" == "1" ]]; then
+            if [[ "$round_lines" != "1" ]]; then
+              echo "MEDIUM protocol requires exactly one AGENT_ROUND: 1, 2, or 3 line."
+              exit 1
+            fi
+            risk="MEDIUM"
+            round="$(sed -n 's/^AGENT_ROUND: \([123]\)$/\1/p' <<<"$body")"
+            behavior="EXPECTED_AND_SCOPED"
+          elif [[ "$medium_count" != "0" || "$round_lines" != "0" ]]; then
+            echo "Invalid or partial MEDIUM protocol markers."
+            exit 1
+          fi
+
+          echo "risk=$risk" >> "$GITHUB_OUTPUT"
+          echo "round=$round" >> "$GITHUB_OUTPUT"
+          echo "behavior=$behavior" >> "$GITHUB_OUTPUT"
+
       - name: Review pull request
         uses: anthropics/claude-code-action@v1
         with:
@@ -36,24 +69,33 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
             HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            REVIEW RISK: ${{ steps.protocol.outputs.risk }}
+            REVIEW ROUND: ${{ steps.protocol.outputs.round }}
+            EXPECTED BEHAVIOR: ${{ steps.protocol.outputs.behavior }}
 
             Review this pull request. Read AGENTS.md first and enforce its risk rules.
-            Focus on correctness, regressions, security, data integrity, and test coverage.
+            Focus on correctness, regressions, security, data integrity, scope, and test coverage.
             Do not edit files, commit, push, approve, or merge.
             Post exactly one concise top-level PR comment using `gh pr comment`.
 
-            The comment must begin with exactly these four lines, using the exact full
-            HEAD SHA shown above:
-
+            For LOW review, begin with exactly these four lines:
             VERDICT: PASS
             HEAD_SHA: ${{ github.event.pull_request.head.sha }}
             RISK: LOW
             BEHAVIOR_CHANGE: NO
 
-            Use VERDICT: CHANGES_REQUESTED instead of VERDICT: PASS when any blocking
-            finding exists, when the change is not LOW risk, or when it changes runtime
-            behavior. Keep the remaining three protocol lines unchanged. After the four
-            required lines, include concise blocking findings with file and line references.
+            For MEDIUM review, begin with exactly these five lines:
+            VERDICT: PASS
+            HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+            ROUND: ${{ steps.protocol.outputs.round }}
+            RISK: MEDIUM
+            BEHAVIOR_CHANGE: EXPECTED_AND_SCOPED
+
+            Use VERDICT: CHANGES_REQUESTED when any blocking finding exists, when
+            risk/scope markers are inaccurate, when MEDIUM Allowed-Paths are exceeded,
+            when a hard-protected area is touched, or when behavior is not adequately
+            scoped and tested. Keep every other protocol line exact. After the protocol
+            lines, include concise findings with file and line references.
           claude_args: |
             --max-turns 12
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
@@ -64,19 +106,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_RISK: ${{ steps.protocol.outputs.risk }}
+          REVIEW_ROUND: ${{ steps.protocol.outputs.round }}
+          EXPECTED_BEHAVIOR: ${{ steps.protocol.outputs.behavior }}
         shell: bash
         run: |
           set -euo pipefail
-
-          expected_pass="VERDICT: PASS
-          HEAD_SHA: ${HEAD_SHA}
-          RISK: LOW
-          BEHAVIOR_CHANGE: NO"
-
-          expected_changes="VERDICT: CHANGES_REQUESTED
-          HEAD_SHA: ${HEAD_SHA}
-          RISK: LOW
-          BEHAVIOR_CHANGE: NO"
 
           verdict="$({
             gh api --paginate \
@@ -85,13 +120,35 @@ jobs:
               --jq '[.[] | select(.user.login == "claude[bot]") | .body | select(startswith("VERDICT:"))] | last // ""'
           })"
 
+          if [[ "$REVIEW_RISK" == "MEDIUM" ]]; then
+            expected_pass="VERDICT: PASS
+          HEAD_SHA: ${HEAD_SHA}
+          ROUND: ${REVIEW_ROUND}
+          RISK: MEDIUM
+          BEHAVIOR_CHANGE: EXPECTED_AND_SCOPED"
+            expected_changes="VERDICT: CHANGES_REQUESTED
+          HEAD_SHA: ${HEAD_SHA}
+          ROUND: ${REVIEW_ROUND}
+          RISK: MEDIUM
+          BEHAVIOR_CHANGE: EXPECTED_AND_SCOPED"
+          else
+            expected_pass="VERDICT: PASS
+          HEAD_SHA: ${HEAD_SHA}
+          RISK: LOW
+          BEHAVIOR_CHANGE: NO"
+            expected_changes="VERDICT: CHANGES_REQUESTED
+          HEAD_SHA: ${HEAD_SHA}
+          RISK: LOW
+          BEHAVIOR_CHANGE: NO"
+          fi
+
           case "$verdict" in
             "$expected_pass"|"$expected_pass"$'\n'*)
-              echo "Validated Claude PASS for ${HEAD_SHA}."
+              echo "Validated Claude PASS for ${HEAD_SHA}, risk ${REVIEW_RISK}, round ${REVIEW_ROUND}."
               exit 0
               ;;
             "$expected_changes"|"$expected_changes"$'\n'*)
-              echo "Claude requested changes for ${HEAD_SHA}."
+              echo "Claude requested changes for ${HEAD_SHA}, risk ${REVIEW_RISK}, round ${REVIEW_ROUND}."
               exit 1
               ;;
             *)
