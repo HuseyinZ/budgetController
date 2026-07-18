@@ -42,7 +42,7 @@
          ============================================================ -->
     <suppress until="2026-10-18Z">
         <notes>Saf Java proje — Kotlin compiler/build cache kullanılmıyor; stdlib yalnız Javalin runtime dep'i. CVE build-tooling içindir. 3 ayda re-evaluate.</notes>
-        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib@.*$</packageUrl>
+        <packageUrl regex="true">^pkg:maven/org\.jetbrains\.kotlin/kotlin-stdlib(?:-jdk7|-jdk8)?@.*$</packageUrl>
         <cve>CVE-2026-53914</cve>
     </suppress>
 
