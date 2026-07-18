@@ -47,3 +47,35 @@ jobs:
           claude_args: |
             --max-turns 12
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
+
+      - name: Enforce Claude verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verdict="$({
+            gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --jq '[.[] | select(.user.login == "claude[bot]") | .body | select(startswith("VERDICT:"))] | last // ""'
+          })"
+
+          echo "Claude verdict: ${verdict:-missing}"
+
+          case "$verdict" in
+            "VERDICT: PASS"*)
+              exit 0
+              ;;
+            "VERDICT: CHANGES_REQUESTED"*)
+              echo "Claude requested changes."
+              exit 1
+              ;;
+            *)
+              echo "No valid Claude verdict was found."
+              exit 1
+              ;;
+          esac
