@@ -61,6 +61,7 @@ jobs:
               src/main/resources/email-config.properties*|\
               scripts/*|\
               pom.xml|\
+              owasp-suppressions.xml|\
               .github/workflows/*|\
               AGENTS.md)
                 echo "::error file=$f::Protected path changed: $f"
