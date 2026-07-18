@@ -1,0 +1,49 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
+jobs:
+  review:
+    name: Claude PR Review
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Review pull request
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          additional_permissions: |
+            actions: read
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Read AGENTS.md first and enforce its risk rules.
+            Focus on correctness, regressions, security, data integrity, and test coverage.
+            Do not edit files, commit, push, approve, or merge.
+            Post one concise top-level PR comment using `gh pr comment`.
+            Start the comment with exactly one verdict:
+            - VERDICT: PASS
+            - VERDICT: CHANGES_REQUESTED
+            Include file and line references for every blocking finding.
+          claude_args: |
+            --max-turns 12
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
