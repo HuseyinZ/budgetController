@@ -1,0 +1,31 @@
+name: Agent PR Automation
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Prepare agent PR
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'agent/') ||
+       startsWith(github.event.pull_request.head.ref, 'codex/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+
+    steps:
+      - name: Mark draft ready for review
+        if: ${{ github.event.pull_request.draft == true }}
+        run: gh pr ready "$PR_URL"
+
+      - name: Enable squash auto-merge
+        run: gh pr merge --auto --squash "$PR_URL"
