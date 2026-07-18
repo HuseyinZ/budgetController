@@ -35,15 +35,25 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD SHA: ${{ github.event.pull_request.head.sha }}
 
             Review this pull request. Read AGENTS.md first and enforce its risk rules.
             Focus on correctness, regressions, security, data integrity, and test coverage.
             Do not edit files, commit, push, approve, or merge.
-            Post one concise top-level PR comment using `gh pr comment`.
-            Start the comment with exactly one verdict:
-            - VERDICT: PASS
-            - VERDICT: CHANGES_REQUESTED
-            Include file and line references for every blocking finding.
+            Post exactly one concise top-level PR comment using `gh pr comment`.
+
+            The comment must begin with exactly these four lines, using the exact full
+            HEAD SHA shown above:
+
+            VERDICT: PASS
+            HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+            RISK: LOW
+            BEHAVIOR_CHANGE: NO
+
+            Use VERDICT: CHANGES_REQUESTED instead of VERDICT: PASS when any blocking
+            finding exists, when the change is not LOW risk, or when it changes runtime
+            behavior. Keep the remaining three protocol lines unchanged. After the four
+            required lines, include concise blocking findings with file and line references.
           claude_args: |
             --max-turns 12
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
@@ -53,9 +63,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
+
+          expected_pass="VERDICT: PASS
+          HEAD_SHA: ${HEAD_SHA}
+          RISK: LOW
+          BEHAVIOR_CHANGE: NO"
+
+          expected_changes="VERDICT: CHANGES_REQUESTED
+          HEAD_SHA: ${HEAD_SHA}
+          RISK: LOW
+          BEHAVIOR_CHANGE: NO"
 
           verdict="$({
             gh api --paginate \
@@ -64,18 +85,17 @@ jobs:
               --jq '[.[] | select(.user.login == "claude[bot]") | .body | select(startswith("VERDICT:"))] | last // ""'
           })"
 
-          echo "Claude verdict: ${verdict:-missing}"
-
           case "$verdict" in
-            "VERDICT: PASS"*)
+            "$expected_pass"|"$expected_pass"$'\n'*)
+              echo "Validated Claude PASS for ${HEAD_SHA}."
               exit 0
               ;;
-            "VERDICT: CHANGES_REQUESTED"*)
-              echo "Claude requested changes."
+            "$expected_changes"|"$expected_changes"$'\n'*)
+              echo "Claude requested changes for ${HEAD_SHA}."
               exit 1
               ;;
             *)
-              echo "No valid Claude verdict was found."
+              echo "No valid Claude verdict for current HEAD SHA ${HEAD_SHA}."
               exit 1
               ;;
           esac
