@@ -77,6 +77,9 @@ jobs:
             Focus on correctness, regressions, security, data integrity, scope, and test coverage.
             Do not edit files, commit, push, approve, or merge.
             Post exactly one concise top-level PR comment using `gh pr comment`.
+            Use only the tools listed in claude_args. Do not run tests or unlisted shell commands.
+            For MEDIUM reviews, inspect the PR body and linked issue with `gh pr view` and
+            `gh issue view` before evaluating the immutable Allowed-Paths authorization.
 
             For LOW review, begin with exactly these four lines:
             VERDICT: PASS
@@ -97,8 +100,8 @@ jobs:
             scoped and tested. Keep every other protocol line exact. After the protocol
             lines, include concise findings with file and line references.
           claude_args: |
-            --max-turns 12
-            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
+            --max-turns 24
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(git diff:*),Bash(git show:*),Bash(git status:*),Read,Glob,Grep"
 
       - name: Enforce Claude verdict
         env:
