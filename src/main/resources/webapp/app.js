@@ -548,12 +548,32 @@ function renderTableDetail(snap) {
 }
 
 // ========== Auto-refresh ==========
+const LOCK_HEARTBEAT_INTERVAL_MS = 60_000;
 let refreshTimer = null;
+let lastLockHeartbeatAt = 0;
+let lockHeartbeatInFlight = false;
+
+function maybeRenewActiveTableLock(activeViewId) {
+  const isTableEditingView = activeViewId === 'view-table-detail' || activeViewId === 'view-products';
+  if (!isTableEditingView || !App.currentTable || lockHeartbeatInFlight) return;
+
+  const now = Date.now();
+  if (now - lastLockHeartbeatAt < LOCK_HEARTBEAT_INTERVAL_MS) return;
+
+  const tableNo = App.currentTable.tableNo;
+  lastLockHeartbeatAt = now;
+  lockHeartbeatInFlight = true;
+  api('POST', `/tables/${tableNo}/lock`, {})
+    .catch(() => {})
+    .then(() => { lockHeartbeatInFlight = false; });
+}
+
 function startAutoRefresh() {
   stopAutoRefresh();
   refreshTimer = setInterval(() => {
     const active = document.querySelector('.view.active');
     if (!active) return;
+    maybeRenewActiveTableLock(active.id);
     // Sadece masalar listesi veya masa detay açıkken yenile
     if (active.id === 'view-tables') {
       api('GET', '/tables').then(t => { App.tables = t; renderTables(); }).catch(() => {});
