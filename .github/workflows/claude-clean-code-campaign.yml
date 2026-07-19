@@ -235,9 +235,13 @@ jobs:
               BackupService.java, service/util/Mask.java, tools/BackupDecrypt.java,
               DataConnection/Db.java, database/config resources, build/workflow/policy files.
             - Prefer small, single-purpose, independently verifiable candidates.
-            - Return at most 12 candidates. Each autonomous candidate must be executable under
+            - Stop after identifying at most 6 credible candidates; do not exhaustively inspect every file.
+            - Return at most 6 candidates. Each autonomous candidate must be executable under
               conservative MEDIUM authorization, touch 1-5 exact files, stay below 400 changed
               lines, and preserve external behavior.
+            - Use Read, Glob, Grep, and the listed read-only git commands only. Do not retry a
+              denied tool call. Reserve enough turns to compose and post the required protocol
+              comment even when the audit finds fewer than 6 candidates.
             - Post exactly one top-level comment to CAMPAIGN ISSUE beginning exactly:
               CLAUDE CLEAN CODE AUDIT
               REQUEST_ID: ${{ inputs.request_id }}
@@ -293,8 +297,8 @@ jobs:
               <valid JSON object with summary and blocking_findings array>
               FEEDBACK_JSON_END
           claude_args: |
-            --max-turns 48
-            --allowedTools "Bash(gh issue comment:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git ls-files:*),Bash(git grep:*),Bash(git show:*),Bash(git status:*),Read,Glob,Grep"
+            --max-turns 72
+            --allowedTools "Bash(gh issue comment:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git grep:*),Bash(git show:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git blame:*),Read,Glob,Grep"
 
       - name: Enforce exact campaign protocol
         env:
