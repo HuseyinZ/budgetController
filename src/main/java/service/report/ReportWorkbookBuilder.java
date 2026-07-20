@@ -251,14 +251,7 @@ public final class ReportWorkbookBuilder {
     }
 
     private static String describeMethod(PaymentMethod m) {
-        return switch (m) {
-            case CASH -> "Nakit";
-            case CREDIT_CARD, CARD -> "Kredi Kartı";
-            case DEBIT_CARD -> "Banka Kartı";
-            case TRANSFER -> "Havale/EFT";
-            case ONLINE -> "Online";
-            case MIXED -> "Karma";
-        };
+        return m.getDisplayName();
     }
 
     /**

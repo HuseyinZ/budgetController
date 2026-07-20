@@ -526,14 +526,7 @@ public class DailyReportPanel extends JPanel {
     }
 
     private String describePaymentMethod(PaymentMethod method) {
-        return switch (method) {
-            case CASH -> "Nakit";
-            case CREDIT_CARD, CARD -> "Kredi Kartı";
-            case DEBIT_CARD -> "Banka Kartı";
-            case TRANSFER -> "Havale/EFT";
-            case ONLINE -> "Online";
-            case MIXED -> "Karma";
-        };
+        return method.getDisplayName();
     }
 
     // ---- Excel export ----
