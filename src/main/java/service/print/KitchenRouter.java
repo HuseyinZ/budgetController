@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -114,10 +113,5 @@ public class KitchenRouter {
         if (item.getProductId() == null) return null;
         Optional<Product> prod = productDAO.findById(item.getProductId());
         return prod.map(Product::getCategoryId).orElse(null);
-    }
-
-    /** Tek yönlendirme yokken kullanılacak boş sonuç. */
-    public static Map<KitchenPrinter, List<OrderItem>> empty() {
-        return Collections.emptyMap();
     }
 }
