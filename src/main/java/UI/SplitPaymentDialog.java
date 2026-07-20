@@ -232,15 +232,14 @@ public class SplitPaymentDialog extends JDialog {
             }
         }
         BigDecimal diff = totalAmount.subtract(sum);
-        java.text.NumberFormat fmt = java.text.NumberFormat.getCurrencyInstance(new java.util.Locale("tr","TR"));
         if (diff.abs().compareTo(new BigDecimal("0.01")) <= 0) {
-            sumStatusLabel.setText("✓ Toplam tam (" + fmt.format(sum) + ")");
+            sumStatusLabel.setText("✓ Toplam tam (" + MONEY.format(sum) + ")");
             sumStatusLabel.setForeground(new Color(46, 125, 50));
         } else if (diff.signum() > 0) {
-            sumStatusLabel.setText("⚠ Eksik: " + fmt.format(diff) + " (toplam " + fmt.format(sum) + ")");
+            sumStatusLabel.setText("⚠ Eksik: " + MONEY.format(diff) + " (toplam " + MONEY.format(sum) + ")");
             sumStatusLabel.setForeground(new Color(245, 124, 0));
         } else {
-            sumStatusLabel.setText("⚠ Fazla: " + fmt.format(diff.negate()) + " (toplam " + fmt.format(sum) + ")");
+            sumStatusLabel.setText("⚠ Fazla: " + MONEY.format(diff.negate()) + " (toplam " + MONEY.format(sum) + ")");
             sumStatusLabel.setForeground(new Color(198, 40, 40));
         }
     }
