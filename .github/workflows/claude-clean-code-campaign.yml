@@ -197,6 +197,7 @@ jobs:
             --jq '.body' > .campaign-context/codex-plan.txt
 
       - name: Claude audit and review
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -216,8 +217,8 @@ jobs:
 
             Read AGENTS.md first and enforce it strictly. This is a read-only Clean Code
             campaign analysis/review task. Do not edit files, commit, push, approve, merge,
-            alter issues, or change pull-request metadata. The only permitted write is the
-            single requested top-level comment through `gh issue comment` or `gh pr comment`.
+            alter issues, or change pull-request metadata. Do not post GitHub comments yourself.
+            Return one structured output object whose comment_body field contains the exact protocol comment.
             Use only tools listed in claude_args. Do not run Maven, the application, database
             operations, generated scripts, restore/deployment commands, or unlisted shell.
 
@@ -235,14 +236,15 @@ jobs:
               BackupService.java, service/util/Mask.java, tools/BackupDecrypt.java,
               DataConnection/Db.java, database/config resources, build/workflow/policy files.
             - Prefer small, single-purpose, independently verifiable candidates.
-            - Stop after identifying at most 6 credible candidates; do not exhaustively inspect every file.
-            - Return at most 6 candidates. Each autonomous candidate must be executable under
+            - Stop after identifying at most 3 credible candidates and after reading at most 20 source files.
+              Fewer than 3 candidates are acceptable; return the protocol content as soon as enough evidence exists.
+            - Return at most 3 candidates. Each autonomous candidate must be executable under
               conservative MEDIUM authorization, touch 1-5 exact files, stay below 400 changed
               lines, and preserve external behavior.
             - Use Read, Glob, Grep, and the listed read-only git commands only. Do not retry a
-              denied tool call. Reserve enough turns to compose and post the required protocol
-              comment even when the audit finds fewer than 6 candidates.
-            - Post exactly one top-level comment to CAMPAIGN ISSUE beginning exactly:
+              denied tool call. Reserve enough turns to compose and return the required protocol
+              result even when the audit finds fewer than 3 candidates.
+            - Set comment_body to content beginning exactly:
               CLAUDE CLEAN CODE AUDIT
               REQUEST_ID: ${{ inputs.request_id }}
               BASE_SHA: ${{ inputs.base_sha }}
@@ -268,7 +270,7 @@ jobs:
               respected dependencies, and supplied testable acceptance criteria.
             - Reject vague, broad, speculative, protected, deferred, identity-changing, SQL,
               security, workflow, build-policy, or architectural plans.
-            - Post exactly one top-level comment to CAMPAIGN ISSUE beginning exactly:
+            - Set comment_body to content beginning exactly:
               CLAUDE PLAN REVIEW
               REQUEST_ID: ${{ inputs.request_id }}
               BASE_SHA: ${{ inputs.base_sha }}
@@ -285,7 +287,7 @@ jobs:
             - Focus on correctness, regressions, unnecessary abstraction, hidden behavior
               changes, scope, exact allowed paths, and whether the refactor is genuinely clearer.
             - Use CHANGES_REQUESTED for every blocking concern. Give concrete file/line feedback.
-            - Post exactly one top-level comment to PULL REQUEST beginning exactly:
+            - Set comment_body to content beginning exactly:
               CLAUDE IMPLEMENTATION REVIEW
               REQUEST_ID: ${{ inputs.request_id }}
               HEAD_SHA: ${{ inputs.head_sha }}
@@ -297,8 +299,32 @@ jobs:
               <valid JSON object with summary and blocking_findings array>
               FEEDBACK_JSON_END
           claude_args: |
-            --max-turns 72
-            --allowedTools "Bash(gh issue comment:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git grep:*),Bash(git show:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git blame:*),Read,Glob,Grep"
+            --max-turns 96
+            --json-schema '{"type":"object","properties":{"comment_body":{"type":"string"}},"required":["comment_body"],"additionalProperties":false}'
+            --allowedTools "Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git grep:*),Bash(git show:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git blame:*),Read,Glob,Grep"
+
+      - name: Post Claude protocol comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PHASE: ${{ inputs.phase }}
+          CAMPAIGN_ISSUE: ${{ inputs.campaign_issue }}
+          PULL_REQUEST: ${{ inputs.pull_request }}
+          COMMENT_BODY: ${{ fromJSON(steps.claude.outputs.structured_output).comment_body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$COMMENT_BODY" ]]
+
+          if [[ "$PHASE" == "implementation_review" ]]; then
+            target="$PULL_REQUEST"
+          else
+            target="$CAMPAIGN_ISSUE"
+          fi
+
+          comment_file="${RUNNER_TEMP}/claude-protocol-comment.txt"
+          printf '%s\n' "$COMMENT_BODY" > "$comment_file"
+          gh issue comment "$target" --repo "$REPOSITORY" --body-file "$comment_file"
 
       - name: Enforce exact campaign protocol
         env:
