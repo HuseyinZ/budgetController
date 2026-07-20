@@ -12,9 +12,10 @@ import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -89,7 +90,7 @@ public class PrintingService {
             List<OrderItem> myItems = entry.getValue();
 
             // O mutfağın yapacağı productId kümesi → hızlı kontrol
-            java.util.Set<Long> mineProductIds = new java.util.HashSet<>();
+            Set<Long> mineProductIds = new HashSet<>();
             for (OrderItem it : myItems) {
                 if (it.getProductId() != null) mineProductIds.add(it.getProductId());
             }

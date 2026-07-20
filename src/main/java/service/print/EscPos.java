@@ -1,5 +1,8 @@
 package service.print;
 
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+
 /**
  * ESC/POS standart komut kümesinin küçük bir alt kümesi.
  *
@@ -74,9 +77,9 @@ public final class EscPos {
         if (s == null) return new byte[0];
         try {
             return s.getBytes("Cp857");
-        } catch (java.io.UnsupportedEncodingException e) {
+        } catch (UnsupportedEncodingException e) {
             // CP857 destekleyen JVM'lerde tetiklenmez; emniyet için ASCII'ye düşelim
-            return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            return s.getBytes(StandardCharsets.US_ASCII);
         }
     }
 }

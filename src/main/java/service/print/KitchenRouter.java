@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,8 +63,8 @@ public class KitchenRouter {
         if (items == null || items.isEmpty()) return grouped;
 
         // Cache'ler: aynı kategori/yazıcı tekrar tekrar sorulmasın
-        Map<Long, List<KitchenPrinter>> catCache = new java.util.HashMap<>();
-        Map<Integer, KitchenPrinter> printerCache = new java.util.HashMap<>();
+        Map<Long, List<KitchenPrinter>> catCache = new HashMap<>();
+        Map<Integer, KitchenPrinter> printerCache = new HashMap<>();
 
         for (OrderItem item : items) {
             // 1) ÖNCELİK: Garson manuel mutfak seçtiyse onu kullan.
