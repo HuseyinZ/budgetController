@@ -48,13 +48,7 @@ public class SaleService {
     }
 
     private BigDecimal sumAmounts(List<Payment> payments) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (Payment p : payments) {
-            if (p.getAmount() != null) {
-                total = total.add(p.getAmount());
-            }
-        }
-        return total;
+        return MoneyUtil.sumAmounts(payments, Payment::getAmount);
     }
 
     public List<Payment> getDailySalesList(LocalDate date) {

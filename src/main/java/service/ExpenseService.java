@@ -3,6 +3,7 @@ package service;
 import dao.ExpenseDAO;
 import dao.jdbc.ExpenseJdbcDAO;
 import model.Expense;
+import model.MoneyUtil;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -64,12 +65,6 @@ public class ExpenseService {
     }
 
     private BigDecimal sum(List<Expense> expenses) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (Expense expense : expenses) {
-            if (expense.getAmount() != null) {
-                total = total.add(expense.getAmount());
-            }
-        }
-        return total;
+        return MoneyUtil.sumAmounts(expenses, Expense::getAmount);
     }
 }
