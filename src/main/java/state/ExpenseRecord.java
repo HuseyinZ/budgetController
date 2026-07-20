@@ -1,7 +1,8 @@
 package state;
 
+import model.MoneyUtil;
+
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -15,7 +16,7 @@ public class ExpenseRecord {
 
     public ExpenseRecord(Long id, BigDecimal amount, String description, String performedBy, LocalDate expenseDate, LocalDateTime createdAt) {
         this.id = id;
-        this.amount = amount == null ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
+        this.amount = MoneyUtil.twoOrUnscaledZero(amount);
         this.description = description == null ? "" : description;
         this.performedBy = performedBy == null ? "" : performedBy;
         this.expenseDate = expenseDate == null ? LocalDate.now() : expenseDate;

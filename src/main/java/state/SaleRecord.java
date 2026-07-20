@@ -1,9 +1,9 @@
 package state;
 
+import model.MoneyUtil;
 import model.PaymentMethod;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 public class SaleRecord {
@@ -19,7 +19,7 @@ public class SaleRecord {
         this.tableNo = tableNo;
         this.building = building;
         this.section = section;
-        this.total = total == null ? BigDecimal.ZERO : total.setScale(2, RoundingMode.HALF_UP);
+        this.total = MoneyUtil.twoOrUnscaledZero(total);
         this.method = method;
         this.performedBy = performedBy == null ? "" : performedBy;
         this.timestamp = timestamp == null ? LocalDateTime.now() : timestamp;

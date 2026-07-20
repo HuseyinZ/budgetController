@@ -14,6 +14,10 @@ public final class MoneyUtil {
                 : v.setScale(2, RoundingMode.HALF_UP);
     }
 
+    public static BigDecimal twoOrUnscaledZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
     public static <T> BigDecimal sumAmounts(List<T> items, Function<T, BigDecimal> amountExtractor) {
         BigDecimal total = BigDecimal.ZERO;
         for (T item : items) {
