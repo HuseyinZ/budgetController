@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Properties;
 
 /**
  * Hızlı gider şablonlarını yöneten servis.
@@ -70,7 +71,7 @@ public final class ExpenseTemplateService {
     }
 
     private static List<ExpenseTemplate> readFromStream(InputStream in) throws IOException {
-        java.util.Properties p = new java.util.Properties();
+        Properties p = new Properties();
         p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
         String raw = p.getProperty("templates", "").trim();
         if (raw.isEmpty()) return List.of();
