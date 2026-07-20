@@ -140,7 +140,7 @@ public class ProfitPanel extends JPanel {
         dailySalesLabel.setText(format(sales));
         dailyExpenseLabel.setText(format(expenses));
         dailyNetLabel.setText(format(net));
-        dailyNetLabel.setForeground(net.signum() >= 0 ? new Color(46, 125, 50) : Color.RED.darker());
+        dailyNetLabel.setForeground(getNetProfitColor(net));
     }
 
     private void updateMonthlyTotals() {
@@ -151,7 +151,11 @@ public class ProfitPanel extends JPanel {
         monthlySalesLabel.setText(format(sales));
         monthlyExpenseLabel.setText(format(expenses));
         monthlyNetLabel.setText(format(net));
-        monthlyNetLabel.setForeground(net.signum() >= 0 ? new Color(46, 125, 50) : Color.RED.darker());
+        monthlyNetLabel.setForeground(getNetProfitColor(net));
+    }
+
+    private Color getNetProfitColor(BigDecimal net) {
+        return net.signum() >= 0 ? new Color(46, 125, 50) : Color.RED.darker();
     }
 
     private String format(BigDecimal value) {
