@@ -63,23 +63,14 @@ public class ProfitPanel extends JPanel {
         panel.add(refreshDaily, gc);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Günlük Satış"), gc);
-        gc.gridx = 1;
-        panel.add(dailySalesLabel, gc);
+        addMetricRow(panel, gc, row, "Günlük Satış", dailySalesLabel);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Günlük Gider"), gc);
-        gc.gridx = 1;
-        panel.add(dailyExpenseLabel, gc);
+        addMetricRow(panel, gc, row, "Günlük Gider", dailyExpenseLabel);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Günlük Net"), gc);
         dailyNetLabel.setFont(dailyNetLabel.getFont().deriveFont(Font.BOLD));
-        gc.gridx = 1;
-        panel.add(dailyNetLabel, gc);
+        addMetricRow(panel, gc, row, "Günlük Net", dailyNetLabel);
 
         row++;
         gc.gridx = 0; gc.gridy = row;
@@ -95,23 +86,14 @@ public class ProfitPanel extends JPanel {
         panel.add(refreshMonthly, gc);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Aylık Satış"), gc);
-        gc.gridx = 1;
-        panel.add(monthlySalesLabel, gc);
+        addMetricRow(panel, gc, row, "Aylık Satış", monthlySalesLabel);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Aylık Gider"), gc);
-        gc.gridx = 1;
-        panel.add(monthlyExpenseLabel, gc);
+        addMetricRow(panel, gc, row, "Aylık Gider", monthlyExpenseLabel);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Aylık Net"), gc);
         monthlyNetLabel.setFont(monthlyNetLabel.getFont().deriveFont(Font.BOLD));
-        gc.gridx = 1;
-        panel.add(monthlyNetLabel, gc);
+        addMetricRow(panel, gc, row, "Aylık Net", monthlyNetLabel);
 
         row++;
         gc.gridx = 2; gc.gridy = row; gc.anchor = GridBagConstraints.EAST;
@@ -121,6 +103,14 @@ public class ProfitPanel extends JPanel {
         gc.anchor = GridBagConstraints.WEST;
 
         return panel;
+    }
+
+    private void addMetricRow(JPanel panel, GridBagConstraints gc, int row, String labelText, JComponent valueComponent) {
+        gc.gridx = 0;
+        gc.gridy = row;
+        panel.add(new JLabel(labelText), gc);
+        gc.gridx = 1;
+        panel.add(valueComponent, gc);
     }
 
     private void handleStateChange(PropertyChangeEvent event) {
