@@ -9,6 +9,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -200,7 +201,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
 
     private static String repeat(char c, int n) {
         char[] arr = new char[n];
-        java.util.Arrays.fill(arr, c);
+        Arrays.fill(arr, c);
         return new String(arr);
     }
 
