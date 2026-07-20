@@ -1,6 +1,7 @@
 package model;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class Product extends BaseEntity {
     private String name;
@@ -21,7 +22,7 @@ public class Product extends BaseEntity {
     private String unitLabel;
     public static final int NAME_MAX = 100;
     public static final int SKU_MAX = 64;
-    public static final java.math.BigDecimal DEFAULT_VAT = new java.math.BigDecimal("0.20");
+    public static final BigDecimal DEFAULT_VAT = new BigDecimal("0.20");
 
     public Product() {
     }
@@ -74,7 +75,7 @@ public class Product extends BaseEntity {
             this.vatRate = DEFAULT_VAT;
             return;
         }
-        if (vatRate.compareTo(java.math.BigDecimal.ZERO) < 0 || vatRate.compareTo(java.math.BigDecimal.ONE) > 0) {
+        if (vatRate.compareTo(BigDecimal.ZERO) < 0 || vatRate.compareTo(BigDecimal.ONE) > 0) {
             throw new IllegalArgumentException("KDV oranı 0..1 olmalı");
         }
         this.vatRate = vatRate;
@@ -146,7 +147,7 @@ public class Product extends BaseEntity {
             return unitPrice;
         }
         return MoneyUtil.two(unitPrice.divide(
-                new java.math.BigDecimal(piecesPerPortion),
-                4, java.math.RoundingMode.HALF_UP));
+                new BigDecimal(piecesPerPortion),
+                4, RoundingMode.HALF_UP));
     }
 }
