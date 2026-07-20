@@ -328,10 +328,13 @@ jobs:
             marker='CLAUDE CLEAN CODE AUDIT'
           fi
 
-          body="$(gh api --paginate --slurp \
+          comments_json="$(gh api --paginate --slurp \
             -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPOSITORY}/issues/${target}/comments?per_page=100" \
-            --jq "flatten | map(select(.user.login == \"claude[bot]\" and (.body | startswith(\"${marker}\\nREQUEST_ID: ${REQUEST_ID}\\n\")))) | ((last // {}) | .body // \"\")")"
+            "/repos/${REPOSITORY}/issues/${target}/comments?per_page=100")"
+
+          body="$(jq -r \
+            "flatten | map(select(.user.login == \"claude[bot]\" and (.body | startswith(\"${marker}\\nREQUEST_ID: ${REQUEST_ID}\\n\")))) | ((last // {}) | .body // \"\")" \
+            <<<"$comments_json")"
 
           [[ -n "$body" ]]
 
