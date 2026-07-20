@@ -1,5 +1,6 @@
 package service;
 
+import model.MoneyUtil;
 import model.Payment;
 import model.PaymentMethod;
 import model.User;
@@ -13,7 +14,6 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -81,8 +81,7 @@ public class SaleService {
                 Long orderId = p.getOrderId();
                 row.createCell(0).setCellValue(orderId == null ? "" : String.valueOf(orderId));
 
-                BigDecimal amount = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
-                amount = amount.setScale(2, RoundingMode.HALF_UP);
+                BigDecimal amount = MoneyUtil.two(p.getAmount());
                 row.createCell(1).setCellValue(amount.toPlainString());
 
                 PaymentMethod method = p.getMethod();
@@ -146,14 +145,14 @@ public class SaleService {
             for (LocalDate day : dailyTotal.keySet()) {
                 Row row = sheet.createRow(rowIndex++);
                 row.createCell(0).setCellValue(day.toString());
-                BigDecimal amount = dailyTotal.get(day).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal amount = MoneyUtil.two(dailyTotal.get(day));
                 row.createCell(1).setCellValue(amount.toPlainString());
                 row.createCell(2).setCellValue(dailyCount.get(day));
             }
 
             Row totalRow = sheet.createRow(rowIndex);
             totalRow.createCell(0).setCellValue("TOTAL");
-            totalRow.createCell(1).setCellValue(monthTotal.setScale(2, RoundingMode.HALF_UP).toPlainString());
+            totalRow.createCell(1).setCellValue(MoneyUtil.two(monthTotal).toPlainString());
             totalRow.createCell(2).setCellValue(monthCount);
 
             sheet.autoSizeColumn(0);

@@ -2,6 +2,7 @@ package service;
 
 import dao.PaymentDAO;
 import dao.jdbc.PaymentJdbcDAO;
+import model.MoneyUtil;
 import model.Payment;
 import model.PaymentMethod;
 import org.slf4j.Logger;
@@ -14,7 +15,6 @@ import org.apache.poi.ss.usermodel.Row;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -69,7 +69,7 @@ public class PaymentService {
         Payment p = new Payment();
         p.setOrderId(orderId);
         p.setCashierId(cashierId);
-        p.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
+        p.setAmount(MoneyUtil.two(amount));
         p.setMethod(method);
         p.setPaidAt(LocalDateTime.now());
         return paymentDAO.create(p);
@@ -93,7 +93,7 @@ public class PaymentService {
                 row.createCell(1).setCellValue(pay.getOrderId());
                 row.createCell(2).setCellValue(pay.getCashierId() == null ? "" : pay.getCashierId().toString());
                 row.createCell(3).setCellValue(
-                        pay.getAmount() == null ? "" : pay.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+                        pay.getAmount() == null ? "" : MoneyUtil.two(pay.getAmount()).toPlainString());
                 row.createCell(4).setCellValue(pay.getMethod() == null ? "" : pay.getMethod().toString());
                 row.createCell(5).setCellValue(
                         pay.getPaidAt() == null ? "" : pay.getPaidAt().toString()
