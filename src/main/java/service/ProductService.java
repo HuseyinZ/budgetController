@@ -72,12 +72,6 @@ public class ProductService {
         productDAO.deleteById(productId);
     }
 
-    public void increaseProductStock(Long productId, int amount, String note) {
-        if (amount <= 0) throw new IllegalArgumentException("amount > 0 olmalı");
-        productDAO.updateStock(productId, amount);
-        // Not bilgisini kalıcı tutmak istiyorsan ayrı “procurements” tablosu önerilir.
-    }
-
     public void decreaseProductStock(Long productId, int amount) {
         if (amount <= 0) throw new IllegalArgumentException("amount > 0 olmalı");
         productDAO.updateStock(productId, -amount);
