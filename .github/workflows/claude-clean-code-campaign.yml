@@ -359,7 +359,7 @@ jobs:
             "/repos/${REPOSITORY}/issues/${target}/comments?per_page=100")"
 
           body="$(jq -r \
-            "flatten | map(select(.user.login == \"claude[bot]\" and (.body | startswith(\"${marker}\\nREQUEST_ID: ${REQUEST_ID}\\n\")))) | ((last // {}) | .body // \"\")" \
+            "flatten | map(select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\\nREQUEST_ID: ${REQUEST_ID}\\n\")))) | ((last // {}) | .body // \"\")" \
             <<<"$comments_json")"
 
           [[ -n "$body" ]]
