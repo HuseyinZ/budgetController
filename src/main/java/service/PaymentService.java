@@ -3,6 +3,7 @@ package service;
 import dao.PaymentDAO;
 import dao.jdbc.PaymentJdbcDAO;
 import model.Payment;
+import model.PaymentMethod;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,8 +13,10 @@ import org.apache.poi.ss.usermodel.Row;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -52,8 +55,8 @@ public class PaymentService {
      * Tek bir ödeme parçası kaydı ekler — hesap bölme için.
      * Order kapatma işlemini YAPMAZ; caller tarafında Order COMPLETED yapılmalı.
      */
-    public Long recordPayment(Long orderId, Long cashierId, java.math.BigDecimal amount,
-                              model.PaymentMethod method) {
+    public Long recordPayment(Long orderId, Long cashierId, BigDecimal amount,
+                              PaymentMethod method) {
         if (orderId == null || orderId <= 0) {
             throw new IllegalArgumentException("orderId gerekli");
         }
@@ -68,7 +71,7 @@ public class PaymentService {
         p.setCashierId(cashierId);
         p.setAmount(amount.setScale(2, RoundingMode.HALF_UP));
         p.setMethod(method);
-        p.setPaidAt(java.time.LocalDateTime.now());
+        p.setPaidAt(LocalDateTime.now());
         return paymentDAO.create(p);
     }
 
