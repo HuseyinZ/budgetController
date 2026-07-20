@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 
 public class SaleService {
 
@@ -57,8 +58,7 @@ public class SaleService {
 
     public boolean exportDailySalesReport(LocalDate date, String filePath) {
         List<Payment> payments = paymentService.getPaymentsOn(date);
-        try (Workbook workbook = new XSSFWorkbook();
-             FileOutputStream fileOut = new FileOutputStream(filePath)) {
+        return writeWorkbook(filePath, workbook -> {
             Sheet sheet = workbook.createSheet("DailySales_" + date);
             Row header = sheet.createRow(0);
             header.createCell(0).setCellValue("Order ID");
@@ -96,13 +96,7 @@ public class SaleService {
             for (int col = 0; col <= 4; col++) {
                 sheet.autoSizeColumn(col);
             }
-            workbook.write(fileOut);
-            fileOut.flush();
-            return true;
-        } catch (IOException e) {
-            LOG.error("Satış Excel'e aktarılamadı: {}", e.getMessage(), e);
-            return false;
-        }
+        });
     }
 
     public boolean exportMonthlySalesReport(int year, int month, String filePath) {
@@ -126,9 +120,10 @@ public class SaleService {
             monthTotal = monthTotal.add(entry.getValue());
             monthCount += dailyCount.getOrDefault(entry.getKey(), 0);
         }
+        BigDecimal reportMonthTotal = monthTotal;
+        int reportMonthCount = monthCount;
 
-        try (Workbook workbook = new XSSFWorkbook();
-             FileOutputStream fileOut = new FileOutputStream(filePath)) {
+        return writeWorkbook(filePath, workbook -> {
             Sheet sheet = workbook.createSheet("Sales_" + year + "-" + month);
             Row header = sheet.createRow(0);
             header.createCell(0).setCellValue("Date");
@@ -146,12 +141,19 @@ public class SaleService {
 
             Row totalRow = sheet.createRow(rowIndex);
             totalRow.createCell(0).setCellValue("TOTAL");
-            totalRow.createCell(1).setCellValue(MoneyUtil.two(monthTotal).toPlainString());
-            totalRow.createCell(2).setCellValue(monthCount);
+            totalRow.createCell(1).setCellValue(MoneyUtil.two(reportMonthTotal).toPlainString());
+            totalRow.createCell(2).setCellValue(reportMonthCount);
 
             sheet.autoSizeColumn(0);
             sheet.autoSizeColumn(1);
             sheet.autoSizeColumn(2);
+        });
+    }
+
+    private boolean writeWorkbook(String filePath, Consumer<Workbook> workbookWriter) {
+        try (Workbook workbook = new XSSFWorkbook();
+             FileOutputStream fileOut = new FileOutputStream(filePath)) {
+            workbookWriter.accept(workbook);
             workbook.write(fileOut);
             fileOut.flush();
             return true;
