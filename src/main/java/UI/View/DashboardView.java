@@ -36,6 +36,7 @@ public class DashboardView extends JFrame {
     private static final String CARD_HOURLY = "hourly";
     private static final String CARD_REFUNDS = "refunds";
     private static final String CARD_RESERVATIONS = "reservations";
+    private static final String CARD_EMPTY = "empty";
 
     private final AppState appState;
     private service.security.IdleLogoutWatcher idleWatcher;
@@ -204,8 +205,8 @@ public class DashboardView extends JFrame {
         if (initialCard == null) {
             JLabel empty = new JLabel("Bu kullanıcı için yetkili modül bulunamadı");
             empty.setHorizontalAlignment(SwingConstants.CENTER);
-            contentPanel.add(empty, "empty");
-            cardLayout.show(contentPanel, "empty");
+            contentPanel.add(empty, CARD_EMPTY);
+            cardLayout.show(contentPanel, CARD_EMPTY);
         }
 
         return toolbar;
