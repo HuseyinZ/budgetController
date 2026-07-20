@@ -235,8 +235,9 @@ jobs:
               BackupService.java, service/util/Mask.java, tools/BackupDecrypt.java,
               DataConnection/Db.java, database/config resources, build/workflow/policy files.
             - Prefer small, single-purpose, independently verifiable candidates.
-            - Stop after identifying at most 6 credible candidates; do not exhaustively inspect every file.
-            - Return at most 6 candidates. Each autonomous candidate must be executable under
+            - Stop after identifying at most 3 credible candidates and after reading at most 20 source files.
+              Fewer than 3 candidates are acceptable; post the protocol comment as soon as enough evidence exists.
+            - Return at most 3 candidates. Each autonomous candidate must be executable under
               conservative MEDIUM authorization, touch 1-5 exact files, stay below 400 changed
               lines, and preserve external behavior.
             - Use Read, Glob, Grep, and the listed read-only git commands only. Do not retry a
@@ -297,7 +298,7 @@ jobs:
               <valid JSON object with summary and blocking_findings array>
               FEEDBACK_JSON_END
           claude_args: |
-            --max-turns 72
+            --max-turns 96
             --allowedTools "Bash(gh issue comment:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git grep:*),Bash(git show:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git blame:*),Read,Glob,Grep"
 
       - name: Enforce exact campaign protocol
