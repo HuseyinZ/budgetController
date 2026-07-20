@@ -134,24 +134,35 @@ public class ProfitPanel extends JPanel {
 
     private void updateDailyTotals() {
         LocalDate date = convertToDate(dailyDateSpinner);
-        BigDecimal sales = appState.getSalesTotal(date);
-        BigDecimal expenses = appState.getExpenseTotal(date);
-        BigDecimal net = appState.getNetProfit(date);
-        dailySalesLabel.setText(format(sales));
-        dailyExpenseLabel.setText(format(expenses));
-        dailyNetLabel.setText(format(net));
-        dailyNetLabel.setForeground(getNetProfitColor(net));
+        PeriodTotals totals = loadTotals(date);
+        updateLabels(totals, dailySalesLabel, dailyExpenseLabel, dailyNetLabel);
     }
 
     private void updateMonthlyTotals() {
         YearMonth month = YearMonth.of((int) yearSpinner.getValue(), (int) monthSpinner.getValue());
+        PeriodTotals totals = loadTotals(month);
+        updateLabels(totals, monthlySalesLabel, monthlyExpenseLabel, monthlyNetLabel);
+    }
+
+    private PeriodTotals loadTotals(LocalDate date) {
+        BigDecimal sales = appState.getSalesTotal(date);
+        BigDecimal expenses = appState.getExpenseTotal(date);
+        BigDecimal net = appState.getNetProfit(date);
+        return new PeriodTotals(sales, expenses, net);
+    }
+
+    private PeriodTotals loadTotals(YearMonth month) {
         BigDecimal sales = appState.getSalesTotal(month);
         BigDecimal expenses = appState.getExpenseTotal(month);
         BigDecimal net = appState.getNetProfit(month);
-        monthlySalesLabel.setText(format(sales));
-        monthlyExpenseLabel.setText(format(expenses));
-        monthlyNetLabel.setText(format(net));
-        monthlyNetLabel.setForeground(getNetProfitColor(net));
+        return new PeriodTotals(sales, expenses, net);
+    }
+
+    private void updateLabels(PeriodTotals totals, JLabel salesLabel, JLabel expenseLabel, JLabel netLabel) {
+        salesLabel.setText(format(totals.sales));
+        expenseLabel.setText(format(totals.expenses));
+        netLabel.setText(format(totals.net));
+        netLabel.setForeground(getNetProfitColor(totals.net));
     }
 
     private Color getNetProfitColor(BigDecimal net) {
@@ -174,13 +185,8 @@ public class ProfitPanel extends JPanel {
         LocalDate dailyDate = convertToDate(dailyDateSpinner);
         YearMonth month = YearMonth.of((int) yearSpinner.getValue(), (int) monthSpinner.getValue());
 
-        BigDecimal dailySales = appState.getSalesTotal(dailyDate);
-        BigDecimal dailyExpenses = appState.getExpenseTotal(dailyDate);
-        BigDecimal dailyNet = appState.getNetProfit(dailyDate);
-
-        BigDecimal monthlySales = appState.getSalesTotal(month);
-        BigDecimal monthlyExpenses = appState.getExpenseTotal(month);
-        BigDecimal monthlyNet = appState.getNetProfit(month);
+        PeriodTotals dailyTotals = loadTotals(dailyDate);
+        PeriodTotals monthlyTotals = loadTotals(month);
 
         JFileChooser chooser = new JFileChooser();
         chooser.setSelectedFile(new File("net-kar-" + month + ".xlsx"));
@@ -199,15 +205,15 @@ public class ProfitPanel extends JPanel {
 
             Row dailyRow = sheet.createRow(1);
             dailyRow.createCell(0).setCellValue("Günlük (" + dailyDate + ")");
-            dailyRow.createCell(1).setCellValue(dailySales.doubleValue());
-            dailyRow.createCell(2).setCellValue(dailyExpenses.doubleValue());
-            dailyRow.createCell(3).setCellValue(dailyNet.doubleValue());
+            dailyRow.createCell(1).setCellValue(dailyTotals.sales.doubleValue());
+            dailyRow.createCell(2).setCellValue(dailyTotals.expenses.doubleValue());
+            dailyRow.createCell(3).setCellValue(dailyTotals.net.doubleValue());
 
             Row monthlyRow = sheet.createRow(2);
             monthlyRow.createCell(0).setCellValue("Aylık (" + month + ")");
-            monthlyRow.createCell(1).setCellValue(monthlySales.doubleValue());
-            monthlyRow.createCell(2).setCellValue(monthlyExpenses.doubleValue());
-            monthlyRow.createCell(3).setCellValue(monthlyNet.doubleValue());
+            monthlyRow.createCell(1).setCellValue(monthlyTotals.sales.doubleValue());
+            monthlyRow.createCell(2).setCellValue(monthlyTotals.expenses.doubleValue());
+            monthlyRow.createCell(3).setCellValue(monthlyTotals.net.doubleValue());
 
             for (int i = 0; i < 4; i++) {
                 sheet.autoSizeColumn(i);
@@ -219,6 +225,18 @@ public class ProfitPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "Excel dosyası kaydedildi", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Excel kaydedilemedi: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private static final class PeriodTotals {
+        private final BigDecimal sales;
+        private final BigDecimal expenses;
+        private final BigDecimal net;
+
+        private PeriodTotals(BigDecimal sales, BigDecimal expenses, BigDecimal net) {
+            this.sales = sales;
+            this.expenses = expenses;
+            this.net = net;
         }
     }
 
