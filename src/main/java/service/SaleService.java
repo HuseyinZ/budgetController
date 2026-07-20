@@ -39,17 +39,15 @@ public class SaleService {
 
     public BigDecimal getDailySalesTotal(LocalDate date) {
         List<Payment> payments = paymentService.getPaymentsOn(date);
-        BigDecimal total = BigDecimal.ZERO;
-        for (Payment p : payments) {
-            if (p.getAmount() != null) {
-                total = total.add(p.getAmount());
-            }
-        }
-        return total;
+        return sumAmounts(payments);
     }
 
     public BigDecimal getMonthlySalesTotal(int year, int month) {
         List<Payment> payments = paymentService.getPaymentsInMonth(year, month);
+        return sumAmounts(payments);
+    }
+
+    private BigDecimal sumAmounts(List<Payment> payments) {
         BigDecimal total = BigDecimal.ZERO;
         for (Payment p : payments) {
             if (p.getAmount() != null) {
