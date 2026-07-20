@@ -21,6 +21,17 @@ public enum PaymentMethod {
         return databaseValue;
     }
 
+    public String getDisplayName() {
+        return switch (this) {
+            case CASH -> "Nakit";
+            case CREDIT_CARD, CARD -> "Kredi Kartı";
+            case DEBIT_CARD -> "Banka Kartı";
+            case TRANSFER -> "Havale/EFT";
+            case ONLINE -> "Online";
+            case MIXED -> "Karma";
+        };
+    }
+
     public PaymentMethod canonical() {
         return this == CARD ? CREDIT_CARD : this;
     }

@@ -1,6 +1,7 @@
 package UI;
 
 import DataConnection.Db;
+import model.PaymentMethod;
 import state.AppState;
 
 import javax.swing.*;
@@ -206,15 +207,11 @@ public class AllSalesPanel extends JPanel {
 
     private String describeMethod(String code) {
         if (code == null) return "-";
-        return switch (code) {
-            case "CASH" -> "Nakit";
-            case "CREDIT_CARD", "CARD" -> "Kredi Kartı";
-            case "DEBIT_CARD" -> "Banka Kartı";
-            case "TRANSFER" -> "Havale/EFT";
-            case "ONLINE" -> "Online";
-            case "MIXED" -> "Karma";
-            default -> code;
-        };
+        try {
+            return PaymentMethod.valueOf(code).getDisplayName();
+        } catch (IllegalArgumentException ex) {
+            return code;
+        }
     }
 
     private String resolveSalon(Integer tableNo) {
