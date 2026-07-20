@@ -55,14 +55,7 @@ public class ProductNoteDialog extends JDialog {
             StringBuilder leftover = new StringBuilder();
             for (String p : parts) {
                 String token = p.trim();
-                boolean matched = false;
-                for (JToggleButton tb : toggles) {
-                    if (token.equalsIgnoreCase(tb.getText())) {
-                        tb.setSelected(true);
-                        matched = true;
-                        break;
-                    }
-                }
+                boolean matched = selectMatchingPreset(token);
                 if (!matched && !token.isEmpty()) {
                     if (leftover.length() > 0) leftover.append(", ");
                     leftover.append(token);
@@ -74,6 +67,16 @@ public class ProductNoteDialog extends JDialog {
         setPreferredSize(new Dimension(640, 480));
         pack();
         setLocationRelativeTo(owner);
+    }
+
+    private boolean selectMatchingPreset(String token) {
+        for (JToggleButton tb : toggles) {
+            if (token.equalsIgnoreCase(tb.getText())) {
+                tb.setSelected(true);
+                return true;
+            }
+        }
+        return false;
     }
 
     private JComponent buildHeader(String productName) {
