@@ -1,5 +1,6 @@
 package UI;
 
+import model.MoneyUtil;
 import model.PaymentMethod;
 import model.User;
 import state.AppState;
@@ -11,7 +12,6 @@ import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Hesap bölme dialogu.
@@ -29,7 +29,7 @@ import java.util.Locale;
  */
 public class SplitPaymentDialog extends JDialog {
 
-    private static final NumberFormat MONEY = NumberFormat.getCurrencyInstance(new Locale("tr","TR"));
+    private static final NumberFormat MONEY = MoneyUtil.turkishLiraCurrencyFormat();
 
     private final AppState appState;
     private final User currentUser;
