@@ -119,25 +119,16 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
             buf.write(EscPos.CMD_INTL_CHARSET_TR);
 
             // Üst başlık (mutfak adı — çift boyut, kalın, ortalı)
-            buf.write(EscPos.CMD_ALIGN_CENTER);
-            buf.write(EscPos.CMD_BOLD_ON);
-            buf.write(EscPos.CMD_TXT_DOUBLE_BOTH);
-            writeLine(buf, r.getHeader());
-            buf.write(EscPos.CMD_TXT_NORMAL);
-            buf.write(EscPos.CMD_BOLD_OFF);
+            writeCenteredBoldDoubleSizeBlock(buf, r.getHeader());
 
             writeLine(buf, repeat('=', charsPerLine));
 
             // -------- SALON ADI ve MASA NO (en büyük font) --------
-            buf.write(EscPos.CMD_ALIGN_CENTER);
-            buf.write(EscPos.CMD_BOLD_ON);
-            buf.write(EscPos.CMD_TXT_DOUBLE_BOTH);
             if (r.getSalonName() != null && !r.getSalonName().isBlank()) {
-                writeLine(buf, r.getSalonName());
+                writeCenteredBoldDoubleSizeBlock(buf, r.getSalonName(), "MASA " + r.getTableNo());
+            } else {
+                writeCenteredBoldDoubleSizeBlock(buf, "MASA " + r.getTableNo());
             }
-            writeLine(buf, "MASA " + r.getTableNo());
-            buf.write(EscPos.CMD_TXT_NORMAL);
-            buf.write(EscPos.CMD_BOLD_OFF);
             writeLine(buf, repeat('=', charsPerLine));
 
             // -------- Meta bilgiler --------
@@ -193,6 +184,18 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
     }
 
     // -------- iç yardımcılar --------
+
+    private static void writeCenteredBoldDoubleSizeBlock(ByteArrayOutputStream buf, String... lines)
+            throws IOException {
+        buf.write(EscPos.CMD_ALIGN_CENTER);
+        buf.write(EscPos.CMD_BOLD_ON);
+        buf.write(EscPos.CMD_TXT_DOUBLE_BOTH);
+        for (String line : lines) {
+            writeLine(buf, line);
+        }
+        buf.write(EscPos.CMD_TXT_NORMAL);
+        buf.write(EscPos.CMD_BOLD_OFF);
+    }
 
     private static void writeLine(ByteArrayOutputStream buf, String s) throws IOException {
         buf.write(EscPos.toCp857(s == null ? "" : s));
