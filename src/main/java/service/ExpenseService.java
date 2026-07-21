@@ -36,8 +36,7 @@ public class ExpenseService {
     }
 
     public List<Expense> getExpensesInMonth(YearMonth month) {
-        LocalDate start = month.atDay(1);
-        return expenseDAO.findBetween(start, start.plusMonths(1));
+        return findExpensesInMonth(month);
     }
 
     public List<Expense> getAllExpenses() {
@@ -60,8 +59,12 @@ public class ExpenseService {
     }
 
     public BigDecimal sumExpensesInMonth(YearMonth month) {
+        return sum(findExpensesInMonth(month));
+    }
+
+    private List<Expense> findExpensesInMonth(YearMonth month) {
         LocalDate start = month.atDay(1);
-        return sum(expenseDAO.findBetween(start, start.plusMonths(1)));
+        return expenseDAO.findBetween(start, start.plusMonths(1));
     }
 
     private BigDecimal sum(List<Expense> expenses) {
