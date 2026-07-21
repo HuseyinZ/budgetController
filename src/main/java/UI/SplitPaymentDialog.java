@@ -197,16 +197,8 @@ public class SplitPaymentDialog extends JDialog {
 
     private void goToStep2() {
         // Tutarı eşit böl — varsayılan değer (kullanıcı sonra değiştirebilir)
-        BigDecimal perPerson = totalAmount
-                .divide(BigDecimal.valueOf(personCount), 2, RoundingMode.DOWN);
         partAmounts.clear();
-        BigDecimal running = BigDecimal.ZERO;
-        for (int i = 0; i < personCount - 1; i++) {
-            partAmounts.add(perPerson);
-            running = running.add(perPerson);
-        }
-        BigDecimal lastPart = totalAmount.subtract(running).setScale(2, RoundingMode.HALF_UP);
-        partAmounts.add(lastPart);
+        partAmounts.addAll(calculateEqualSplitAmounts());
 
         selectedMethods.clear();
         for (int i = 0; i < personCount; i++) {
@@ -276,15 +268,8 @@ public class SplitPaymentDialog extends JDialog {
         equalSplitBtn.setBorderPainted(false);
         equalSplitBtn.setFocusPainted(false);
         equalSplitBtn.addActionListener(e -> {
-            BigDecimal per = totalAmount.divide(BigDecimal.valueOf(personCount),
-                    2, RoundingMode.DOWN);
-            BigDecimal running = BigDecimal.ZERO;
-            for (int i = 0; i < personCount - 1; i++) {
-                partAmounts.set(i, per);
-                running = running.add(per);
-            }
-            partAmounts.set(personCount - 1, totalAmount.subtract(running)
-                    .setScale(2, RoundingMode.HALF_UP));
+            partAmounts.clear();
+            partAmounts.addAll(calculateEqualSplitAmounts());
             for (int i = 0; i < amountFields.size(); i++) {
                 amountFields.get(i).setText(partAmounts.get(i).toPlainString());
             }
@@ -301,6 +286,19 @@ public class SplitPaymentDialog extends JDialog {
         updateSumStatus();
         methodSelectionPanel.revalidate();
         methodSelectionPanel.repaint();
+    }
+
+    private List<BigDecimal> calculateEqualSplitAmounts() {
+        BigDecimal perPerson = totalAmount
+                .divide(BigDecimal.valueOf(personCount), 2, RoundingMode.DOWN);
+        List<BigDecimal> equalSplitAmounts = new ArrayList<>(personCount);
+        BigDecimal running = BigDecimal.ZERO;
+        for (int i = 0; i < personCount - 1; i++) {
+            equalSplitAmounts.add(perPerson);
+            running = running.add(perPerson);
+        }
+        equalSplitAmounts.add(totalAmount.subtract(running).setScale(2, RoundingMode.HALF_UP));
+        return equalSplitAmounts;
     }
 
     private JPanel buildPersonRow(int personIndex, BigDecimal amount) {
