@@ -67,9 +67,7 @@ public class TableOrder {
     }
 
     public void addOrIncrementLine(String productName, BigDecimal unitPrice, int quantity) {
-        Optional<OrderLine> existing = lines.stream()
-                .filter(line -> line.getProductName().equalsIgnoreCase(productName))
-                .findFirst();
+        Optional<OrderLine> existing = findLineByName(productName);
         if (existing.isPresent()) {
             existing.get().increase(quantity);
         } else {
@@ -79,9 +77,7 @@ public class TableOrder {
     }
 
     public boolean decrementLine(String productName, int quantity) {
-        Optional<OrderLine> existing = lines.stream()
-                .filter(line -> line.getProductName().equalsIgnoreCase(productName))
-                .findFirst();
+        Optional<OrderLine> existing = findLineByName(productName);
         if (existing.isEmpty()) {
             return false;
         }
@@ -112,6 +108,12 @@ public class TableOrder {
         while (history.size() > HISTORY_LIMIT) {
             history.removeLast();
         }
+    }
+
+    private Optional<OrderLine> findLineByName(String productName) {
+        return lines.stream()
+                .filter(line -> line.getProductName().equalsIgnoreCase(productName))
+                .findFirst();
     }
 
     private void touch() {
