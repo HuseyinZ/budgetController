@@ -8,12 +8,14 @@ import java.util.Locale;
 import java.util.function.Function;
 
 public final class MoneyUtil {
+    private static final Locale TURKISH_LOCALE = new Locale("tr", "TR");
+
     private MoneyUtil() {
 
     }
 
     public static NumberFormat turkishLiraCurrencyFormat() {
-        return NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+        return NumberFormat.getCurrencyInstance(TURKISH_LOCALE);
     }
 
     public static BigDecimal two(BigDecimal v) {
@@ -27,7 +29,7 @@ public final class MoneyUtil {
 
     public static String formatTl(BigDecimal value) {
         if (value == null) value = BigDecimal.ZERO;
-        return String.format(new Locale("tr", "TR"), "%,.2f ₺",
+        return String.format(TURKISH_LOCALE, "%,.2f ₺",
                 value.setScale(2, RoundingMode.HALF_UP).doubleValue());
     }
 
