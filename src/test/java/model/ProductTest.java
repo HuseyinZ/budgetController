@@ -22,11 +22,11 @@ class ProductTest {
     }
 
     @Test
-    void nameAliasMethodsWork() {
+    void nameMethodsWork() {
         Product product = new Product();
         product.setName("Espresso");
-        assertEquals("Espresso", product.getPName());
-        product.setPName("Latte");
+        assertEquals("Espresso", product.getName());
+        product.setName("Latte");
         assertEquals("Latte", product.getName());
     }
 
