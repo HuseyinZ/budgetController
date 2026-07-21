@@ -125,7 +125,6 @@ public class HourlyHeatmapPanel extends JPanel {
 
         int[] counts = new int[24];
         double[] amounts = new double[24];
-        int total = 0;
         double totalAmount = 0;
         for (Payment p : payments) {
             LocalDateTime at = p.getPaidAt();
@@ -137,8 +136,8 @@ public class HourlyHeatmapPanel extends JPanel {
                 amounts[h] += a;
                 totalAmount += a;
             }
-            total++;
         }
+        int total = java.util.Arrays.stream(counts).sum();
         canvas.setData(counts, amounts);
         headerLabel.setText(
                 date.format(HEADER_FMT) + " — Toplam " + total + " sipariş, "
