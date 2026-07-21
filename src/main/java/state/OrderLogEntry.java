@@ -6,6 +6,7 @@ import java.util.Objects;
 
 public class OrderLogEntry {
     public static final String ACTOR_SEPARATOR = " :: ";
+    private static final DateTimeFormatter DISPLAY_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
     private final LocalDateTime timestamp;
     private final String rawMessage;
@@ -38,7 +39,7 @@ public class OrderLogEntry {
 
     public String formatForDisplay() {
         StringBuilder sb = new StringBuilder();
-        sb.append(timestamp.format(DateTimeFormatter.ofPattern("HH:mm")));
+        sb.append(timestamp.format(DISPLAY_TIME_FORMATTER));
         if (!actor.isBlank()) {
             sb.append(" - ").append(actor);
         }
