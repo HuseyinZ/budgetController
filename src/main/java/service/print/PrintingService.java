@@ -146,17 +146,17 @@ public class PrintingService {
     private Long enqueueJob(KitchenPrinter target, Receipt receipt) {
         PrintJob job = new PrintJob();
         job.setOrderId(receipt.getOrderId());
-        job.setPrinterId(Math.toIntExact(target.getId()));
+        job.setPrinterId(printerId(target));
         job.setPayload(GSON.toJson(receipt));
         return printJobDAO.enqueue(job);
     }
 
     private ReceiptPrinter resolvePrinter(KitchenPrinter target) {
         if (printerOverride != null) {
-            ReceiptPrinter override = printerOverride.get(Math.toIntExact(target.getId()));
+            ReceiptPrinter override = printerOverride.get(printerId(target));
             if (override != null) return override;
         }
-        int id = Math.toIntExact(target.getId());
+        int id = printerId(target);
         return printerCache.computeIfAbsent(id, k -> new TcpEscPosPrinter(
                 target.getCode(),
                 target.getDisplayName(),
@@ -171,6 +171,10 @@ public class PrintingService {
     /** Önbelleği boşaltır (yazıcı IP'si değiştirildiyse Admin panelden tetiklenir). */
     public void invalidateCache() {
         printerCache.clear();
+    }
+
+    private static int printerId(KitchenPrinter target) {
+        return Math.toIntExact(target.getId());
     }
 
     private static String safe(String s) {
