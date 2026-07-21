@@ -32,7 +32,6 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.Locale;
 
 import static model.MoneyUtil.formatTl;
 
@@ -204,7 +203,7 @@ public final class ReportWorkbookBuilder {
                 row.createCell(2).setCellValue(ps.totalQty() + " " + unit);
                 if (ps.piecesPerPortion() > 0) {
                     double portions = ps.totalQty() / (double) ps.piecesPerPortion();
-                    row.createCell(3).setCellValue(String.format(new Locale("tr", "TR"),
+                    row.createCell(3).setCellValue(String.format(MoneyUtil.TURKISH_LOCALE,
                             "%.2f porsiyon  (1 porsiyon = %d %s)",
                             portions, ps.piecesPerPortion(), unit));
                 } else {

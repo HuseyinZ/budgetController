@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Gün Sonu Raporu paneli.
@@ -479,7 +478,7 @@ public class DailyReportPanel extends JPanel {
             String portionText;
             if (r.piecesPerPortion > 0) {
                 double portions = r.portionEquivalent();
-                portionText = String.format(new Locale("tr","TR"),
+                portionText = String.format(MoneyUtil.TURKISH_LOCALE,
                         "%.2f porsiyon  (1 porsiyon = %d %s)",
                         portions, r.piecesPerPortion, unit);
             } else {

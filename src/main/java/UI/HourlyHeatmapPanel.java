@@ -1,5 +1,6 @@
 package UI;
 
+import model.MoneyUtil;
 import model.Payment;
 import service.PaymentService;
 import state.AppState;
@@ -26,8 +27,8 @@ import java.util.Locale;
  */
 public class HourlyHeatmapPanel extends JPanel {
 
-    private static final Locale TR_LOCALE = new Locale("tr","TR");
-    private static final DateTimeFormatter HEADER_FMT = DateTimeFormatter.ofPattern("dd MMMM yyyy", TR_LOCALE);
+    private static final DateTimeFormatter HEADER_FMT =
+            DateTimeFormatter.ofPattern("dd MMMM yyyy", MoneyUtil.TURKISH_LOCALE);
 
     private final AppState appState;
     private final PaymentService paymentService;
@@ -141,7 +142,7 @@ public class HourlyHeatmapPanel extends JPanel {
         canvas.setData(counts, amounts);
         headerLabel.setText(
                 date.format(HEADER_FMT) + " — Toplam " + total + " sipariş, "
-              + String.format(TR_LOCALE, "%,.2f ₺", totalAmount));
+              + String.format(MoneyUtil.TURKISH_LOCALE, "%,.2f ₺", totalAmount));
     }
 
     // ------ ÇİZİM ------
