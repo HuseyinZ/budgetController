@@ -359,7 +359,7 @@ public class ExpensesPanel extends JPanel {
         double kg = ((Number) kgSpinner.getValue()).doubleValue();
         double price = ((Number) kgPriceSpinner.getValue()).doubleValue();
         double total = kg * price;
-        kgCalcLabel.setText(String.format(Locale.getDefault(), "%,.2f ₺", total));
+        kgCalcLabel.setText(String.format(new Locale("tr", "TR"), "%,.2f ₺", total));
     }
 
     private void handleStateChange(PropertyChangeEvent event) {
@@ -424,7 +424,7 @@ public class ExpensesPanel extends JPanel {
                     record.getId(),
                     record.getExpenseDate(),
                     record.getDescription(),
-                    String.format(Locale.getDefault(), "%.2f", record.getAmount()),
+                    String.format(new Locale("tr", "TR"), "%.2f", record.getAmount()),
                     record.getPerformedBy(),
                     record.getCreatedAt()
             });
