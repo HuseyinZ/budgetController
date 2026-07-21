@@ -166,8 +166,8 @@ public class PrintingService {
                 target.getHost(),
                 target.getPort(),
                 target.getCharPerLine(),
-                3000,
-                5000
+                TcpEscPosPrinter.DEFAULT_CONNECT_TIMEOUT_MS,
+                TcpEscPosPrinter.DEFAULT_WRITE_TIMEOUT_MS
         ));
     }
 
