@@ -105,16 +105,20 @@ public class HourlyHeatmapPanel extends JPanel {
         refresh();
     }
 
+    private LocalDate toLocalDate(Date date) {
+        return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
     private void shiftDate(int days) {
         Date d = (Date) dateSpinner.getValue();
-        LocalDate ld = Instant.ofEpochMilli(d.getTime()).atZone(ZoneId.systemDefault()).toLocalDate().plusDays(days);
+        LocalDate ld = toLocalDate(d).plusDays(days);
         dateSpinner.setValue(Date.from(ld.atStartOfDay(ZoneId.systemDefault()).toInstant()));
         refresh();
     }
 
     private void refresh() {
         Date d = (Date) dateSpinner.getValue();
-        LocalDate date = Instant.ofEpochMilli(d.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+        LocalDate date = toLocalDate(d);
         List<Payment> payments = paymentService.getPaymentsOn(date);
 
         int[] counts = new int[24];
