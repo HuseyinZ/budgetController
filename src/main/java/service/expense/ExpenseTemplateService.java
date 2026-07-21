@@ -46,28 +46,38 @@ public final class ExpenseTemplateService {
         Path userFile = Path.of(System.getProperty("user.home"),
                 ".budget", "expense-templates.properties");
         if (Files.exists(userFile)) {
-            try (InputStream in = Files.newInputStream(userFile)) {
-                List<ExpenseTemplate> tpls = readFromStream(in);
-                if (!tpls.isEmpty()) {
-                    LOG.info("Gider şablonları yüklendi (override): {} adet", tpls.size());
-                    return tpls;
-                }
-            } catch (IOException ex) {
-                LOG.warn("Override şablon dosyası okunamadı: {}", ex.getMessage());
+            List<ExpenseTemplate> tpls = loadFromSource(
+                    () -> Files.newInputStream(userFile),
+                    "Override şablon dosyası okunamadı: {}");
+            if (!tpls.isEmpty()) {
+                LOG.info("Gider şablonları yüklendi (override): {} adet", tpls.size());
+                return tpls;
             }
         }
         // 2) Classpath default
-        try (InputStream in = ExpenseTemplateService.class
-                .getResourceAsStream("/expense-templates.properties")) {
-            if (in != null) {
-                List<ExpenseTemplate> tpls = readFromStream(in);
-                if (!tpls.isEmpty()) return tpls;
-            }
-        } catch (IOException ex) {
-            LOG.warn("Classpath şablon dosyası okunamadı: {}", ex.getMessage());
-        }
+        List<ExpenseTemplate> tpls = loadFromSource(
+                () -> ExpenseTemplateService.class
+                        .getResourceAsStream("/expense-templates.properties"),
+                "Classpath şablon dosyası okunamadı: {}");
+        if (!tpls.isEmpty()) return tpls;
+
         // 3) Fallback
         return defaultTemplates();
+    }
+
+    private static List<ExpenseTemplate> loadFromSource(
+            InputStreamSource source, String warningMessage) {
+        try (InputStream in = source.open()) {
+            return in == null ? List.of() : readFromStream(in);
+        } catch (IOException ex) {
+            LOG.warn(warningMessage, ex.getMessage());
+            return List.of();
+        }
+    }
+
+    @FunctionalInterface
+    private interface InputStreamSource {
+        InputStream open() throws IOException;
     }
 
     private static List<ExpenseTemplate> readFromStream(InputStream in) throws IOException {
