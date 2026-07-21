@@ -30,6 +30,8 @@ import java.util.Objects;
 public class TcpEscPosPrinter implements ReceiptPrinter {
 
     private static final Logger LOG = LoggerFactory.getLogger(TcpEscPosPrinter.class);
+    static final int DEFAULT_CONNECT_TIMEOUT_MS = 3000;
+    static final int DEFAULT_WRITE_TIMEOUT_MS = 5000;
 
     private final String code;
     private final String displayName;
@@ -40,7 +42,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
     private final int writeTimeoutMs;
 
     public TcpEscPosPrinter(String code, String host, int port, int charsPerLine) {
-        this(code, code, host, port, charsPerLine, 3000, 5000);
+        this(code, code, host, port, charsPerLine, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_WRITE_TIMEOUT_MS);
     }
 
     public TcpEscPosPrinter(String code,
