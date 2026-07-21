@@ -3,6 +3,7 @@ package model;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 
 public final class MoneyUtil {
@@ -16,6 +17,12 @@ public final class MoneyUtil {
 
     public static BigDecimal twoOrUnscaledZero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public static String formatTl(BigDecimal value) {
+        if (value == null) value = BigDecimal.ZERO;
+        return String.format(new Locale("tr", "TR"), "%,.2f ₺",
+                value.setScale(2, RoundingMode.HALF_UP).doubleValue());
     }
 
     public static <T> BigDecimal sumAmounts(List<T> items, Function<T, BigDecimal> amountExtractor) {

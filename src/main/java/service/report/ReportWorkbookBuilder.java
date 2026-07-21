@@ -33,6 +33,8 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 
+import static model.MoneyUtil.formatTl;
+
 /**
  * UI'dan bağımsız Excel raporu üreteci.
  *
@@ -242,12 +244,6 @@ public final class ReportWorkbookBuilder {
             if (p.getAmount() != null) s = s.add(p.getAmount());
         }
         return s.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private static String formatTl(BigDecimal v) {
-        if (v == null) v = BigDecimal.ZERO;
-        return String.format(new Locale("tr", "TR"), "%,.2f ₺",
-                v.setScale(2, RoundingMode.HALF_UP).doubleValue());
     }
 
     private static String describeMethod(PaymentMethod m) {

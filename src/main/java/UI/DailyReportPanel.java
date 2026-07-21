@@ -1,6 +1,7 @@
 package UI;
 
 import DataConnection.Db;
+import model.MoneyUtil;
 import model.Payment;
 import model.PaymentMethod;
 import service.PaymentService;
@@ -414,9 +415,9 @@ public class DailyReportPanel extends JPanel {
         int orderCount = payments.size();
         BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
 
-        totalSalesLbl.setText(format(totalSales));
-        totalExpenseLbl.setText(format(totalExpense));
-        netProfitLbl.setText(format(netProfit));
+        totalSalesLbl.setText(MoneyUtil.formatTl(totalSales));
+        totalExpenseLbl.setText(MoneyUtil.formatTl(totalExpense));
+        netProfitLbl.setText(MoneyUtil.formatTl(netProfit));
         orderCountLbl.setText(String.valueOf(orderCount));
         netProfitLbl.setForeground(netProfit.signum() < 0
                 ? new Color(180, 30, 30) : new Color(20, 100, 30));
@@ -437,11 +438,11 @@ public class DailyReportPanel extends JPanel {
             paymentBreakdownModel.addRow(new Object[]{
                     describePaymentMethod(m),
                     c == null ? 0 : c[0],
-                    format(s)
+                    MoneyUtil.formatTl(s)
             });
         }
         if (paymentBreakdownModel.getRowCount() == 0) {
-            paymentBreakdownModel.addRow(new Object[]{"(kayıt yok)", 0, format(BigDecimal.ZERO)});
+            paymentBreakdownModel.addRow(new Object[]{"(kayıt yok)", 0, MoneyUtil.formatTl(BigDecimal.ZERO)});
         }
 
         // Saatlik kırılım
@@ -461,11 +462,11 @@ public class DailyReportPanel extends JPanel {
             hourlyModel.addRow(new Object[]{
                     String.format("%02d:00", h),
                     perHour[h],
-                    format(sumPerHour[h])
+                    MoneyUtil.formatTl(sumPerHour[h])
             });
         }
         if (hourlyModel.getRowCount() == 0) {
-            hourlyModel.addRow(new Object[]{"(saat verisi yok)", 0, format(BigDecimal.ZERO)});
+            hourlyModel.addRow(new Object[]{"(saat verisi yok)", 0, MoneyUtil.formatTl(BigDecimal.ZERO)});
         }
 
         // --- ÜRÜN SATIŞ ÖZETİ ---
@@ -517,12 +518,6 @@ public class DailyReportPanel extends JPanel {
             if (p.getAmount() != null) sum = sum.add(p.getAmount());
         }
         return sum.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private String format(BigDecimal val) {
-        if (val == null) val = BigDecimal.ZERO;
-        return String.format(new Locale("tr", "TR"), "%,.2f ₺",
-                val.setScale(2, RoundingMode.HALF_UP).doubleValue());
     }
 
     private String describePaymentMethod(PaymentMethod method) {
