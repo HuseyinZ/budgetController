@@ -175,7 +175,10 @@ public class EmailService {
         try {
             InternetAddress[] arr = InternetAddress.parse(fromHeader);
             if (arr.length > 0) return arr[0];
-        } catch (Exception ignore) {}
+        } catch (Exception ex) {
+            LOG.warn("Sender address parsing failed; using fallback. Exception type: {}",
+                    ex.getClass().getSimpleName());
+        }
         return new InternetAddress(fallbackAddr);
     }
 
