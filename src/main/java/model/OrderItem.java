@@ -63,7 +63,7 @@ public class OrderItem extends BaseEntity {
         setProductId(productId);
         setQuantity(quantity);
         setUnitPrice(product.getUnitPrice());   // snapshot fiyat (uygulamadan da gönderebilirsin)
-        setProductName(product.getPName());     // UI gösterimi + insert'te de gönderebilirsin
+        setProductName(product.getName());      // UI gösterimi + insert'te de gönderebilirsin
     }
 
     // --- getters/setters ---
@@ -131,7 +131,7 @@ public class OrderItem extends BaseEntity {
         Objects.requireNonNull(product, "product null olamaz");
         setProductId(product.getId());
         setUnitPrice(product.getUnitPrice());
-        setProductName(product.getPName());
+        setProductName(product.getName());
     }
 
     @Override

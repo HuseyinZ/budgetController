@@ -27,14 +27,6 @@ public class Product extends BaseEntity {
     public Product() {
     }
 
-    public String getPName() {
-        return name;
-    }
-
-    public void setPName(String pName) {
-        setName(pName);
-    }
-
     public String getName() {
         return name;
     }
