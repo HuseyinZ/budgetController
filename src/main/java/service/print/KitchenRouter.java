@@ -69,9 +69,8 @@ public class KitchenRouter {
             // 1) ÖNCELİK: Garson manuel mutfak seçtiyse onu kullan.
             if (item.getKitchenOverrideId() != null) {
                 Integer pid = item.getKitchenOverrideId();
-                KitchenPrinter pr = printerCache.computeIfAbsent(pid,
-                        k -> printerDAO.findById(k).orElse(null));
-                if (pr != null && pr.isActive()) {
+                KitchenPrinter pr = resolveActivePrinter(pid, printerCache);
+                if (pr != null) {
                     grouped.computeIfAbsent(pr, k -> new ArrayList<>()).add(item);
                     continue;
                 }
@@ -89,9 +88,8 @@ public class KitchenRouter {
                 List<Integer> ids = routeDAO.findPrinterIdsByCategory(cid);
                 List<KitchenPrinter> printers = new ArrayList<>(ids.size());
                 for (Integer pid : ids) {
-                    KitchenPrinter pr = printerCache.computeIfAbsent(pid,
-                            k -> printerDAO.findById(k).orElse(null));
-                    if (pr != null && pr.isActive()) printers.add(pr);
+                    KitchenPrinter pr = resolveActivePrinter(pid, printerCache);
+                    if (pr != null) printers.add(pr);
                 }
                 return printers;
             });
@@ -106,6 +104,13 @@ public class KitchenRouter {
             }
         }
         return grouped;
+    }
+
+    private KitchenPrinter resolveActivePrinter(Integer printerId,
+                                                 Map<Integer, KitchenPrinter> printerCache) {
+        KitchenPrinter printer = printerCache.computeIfAbsent(printerId,
+                id -> printerDAO.findById(id).orElse(null));
+        return printer != null && printer.isActive() ? printer : null;
     }
 
     /** Order kaleminden kategori ID'sini çözer (Product tablosu üzerinden). */
