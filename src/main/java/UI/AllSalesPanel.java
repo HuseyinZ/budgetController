@@ -27,7 +27,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -51,7 +50,7 @@ public class AllSalesPanel extends JPanel {
     private final JSpinner dateSpinner = new JSpinner(
             new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
     private final JLabel summaryLabel = new JLabel(" ");
-    private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final NumberFormat currencyFormat = MoneyUtil.turkishLiraCurrencyFormat();
     private final PropertyChangeListener listener = this::handleStateChange;
 
     private final List<OrderRow> currentRows = new ArrayList<>();

@@ -1,6 +1,7 @@
 package UI;
 
 import model.Category;
+import model.MoneyUtil;
 import model.Product;
 
 import service.CategoryService;
@@ -48,7 +49,7 @@ public class ProductPickerDialog extends JDialog {
 
     private final CategoryService categoryService = new CategoryService();
     private final ProductService productService = new ProductService(categoryService);
-    private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final NumberFormat currencyFormat = MoneyUtil.turkishLiraCurrencyFormat();
     private final JPanel grid = new JPanel(new GridLayout(0, GRID_COLUMNS, 8, 8));
     private final JLabel messageLabel = new JLabel(" ");
     private final ButtonGroup filterGroup = new ButtonGroup();

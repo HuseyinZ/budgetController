@@ -14,7 +14,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * İşlem Geçmişi paneli — iade/iptal/silme audit log'larını gösterir.
@@ -35,7 +34,7 @@ public class RefundHistoryPanel extends JPanel {
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private static final NumberFormat MONEY_FMT =
-            NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+            MoneyUtil.turkishLiraCurrencyFormat();
 
     private final AppState appState;
     private final LogTableModel tableModel = new LogTableModel();

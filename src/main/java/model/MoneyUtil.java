@@ -2,6 +2,7 @@ package model;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
@@ -10,6 +11,11 @@ public final class MoneyUtil {
     private MoneyUtil() {
 
     }
+
+    public static NumberFormat turkishLiraCurrencyFormat() {
+        return NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    }
+
     public static BigDecimal two(BigDecimal v) {
         return v == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : v.setScale(2, RoundingMode.HALF_UP);
