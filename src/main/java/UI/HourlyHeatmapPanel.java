@@ -26,7 +26,8 @@ import java.util.Locale;
  */
 public class HourlyHeatmapPanel extends JPanel {
 
-    private static final DateTimeFormatter HEADER_FMT = DateTimeFormatter.ofPattern("dd MMMM yyyy", new Locale("tr","TR"));
+    private static final Locale TR_LOCALE = new Locale("tr","TR");
+    private static final DateTimeFormatter HEADER_FMT = DateTimeFormatter.ofPattern("dd MMMM yyyy", TR_LOCALE);
 
     private final AppState appState;
     private final PaymentService paymentService;
@@ -140,7 +141,7 @@ public class HourlyHeatmapPanel extends JPanel {
         canvas.setData(counts, amounts);
         headerLabel.setText(
                 date.format(HEADER_FMT) + " — Toplam " + total + " sipariş, "
-              + String.format(new Locale("tr","TR"), "%,.2f ₺", totalAmount));
+              + String.format(TR_LOCALE, "%,.2f ₺", totalAmount));
     }
 
     // ------ ÇİZİM ------
