@@ -28,9 +28,8 @@ public final class MoneyUtil {
     }
 
     public static String formatTl(BigDecimal value) {
-        if (value == null) value = BigDecimal.ZERO;
         return String.format(TURKISH_LOCALE, "%,.2f ₺",
-                value.setScale(2, RoundingMode.HALF_UP).doubleValue());
+                two(value).doubleValue());
     }
 
     public static <T> BigDecimal sumAmounts(List<T> items, Function<T, BigDecimal> amountExtractor) {
