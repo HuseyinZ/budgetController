@@ -15,7 +15,7 @@ public abstract class BaseEntity {
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
-    public void touch() { this.updatedAt = java.time.LocalDateTime.now(); }
+    public void touch() { this.updatedAt = LocalDateTime.now(); }
 
     @Override public boolean equals(Object o) {
         if (this == o) return true;
@@ -23,7 +23,6 @@ public abstract class BaseEntity {
         BaseEntity that = (BaseEntity) o;
         return id != null && Objects.equals(id, that.id);
     }
-
 
     @Override public int hashCode() { return id != null ? id.hashCode() : super.hashCode(); }
 
