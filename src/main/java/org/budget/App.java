@@ -29,7 +29,7 @@ public class App {
 
     /**
      * Dokunmatik ekran kullanımı için ortam değişkeni veya
-     * -Dbudget.touch=true ile devreye girer."/c/Program Files/MySQL/MySQL Server 9.3/bin/mysql.exe" --default-character-set=utf8mb4 -u root -p posdb < src/main/resources/db/migration/V2026_05_18__order_item_notes.sql
+     * -Dbudget.touch=true ile devreye girer.
      * Açık olduğunda font/satır yüksekliği gibi UI defaults büyütülür.
      */
     private static final boolean TOUCH_MODE = resolveTouchMode();
