@@ -80,7 +80,6 @@ public final class ExpenseTemplateService {
             String s = chunk.trim();
             if (s.isEmpty()) continue;
             String[] parts = s.split("\\|");
-            if (parts.length < 1) continue;
             String name = parts[0].trim();
             String icon = parts.length >= 2 ? parts[1].trim() : "📝";
             String mode = parts.length >= 3 ? parts[2].trim() : "manuel";
