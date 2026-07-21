@@ -1,5 +1,6 @@
 package UI;
 
+import model.MoneyUtil;
 import model.User;
 import state.AppState;
 import state.ExpenseRecord;
@@ -19,7 +20,6 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 import org.apache.poi.ss.usermodel.Row;
@@ -359,7 +359,7 @@ public class ExpensesPanel extends JPanel {
         double kg = ((Number) kgSpinner.getValue()).doubleValue();
         double price = ((Number) kgPriceSpinner.getValue()).doubleValue();
         double total = kg * price;
-        kgCalcLabel.setText(String.format(new Locale("tr", "TR"), "%,.2f ₺", total));
+        kgCalcLabel.setText(String.format(MoneyUtil.TURKISH_LOCALE, "%,.2f ₺", total));
     }
 
     private void handleStateChange(PropertyChangeEvent event) {
@@ -424,7 +424,7 @@ public class ExpensesPanel extends JPanel {
                     record.getId(),
                     record.getExpenseDate(),
                     record.getDescription(),
-                    String.format(new Locale("tr", "TR"), "%.2f", record.getAmount()),
+                    String.format(MoneyUtil.TURKISH_LOCALE, "%.2f", record.getAmount()),
                     record.getPerformedBy(),
                     record.getCreatedAt()
             });

@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.function.Function;
 
 public final class MoneyUtil {
-    private static final Locale TURKISH_LOCALE = new Locale("tr", "TR");
+    public static final Locale TURKISH_LOCALE = new Locale("tr", "TR");
 
     private MoneyUtil() {
 
