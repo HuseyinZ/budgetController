@@ -502,14 +502,16 @@ public class DailyReportPanel extends JPanel {
     }
 
     private LocalDate pickDate() {
-        Date d = (Date) dateSpinner.getValue();
-        return Instant.ofEpochMilli(d.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+        return toLocalDate((Date) dateSpinner.getValue());
     }
 
     private YearMonth pickMonth() {
-        Date d = (Date) monthSpinner.getValue();
-        LocalDate ld = Instant.ofEpochMilli(d.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+        LocalDate ld = toLocalDate((Date) monthSpinner.getValue());
         return YearMonth.of(ld.getYear(), ld.getMonthValue());
+    }
+
+    private static LocalDate toLocalDate(Date date) {
+        return Instant.ofEpochMilli(date.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
     private BigDecimal sum(List<Payment> payments) {
