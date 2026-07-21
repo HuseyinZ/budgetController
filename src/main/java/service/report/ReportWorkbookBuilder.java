@@ -1,6 +1,7 @@
 package service.report;
 
 import DataConnection.Db;
+import model.MoneyUtil;
 import model.Payment;
 import model.PaymentMethod;
 import org.apache.poi.ss.usermodel.Cell;
@@ -239,11 +240,8 @@ public final class ReportWorkbookBuilder {
     // ============================================================
 
     private static BigDecimal sumPayments(List<Payment> payments) {
-        BigDecimal s = BigDecimal.ZERO;
-        for (Payment p : payments) {
-            if (p.getAmount() != null) s = s.add(p.getAmount());
-        }
-        return s.setScale(2, RoundingMode.HALF_UP);
+        return MoneyUtil.sumAmounts(payments, Payment::getAmount)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private static String describeMethod(PaymentMethod m) {

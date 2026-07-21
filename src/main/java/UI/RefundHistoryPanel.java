@@ -1,5 +1,6 @@
 package UI;
 
+import model.MoneyUtil;
 import model.RefundLog;
 import state.AppState;
 
@@ -152,13 +153,7 @@ public class RefundHistoryPanel extends JPanel {
 
     private void updateSummary() {
         int count = tableModel.getRowCount();
-        BigDecimal total = BigDecimal.ZERO;
-        for (int i = 0; i < count; i++) {
-            RefundLog l = tableModel.rowAt(i);
-            if (l != null && l.getAmount() != null) {
-                total = total.add(l.getAmount());
-            }
-        }
+        BigDecimal total = MoneyUtil.sumAmounts(tableModel.filtered, RefundLog::getAmount);
         summaryLabel.setText("Toplam: " + count + " kayıt   |   Toplam iade tutarı: "
                 + MONEY_FMT.format(total));
     }

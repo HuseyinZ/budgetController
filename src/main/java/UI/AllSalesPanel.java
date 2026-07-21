@@ -1,6 +1,7 @@
 package UI;
 
 import DataConnection.Db;
+import model.MoneyUtil;
 import model.PaymentMethod;
 import state.AppState;
 
@@ -126,7 +127,7 @@ public class AllSalesPanel extends JPanel {
         currentRows.addAll(loadOrders(date));
 
         tableModel.setRowCount(0);
-        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal total = MoneyUtil.sumAmounts(currentRows, row -> row.amount);
         for (OrderRow r : currentRows) {
             tableModel.addRow(new Object[]{
                     r.closedAt == null ? "-" : HHMM.format(r.closedAt),
@@ -137,7 +138,6 @@ public class AllSalesPanel extends JPanel {
                     r.paymentMethod,
                     currencyFormat.format(r.amount)
             });
-            total = total.add(r.amount);
         }
         summaryLabel.setText(currentRows.size() + " sipariş — Toplam: " + currencyFormat.format(total));
     }
