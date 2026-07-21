@@ -2,6 +2,7 @@ package UI;
 
 import model.ItemAddWithNoteResult;
 import model.ItemNoteUpdateResult;
+import model.MoneyUtil;
 import model.PaymentMethod;
 import model.Role;
 import model.User;
@@ -28,7 +29,6 @@ import java.text.NumberFormat;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -76,7 +76,7 @@ public class TableOrderDialog extends JDialog {
         return local;
     }
     private final PropertyChangeListener listener = this::handleStateChange;
-    private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final NumberFormat currencyFormat = MoneyUtil.turkishLiraCurrencyFormat();
     private final boolean waiterRole;
     private java.util.function.Consumer<Integer> onReadyListener;
     private boolean fullScreen;

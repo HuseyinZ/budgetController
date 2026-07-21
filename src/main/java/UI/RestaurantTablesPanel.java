@@ -4,6 +4,7 @@ import state.AppState;
 import state.TableOrderStatus;
 import state.TableSnapshot;
 
+import model.MoneyUtil;
 import model.Role;
 import model.User;
 
@@ -19,7 +20,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -75,7 +75,7 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
     private final User currentUser;
     private final Map<Integer, JButton> tableButtons = new HashMap<>();
     private final Map<String, JButton> salonButtons = new HashMap<>();
-    private final NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(new Locale("tr", "TR"));
+    private final NumberFormat currencyFormat = MoneyUtil.turkishLiraCurrencyFormat();
     private final PropertyChangeListener listener = this::handleStateChange;
 
     /** Sağ panel breadcrumb etiketi. */
