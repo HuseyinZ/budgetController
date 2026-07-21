@@ -45,7 +45,7 @@ public class WrapLayout extends FlowLayout {
 
     private Dimension layoutSize(Container target, boolean preferred) {
         synchronized (target.getTreeLock()) {
-            int targetWidth = target.getSize().width;
+            int targetWidth;
             Container c = target;
             while (c.getSize().width == 0 && c.getParent() != null) {
                 c = c.getParent();
