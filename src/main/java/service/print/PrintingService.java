@@ -134,13 +134,16 @@ public class PrintingService {
             return PrintResult.ok(target, jobId);
         } catch (PrinterException e) {
             LOG.error("Yazıcı hatası: {}", target, e);
-            if (jobId != null) printJobDAO.markFailed(jobId, e.getMessage());
-            return PrintResult.fail(target, jobId, e.getMessage());
+            return handlePrintFailure(target, jobId, e.getMessage());
         } catch (RuntimeException e) {
             LOG.error("Beklenmeyen hata: {}", target, e);
-            if (jobId != null) printJobDAO.markFailed(jobId, e.getMessage());
-            return PrintResult.fail(target, jobId, e.getMessage());
+            return handlePrintFailure(target, jobId, e.getMessage());
         }
+    }
+
+    private PrintResult handlePrintFailure(KitchenPrinter target, Long jobId, String message) {
+        if (jobId != null) printJobDAO.markFailed(jobId, message);
+        return PrintResult.fail(target, jobId, message);
     }
 
     private Long enqueueJob(KitchenPrinter target, Receipt receipt) {
