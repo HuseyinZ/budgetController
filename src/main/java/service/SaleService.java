@@ -151,15 +151,13 @@ public class SaleService {
     }
 
     private boolean writeWorkbook(String filePath, Consumer<Workbook> workbookWriter) {
-        try (Workbook workbook = new XSSFWorkbook();
-             FileOutputStream fileOut = new FileOutputStream(filePath)) {
-            workbookWriter.accept(workbook);
-            workbook.write(fileOut);
-            fileOut.flush();
-            return true;
-        } catch (IOException e) {
-            LOG.error("Satış Excel'e aktarılamadı: {}", e.getMessage(), e);
-            return false;
-        }
+        return PaymentService.executeIo(LOG, "Satış Excel'e aktarılamadı: {}", () -> {
+            try (Workbook workbook = new XSSFWorkbook();
+                 FileOutputStream fileOut = new FileOutputStream(filePath)) {
+                workbookWriter.accept(workbook);
+                workbook.write(fileOut);
+                fileOut.flush();
+            }
+        });
     }
 }

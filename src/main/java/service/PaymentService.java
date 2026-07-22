@@ -76,39 +76,52 @@ public class PaymentService {
     }
 
     public boolean exportPaymentsToExcel(List<Payment> payments, String filePath) {
-        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            XSSFSheet sheet = workbook.createSheet("Payments");
-            Row header = sheet.createRow(0);
-            header.createCell(0).setCellValue("Payment ID");
-            header.createCell(1).setCellValue("Order ID");
-            header.createCell(2).setCellValue("Cashier ID");
-            header.createCell(3).setCellValue("Amount");
-            header.createCell(4).setCellValue("Method");
-            header.createCell(5).setCellValue("Paid At");
+        return executeIo(LOG, "Ödemeler Excel'e aktarılamadı: {}", () -> {
+            try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+                XSSFSheet sheet = workbook.createSheet("Payments");
+                Row header = sheet.createRow(0);
+                header.createCell(0).setCellValue("Payment ID");
+                header.createCell(1).setCellValue("Order ID");
+                header.createCell(2).setCellValue("Cashier ID");
+                header.createCell(3).setCellValue("Amount");
+                header.createCell(4).setCellValue("Method");
+                header.createCell(5).setCellValue("Paid At");
 
-            int rowIndex = 1;
-            for (Payment pay : payments) {
-                Row row = sheet.createRow(rowIndex++);
-                row.createCell(0).setCellValue(pay.getId());
-                row.createCell(1).setCellValue(pay.getOrderId());
-                row.createCell(2).setCellValue(pay.getCashierId() == null ? "" : pay.getCashierId().toString());
-                row.createCell(3).setCellValue(
-                        pay.getAmount() == null ? "" : MoneyUtil.two(pay.getAmount()).toPlainString());
-                row.createCell(4).setCellValue(pay.getMethod() == null ? "" : pay.getMethod().toString());
-                row.createCell(5).setCellValue(
-                        pay.getPaidAt() == null ? "" : pay.getPaidAt().toString()
-                );
+                int rowIndex = 1;
+                for (Payment pay : payments) {
+                    Row row = sheet.createRow(rowIndex++);
+                    row.createCell(0).setCellValue(pay.getId());
+                    row.createCell(1).setCellValue(pay.getOrderId());
+                    row.createCell(2).setCellValue(pay.getCashierId() == null ? "" : pay.getCashierId().toString());
+                    row.createCell(3).setCellValue(
+                            pay.getAmount() == null ? "" : MoneyUtil.two(pay.getAmount()).toPlainString());
+                    row.createCell(4).setCellValue(pay.getMethod() == null ? "" : pay.getMethod().toString());
+                    row.createCell(5).setCellValue(
+                            pay.getPaidAt() == null ? "" : pay.getPaidAt().toString()
+                    );
+                }
+                for (int i = 0; i <= 5; i++) {
+                    sheet.autoSizeColumn(i);
+                }
+                try (FileOutputStream out = new FileOutputStream(filePath)) {
+                    workbook.write(out);
+                }
             }
-            for (int i = 0; i <= 5; i++) {
-                sheet.autoSizeColumn(i);
-            }
-            try (FileOutputStream out = new FileOutputStream(filePath)) {
-                workbook.write(out);
-            }
+        });
+    }
+
+    static boolean executeIo(Logger logger, String errorMessage, IoAction action) {
+        try {
+            action.run();
             return true;
         } catch (IOException e) {
-            LOG.error("Ödemeler Excel'e aktarılamadı: {}", e.getMessage(), e);
+            logger.error(errorMessage, e.getMessage(), e);
             return false;
         }
+    }
+
+    @FunctionalInterface
+    interface IoAction {
+        void run() throws IOException;
     }
 }
