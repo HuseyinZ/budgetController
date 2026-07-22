@@ -34,6 +34,7 @@ import java.util.stream.Collectors;
 
 public class TableOrderDialog extends JDialog {
     private static final Logger LOG = LoggerFactory.getLogger(TableOrderDialog.class);
+    private static final DateTimeFormatter LOG_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private final AppState appState;
     private final User currentUser;
     private final int tableNo;
@@ -906,8 +907,7 @@ public class TableOrderDialog extends JDialog {
     }
 
     private String formatLog(OrderLogEntry entry) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
-        StringBuilder sb = new StringBuilder(entry.getTimestamp().format(formatter));
+        StringBuilder sb = new StringBuilder(entry.getTimestamp().format(LOG_TIMESTAMP_FORMATTER));
         String actor = entry.getActor();
         if (actor != null && !actor.isBlank()) {
             sb.append(" - ").append(actor);
