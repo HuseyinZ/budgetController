@@ -57,17 +57,23 @@ public class EmailService {
 
     private Properties loadConfig() {
         Properties p = new Properties();
-        try (InputStream in = EmailService.class.getResourceAsStream(CONFIG_PATH)) {
-            if (in == null) {
+        try {
+            if (!loadConfigInto(p)) {
                 LOG.warn("email-config.properties bulunamadı (classpath:{})", CONFIG_PATH);
-                return p;
             }
-            // UTF-8 okuma (Türkçe karakterler için)
-            p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
         } catch (IOException ex) {
             LOG.warn("email-config.properties okunamadı: {}", ex.getMessage());
         }
         return p;
+    }
+
+    static boolean loadConfigInto(Properties properties) throws IOException {
+        try (InputStream in = EmailService.class.getResourceAsStream(CONFIG_PATH)) {
+            if (in == null) return false;
+            // UTF-8 okuma (Türkçe karakterler için)
+            properties.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+            return true;
+        }
     }
 
     /** Konfigürasyonda alıcı tanımlıysa onu döner; yoksa boş string. */

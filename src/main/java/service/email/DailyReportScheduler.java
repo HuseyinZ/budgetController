@@ -5,9 +5,6 @@ import org.slf4j.LoggerFactory;
 import service.report.ReportWorkbookBuilder;
 import state.AppState;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -42,8 +39,6 @@ import java.util.concurrent.TimeUnit;
 public class DailyReportScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(DailyReportScheduler.class);
-    private static final String CONFIG_PATH = "/email-config.properties";
-
     private final AppState appState;
     private ScheduledExecutorService executor;
     private ScheduledFuture<?> pending;
@@ -155,9 +150,8 @@ public class DailyReportScheduler {
 
     private Properties loadConfig() {
         Properties p = new Properties();
-        try (InputStream in = DailyReportScheduler.class.getResourceAsStream(CONFIG_PATH)) {
-            if (in == null) return p;
-            p.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+        try {
+            EmailService.loadConfigInto(p);
         } catch (Exception ex) {
             LOG.warn("email-config.properties okunamadı: {}", ex.getMessage());
         }
