@@ -118,13 +118,15 @@ public class SaleService {
             BigDecimal monthTotal = BigDecimal.ZERO;
             int monthCount = 0;
             for (LocalDate day : dailyTotal.keySet()) {
+                BigDecimal dailyAmount = dailyTotal.get(day);
+                int salesCount = dailyCount.get(day);
                 Row row = sheet.createRow(rowIndex++);
                 row.createCell(0).setCellValue(day.toString());
-                BigDecimal amount = MoneyUtil.two(dailyTotal.get(day));
+                BigDecimal amount = MoneyUtil.two(dailyAmount);
                 row.createCell(1).setCellValue(amount.toPlainString());
-                row.createCell(2).setCellValue(dailyCount.get(day));
-                monthTotal = monthTotal.add(dailyTotal.get(day));
-                monthCount += dailyCount.get(day);
+                row.createCell(2).setCellValue(salesCount);
+                monthTotal = monthTotal.add(dailyAmount);
+                monthCount += salesCount;
             }
 
             Row totalRow = sheet.createRow(rowIndex);
