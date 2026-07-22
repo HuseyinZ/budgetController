@@ -140,9 +140,7 @@ public final class ReportWorkbookBuilder {
 
             // Ödeme yöntemi
             r++;
-            Row sec1 = sheet.createRow(r++);
-            sec1.createCell(0).setCellValue("ÖDEME YÖNTEMİ DAĞILIMI");
-            sec1.getCell(0).setCellStyle(bold);
+            createBoldSectionHeader(sheet, r++, "ÖDEME YÖNTEMİ DAĞILIMI", bold);
             EnumMap<PaymentMethod, int[]> countByMethod = new EnumMap<>(PaymentMethod.class);
             EnumMap<PaymentMethod, BigDecimal> sumByMethod = new EnumMap<>(PaymentMethod.class);
             for (Payment p : data.payments()) {
@@ -162,9 +160,7 @@ public final class ReportWorkbookBuilder {
 
             // Saatlik dağılım
             r++;
-            Row sec2 = sheet.createRow(r++);
-            sec2.createCell(0).setCellValue("SAATLİK İŞLEM DAĞILIMI");
-            sec2.getCell(0).setCellStyle(bold);
+            createBoldSectionHeader(sheet, r++, "SAATLİK İŞLEM DAĞILIMI", bold);
             int[] perHour = new int[24];
             BigDecimal[] sumPerHour = new BigDecimal[24];
             for (int i = 0; i < 24; i++) sumPerHour[i] = BigDecimal.ZERO;
@@ -185,9 +181,7 @@ public final class ReportWorkbookBuilder {
 
             // Ürün satış özeti
             r++;
-            Row sec3 = sheet.createRow(r++);
-            sec3.createCell(0).setCellValue("ÜRÜN SATIŞ ÖZETİ");
-            sec3.getCell(0).setCellStyle(bold);
+            createBoldSectionHeader(sheet, r++, "ÜRÜN SATIŞ ÖZETİ", bold);
             Row psHdr = sheet.createRow(r++);
             psHdr.createCell(0).setCellValue("Ürün");
             psHdr.createCell(1).setCellValue("Birim");
@@ -213,9 +207,7 @@ public final class ReportWorkbookBuilder {
 
             // Giderler
             r++;
-            Row sec4 = sheet.createRow(r++);
-            sec4.createCell(0).setCellValue("GİDERLER");
-            sec4.getCell(0).setCellStyle(bold);
+            createBoldSectionHeader(sheet, r++, "GİDERLER", bold);
             Row hdr = sheet.createRow(r++);
             hdr.createCell(0).setCellValue("Tarih");
             hdr.createCell(1).setCellValue("Açıklama");
@@ -237,6 +229,14 @@ public final class ReportWorkbookBuilder {
     // ============================================================
     //   Yardımcılar
     // ============================================================
+
+    private static void createBoldSectionHeader(Sheet sheet, int rowIndex,
+                                                String title, CellStyle bold) {
+        Row sectionHeader = sheet.createRow(rowIndex);
+        Cell cell = sectionHeader.createCell(0);
+        cell.setCellValue(title);
+        cell.setCellStyle(bold);
+    }
 
     private static BigDecimal sumPayments(List<Payment> payments) {
         return MoneyUtil.sumAmounts(payments, Payment::getAmount)
