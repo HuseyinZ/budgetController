@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -79,13 +80,7 @@ public class PaymentService {
         return executeIo(LOG, "Ödemeler Excel'e aktarılamadı: {}", () -> {
             try (XSSFWorkbook workbook = new XSSFWorkbook()) {
                 XSSFSheet sheet = workbook.createSheet("Payments");
-                Row header = sheet.createRow(0);
-                header.createCell(0).setCellValue("Payment ID");
-                header.createCell(1).setCellValue("Order ID");
-                header.createCell(2).setCellValue("Cashier ID");
-                header.createCell(3).setCellValue("Amount");
-                header.createCell(4).setCellValue("Method");
-                header.createCell(5).setCellValue("Paid At");
+                createHeaderRow(sheet, "Payment ID", "Order ID", "Cashier ID", "Amount", "Method", "Paid At");
 
                 int rowIndex = 1;
                 for (Payment pay : payments) {
@@ -108,6 +103,13 @@ public class PaymentService {
                 }
             }
         });
+    }
+
+    static void createHeaderRow(Sheet sheet, String... columnNames) {
+        Row header = sheet.createRow(0);
+        for (int columnIndex = 0; columnIndex < columnNames.length; columnIndex++) {
+            header.createCell(columnIndex).setCellValue(columnNames[columnIndex]);
+        }
     }
 
     static boolean executeIo(Logger logger, String errorMessage, IoAction action) {
