@@ -111,20 +111,23 @@ public class ProductNoteDialog extends JDialog {
         south.add(free, BorderLayout.NORTH);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
-        JButton cancel = new JButton("İptal");
-        cancel.setPreferredSize(new Dimension(120, 48));
+        JButton cancel = createFixedSizeButton("İptal", 120);
         cancel.addActionListener(e -> { result = null; dispose(); });
-        JButton clear = new JButton("Notu Temizle");
-        clear.setPreferredSize(new Dimension(160, 48));
+        JButton clear = createFixedSizeButton("Notu Temizle", 160);
         clear.addActionListener(e -> { result = ""; dispose(); });
-        JButton ok = new JButton("Kaydet");
-        ok.setPreferredSize(new Dimension(120, 48));
+        JButton ok = createFixedSizeButton("Kaydet", 120);
         ok.addActionListener(e -> { result = buildNote(); dispose(); });
         buttons.add(clear);
         buttons.add(cancel);
         buttons.add(ok);
         south.add(buttons, BorderLayout.CENTER);
         return south;
+    }
+
+    private JButton createFixedSizeButton(String text, int width) {
+        JButton button = new JButton(text);
+        button.setPreferredSize(new Dimension(width, 48));
+        return button;
     }
 
     private String buildNote() {
