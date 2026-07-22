@@ -60,12 +60,8 @@ public class SaleService {
         List<Payment> payments = paymentService.getPaymentsOn(date);
         return writeWorkbook(filePath, workbook -> {
             Sheet sheet = workbook.createSheet("DailySales_" + date);
-            Row header = sheet.createRow(0);
-            header.createCell(0).setCellValue("Order ID");
-            header.createCell(1).setCellValue("Amount");
-            header.createCell(2).setCellValue("Payment Method");
-            header.createCell(3).setCellValue("Cashier");
-            header.createCell(4).setCellValue("Paid At");
+            PaymentService.createHeaderRow(
+                    sheet, "Order ID", "Amount", "Payment Method", "Cashier", "Paid At");
 
             int rowIndex = 1;
             for (Payment p : payments) {
@@ -116,10 +112,7 @@ public class SaleService {
 
         return writeWorkbook(filePath, workbook -> {
             Sheet sheet = workbook.createSheet("Sales_" + year + "-" + month);
-            Row header = sheet.createRow(0);
-            header.createCell(0).setCellValue("Date");
-            header.createCell(1).setCellValue("Total Sales");
-            header.createCell(2).setCellValue("Number of Sales");
+            PaymentService.createHeaderRow(sheet, "Date", "Total Sales", "Number of Sales");
 
             int rowIndex = 1;
             BigDecimal monthTotal = BigDecimal.ZERO;
