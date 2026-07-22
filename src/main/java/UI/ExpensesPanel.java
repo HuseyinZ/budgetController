@@ -184,17 +184,9 @@ public class ExpensesPanel extends JPanel {
                 showMessageDialog("Geçerli fiyat girin", "Hata", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            try {
-                appState.addKgBasedExpense(t.name(), kg, price, LocalDate.now(), currentUser);
-                BigDecimal total = kg.multiply(price);
-                showMessageDialog(
-                        "✓ " + t.name() + " gideri eklendi (" + total + " ₺)",
-                        "Eklendi", JOptionPane.INFORMATION_MESSAGE);
-                reloadExpenses();
-            } catch (RuntimeException ex) {
-                showMessageDialog("Gider eklenemedi: " + ex.getMessage(),
-                        "Hata", JOptionPane.ERROR_MESSAGE);
-            }
+            BigDecimal total = kg.multiply(price);
+            addTemplateExpense(t, total,
+                    () -> appState.addKgBasedExpense(t.name(), kg, price, LocalDate.now(), currentUser));
         } else {
             String amtStr = JOptionPane.showInputDialog(this,
                     t.name() + " — Toplam tutar (₺)?", "Tutar",
@@ -205,16 +197,23 @@ public class ExpensesPanel extends JPanel {
                 showMessageDialog("Geçerli tutar girin", "Hata", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            try {
-                appState.addExpense(amount, t.name(), LocalDate.now(), currentUser);
-                showMessageDialog(
-                        "✓ " + t.name() + " gideri eklendi (" + amount + " ₺)",
-                        "Eklendi", JOptionPane.INFORMATION_MESSAGE);
-                reloadExpenses();
-            } catch (RuntimeException ex) {
-                showMessageDialog("Gider eklenemedi: " + ex.getMessage(),
-                        "Hata", JOptionPane.ERROR_MESSAGE);
-            }
+            addTemplateExpense(t, amount,
+                    () -> appState.addExpense(amount, t.name(), LocalDate.now(), currentUser));
+        }
+    }
+
+    private void addTemplateExpense(service.expense.ExpenseTemplate template,
+                                    BigDecimal successAmount,
+                                    Runnable expenseCreationAction) {
+        try {
+            expenseCreationAction.run();
+            showMessageDialog(
+                    "✓ " + template.name() + " gideri eklendi (" + successAmount + " ₺)",
+                    "Eklendi", JOptionPane.INFORMATION_MESSAGE);
+            reloadExpenses();
+        } catch (RuntimeException ex) {
+            showMessageDialog("Gider eklenemedi: " + ex.getMessage(),
+                    "Hata", JOptionPane.ERROR_MESSAGE);
         }
     }
 
