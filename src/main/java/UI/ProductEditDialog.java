@@ -127,32 +127,20 @@ public class ProductEditDialog extends JDialog {
         gc.weightx = 1;
 
         int row = 0;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Ad"), gc);
-        gc.gridx = 1;
-        panel.add(nameField, gc);
+        addFormRow(panel, gc, row, "Ad", nameField);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Kategori"), gc);
-        gc.gridx = 1;
-        panel.add(categoryCombo, gc);
+        addFormRow(panel, gc, row, "Kategori", categoryCombo);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Fiyat"), gc);
-        gc.gridx = 1;
-        panel.add(priceField, gc);
+        addFormRow(panel, gc, row, "Fiyat", priceField);
 
         // Stok alanı şimdilik UI'dan gizli.
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Birim"), gc);
-        gc.gridx = 1;
         unitLabelCombo.setEditable(true);
         unitLabelCombo.setToolTipText("Bir porsiyonun tanımı: 'porsiyon', 'şiş', 'kg', 'adet' vs.");
-        panel.add(unitLabelCombo, gc);
+        addFormRow(panel, gc, row, "Birim", unitLabelCombo);
 
         row++;
         gc.gridx = 0; gc.gridy = row;
@@ -176,6 +164,14 @@ public class ProductEditDialog extends JDialog {
         panel.add(formButtons, gc);
 
         return panel;
+    }
+
+    private void addFormRow(JPanel panel, GridBagConstraints gc, int row, String labelText, Component field) {
+        gc.gridx = 0;
+        gc.gridy = row;
+        panel.add(new JLabel(labelText), gc);
+        gc.gridx = 1;
+        panel.add(field, gc);
     }
 
     private JComponent buildFooter() {
