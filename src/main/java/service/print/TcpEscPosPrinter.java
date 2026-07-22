@@ -9,7 +9,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -123,7 +122,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
             // Üst başlık (mutfak adı — çift boyut, kalın, ortalı)
             writeCenteredBoldDoubleSizeBlock(buf, r.getHeader());
 
-            writeLine(buf, repeat('=', charsPerLine));
+            writeLine(buf, "=".repeat(charsPerLine));
 
             // -------- SALON ADI ve MASA NO (en büyük font) --------
             if (r.getSalonName() != null && !r.getSalonName().isBlank()) {
@@ -131,7 +130,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
             } else {
                 writeCenteredBoldDoubleSizeBlock(buf, "MASA " + r.getTableNo());
             }
-            writeLine(buf, repeat('=', charsPerLine));
+            writeLine(buf, "=".repeat(charsPerLine));
 
             // -------- Meta bilgiler --------
             buf.write(EscPos.CMD_ALIGN_LEFT);
@@ -140,7 +139,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
             if (r.getOrderId() != null) {
                 writeLine(buf, "Fis No : #" + r.getOrderId());
             }
-            writeLine(buf, repeat('-', charsPerLine));
+            writeLine(buf, "-".repeat(charsPerLine));
 
             // -------- Kalemler --------
             for (Receipt.Line line : r.getLines()) {
@@ -163,7 +162,7 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
                 }
             }
 
-            writeLine(buf, repeat('-', charsPerLine));
+            writeLine(buf, "-".repeat(charsPerLine));
 
             // Genel sipariş notu (opsiyonel)
             if (r.getOrderNote() != null && !r.getOrderNote().isBlank()) {
@@ -202,12 +201,6 @@ public class TcpEscPosPrinter implements ReceiptPrinter {
     private static void writeLine(ByteArrayOutputStream buf, String s) throws IOException {
         buf.write(EscPos.toCp857(s == null ? "" : s));
         buf.write(EscPos.LF);
-    }
-
-    private static String repeat(char c, int n) {
-        char[] arr = new char[n];
-        Arrays.fill(arr, c);
-        return new String(arr);
     }
 
     private static String safeProduct(String name, int maxLen) {
