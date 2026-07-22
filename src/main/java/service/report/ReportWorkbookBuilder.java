@@ -77,24 +77,19 @@ public final class ReportWorkbookBuilder {
     public static ReportData collectDaily(AppState appState, LocalDate date) {
         PaymentService paymentService = new PaymentService();
         List<Payment> payments = paymentService.getPaymentsOn(date);
-        BigDecimal totalSales = sumPayments(payments);
         BigDecimal totalExpense = appState.getExpenseTotal(date);
-        BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
 
         List<ProductSummaryRow> products = loadProductSummary(date.atStartOfDay(),
                 date.plusDays(1).atStartOfDay());
         List<ExpenseRecord> expenses = appState.getExpensesOn(date);
 
-        return new ReportData(false, date.toString(), payments, totalSales,
-                totalExpense, netProfit, products, expenses);
+        return createReportData(false, date.toString(), payments, totalExpense, products, expenses);
     }
 
     public static ReportData collectMonthly(AppState appState, YearMonth ym) {
         PaymentService paymentService = new PaymentService();
         List<Payment> payments = paymentService.getPaymentsInMonth(ym.getYear(), ym.getMonthValue());
-        BigDecimal totalSales = sumPayments(payments);
         BigDecimal totalExpense = appState.getExpenseTotal(ym);
-        BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
 
         LocalDate first = ym.atDay(1);
         LocalDate firstOfNext = first.plusMonths(1);
@@ -106,9 +101,9 @@ public final class ReportWorkbookBuilder {
             expenses.addAll(appState.getExpensesOn(d));
         }
 
-        return new ReportData(true,
+        return createReportData(true,
                 String.format("%04d-%02d", ym.getYear(), ym.getMonthValue()),
-                payments, totalSales, totalExpense, netProfit, products, expenses);
+                payments, totalExpense, products, expenses);
     }
 
     // ============================================================
@@ -241,6 +236,18 @@ public final class ReportWorkbookBuilder {
     private static BigDecimal sumPayments(List<Payment> payments) {
         return MoneyUtil.sumAmounts(payments, Payment::getAmount)
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static ReportData createReportData(boolean monthly,
+                                               String periodLabel,
+                                               List<Payment> payments,
+                                               BigDecimal totalExpense,
+                                               List<ProductSummaryRow> products,
+                                               List<ExpenseRecord> expenses) {
+        BigDecimal totalSales = sumPayments(payments);
+        BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
+        return new ReportData(monthly, periodLabel, payments, totalSales,
+                totalExpense, netProfit, products, expenses);
     }
 
     private static String describeMethod(PaymentMethod m) {
