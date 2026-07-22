@@ -15,8 +15,6 @@ public abstract class BaseEntity {
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
-    public void touch() { this.updatedAt = LocalDateTime.now(); }
-
     @Override public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof BaseEntity)) return false;
