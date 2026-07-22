@@ -114,15 +114,6 @@ public class SaleService {
             dailyCount.put(day, dailyCount.getOrDefault(day, 0) + 1);
         }
 
-        BigDecimal monthTotal = BigDecimal.ZERO;
-        int monthCount = 0;
-        for (Map.Entry<LocalDate, BigDecimal> entry : dailyTotal.entrySet()) {
-            monthTotal = monthTotal.add(entry.getValue());
-            monthCount += dailyCount.getOrDefault(entry.getKey(), 0);
-        }
-        BigDecimal reportMonthTotal = monthTotal;
-        int reportMonthCount = monthCount;
-
         return writeWorkbook(filePath, workbook -> {
             Sheet sheet = workbook.createSheet("Sales_" + year + "-" + month);
             Row header = sheet.createRow(0);
@@ -131,18 +122,22 @@ public class SaleService {
             header.createCell(2).setCellValue("Number of Sales");
 
             int rowIndex = 1;
+            BigDecimal monthTotal = BigDecimal.ZERO;
+            int monthCount = 0;
             for (LocalDate day : dailyTotal.keySet()) {
                 Row row = sheet.createRow(rowIndex++);
                 row.createCell(0).setCellValue(day.toString());
                 BigDecimal amount = MoneyUtil.two(dailyTotal.get(day));
                 row.createCell(1).setCellValue(amount.toPlainString());
                 row.createCell(2).setCellValue(dailyCount.get(day));
+                monthTotal = monthTotal.add(dailyTotal.get(day));
+                monthCount += dailyCount.get(day);
             }
 
             Row totalRow = sheet.createRow(rowIndex);
             totalRow.createCell(0).setCellValue("TOTAL");
-            totalRow.createCell(1).setCellValue(MoneyUtil.two(reportMonthTotal).toPlainString());
-            totalRow.createCell(2).setCellValue(reportMonthCount);
+            totalRow.createCell(1).setCellValue(MoneyUtil.two(monthTotal).toPlainString());
+            totalRow.createCell(2).setCellValue(monthCount);
 
             sheet.autoSizeColumn(0);
             sheet.autoSizeColumn(1);
