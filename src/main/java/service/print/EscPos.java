@@ -1,7 +1,8 @@
 package service.print;
 
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 
 /**
  * ESC/POS standart komut kümesinin küçük bir alt kümesi.
@@ -19,7 +20,17 @@ import java.nio.charset.StandardCharsets;
  */
 public final class EscPos {
 
+    private static final Charset CP857 = resolveCp857();
+
     private EscPos() {}
+
+    private static Charset resolveCp857() {
+        try {
+            return Charset.forName("Cp857");
+        } catch (UnsupportedCharsetException e) {
+            return StandardCharsets.US_ASCII;
+        }
+    }
 
     // --- Kontrol baytları ----
     public static final byte ESC = 0x1B;
@@ -75,11 +86,6 @@ public final class EscPos {
     /** Java karakter dizisini CP857 (Turkish) bytelarına çevirir. */
     public static byte[] toCp857(String s) {
         if (s == null) return new byte[0];
-        try {
-            return s.getBytes("Cp857");
-        } catch (UnsupportedEncodingException e) {
-            // CP857 destekleyen JVM'lerde tetiklenmez; emniyet için ASCII'ye düşelim
-            return s.getBytes(StandardCharsets.US_ASCII);
-        }
+        return s.getBytes(CP857);
     }
 }
