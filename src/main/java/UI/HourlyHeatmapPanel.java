@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -137,7 +138,7 @@ public class HourlyHeatmapPanel extends JPanel {
                 totalAmount += a;
             }
         }
-        int total = java.util.Arrays.stream(counts).sum();
+        int total = Arrays.stream(counts).sum();
         canvas.setData(counts, amounts);
         headerLabel.setText(
                 date.format(HEADER_FMT) + " — Toplam " + total + " sipariş, "
