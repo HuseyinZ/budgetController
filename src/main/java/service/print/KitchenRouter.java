@@ -84,15 +84,8 @@ public class KitchenRouter {
                 continue;
             }
 
-            List<KitchenPrinter> targets = catCache.computeIfAbsent(categoryId, cid -> {
-                List<Integer> ids = routeDAO.findPrinterIdsByCategory(cid);
-                List<KitchenPrinter> printers = new ArrayList<>(ids.size());
-                for (Integer pid : ids) {
-                    KitchenPrinter pr = resolveActivePrinter(pid, printerCache);
-                    if (pr != null) printers.add(pr);
-                }
-                return printers;
-            });
+            List<KitchenPrinter> targets = catCache.computeIfAbsent(categoryId,
+                    cid -> resolvePrintersForCategory(cid, printerCache));
 
             if (targets.isEmpty()) {
                 LOG.warn("Kategori {} için aktif yazıcı yok, kalem atlandı: item={}", categoryId, item);
@@ -104,6 +97,17 @@ public class KitchenRouter {
             }
         }
         return grouped;
+    }
+
+    private List<KitchenPrinter> resolvePrintersForCategory(
+            Long categoryId, Map<Integer, KitchenPrinter> printerCache) {
+        List<Integer> ids = routeDAO.findPrinterIdsByCategory(categoryId);
+        List<KitchenPrinter> printers = new ArrayList<>(ids.size());
+        for (Integer pid : ids) {
+            KitchenPrinter pr = resolveActivePrinter(pid, printerCache);
+            if (pr != null) printers.add(pr);
+        }
+        return printers;
     }
 
     private KitchenPrinter resolveActivePrinter(Integer printerId,
