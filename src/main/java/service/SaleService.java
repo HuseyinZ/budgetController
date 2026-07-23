@@ -40,15 +40,11 @@ public class SaleService {
 
     public BigDecimal getDailySalesTotal(LocalDate date) {
         List<Payment> payments = paymentService.getPaymentsOn(date);
-        return sumAmounts(payments);
+        return MoneyUtil.sumAmounts(payments, Payment::getAmount);
     }
 
     public BigDecimal getMonthlySalesTotal(int year, int month) {
         List<Payment> payments = paymentService.getPaymentsInMonth(year, month);
-        return sumAmounts(payments);
-    }
-
-    private BigDecimal sumAmounts(List<Payment> payments) {
         return MoneyUtil.sumAmounts(payments, Payment::getAmount);
     }
 
