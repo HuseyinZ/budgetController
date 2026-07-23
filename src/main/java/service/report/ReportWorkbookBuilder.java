@@ -47,6 +47,9 @@ import static model.MoneyUtil.formatTl;
  */
 public final class ReportWorkbookBuilder {
 
+    public static final String XLSX_MIME_TYPE =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     private static final Logger LOG = LoggerFactory.getLogger(ReportWorkbookBuilder.class);
 
     private ReportWorkbookBuilder() {}
