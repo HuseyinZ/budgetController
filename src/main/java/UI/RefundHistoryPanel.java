@@ -35,6 +35,10 @@ public class RefundHistoryPanel extends JPanel {
             DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
     private static final NumberFormat MONEY_FMT =
             MoneyUtil.turkishLiraCurrencyFormat();
+    private static final Color CLEAR_TABLE_ROW_COLOR = new Color(255, 205, 210);
+    private static final Color REMOVE_ITEM_ROW_COLOR = new Color(255, 224, 178);
+    private static final Color DECREASE_ITEM_ROW_COLOR = new Color(255, 249, 196);
+    private static final Color CANCEL_ORDER_ROW_COLOR = new Color(239, 154, 154);
 
     private final AppState appState;
     private final LogTableModel tableModel = new LogTableModel();
@@ -103,10 +107,10 @@ public class RefundHistoryPanel extends JPanel {
                     RefundLog log = tableModel.rowAt(t.convertRowIndexToModel(row));
                     if (log != null && log.getActionType() != null) {
                         switch (log.getActionType()) {
-                            case CLEAR_TABLE  -> c.setBackground(new Color(255, 205, 210));
-                            case REMOVE_ITEM  -> c.setBackground(new Color(255, 224, 178));
-                            case DECREASE_ITEM-> c.setBackground(new Color(255, 249, 196));
-                            case CANCEL_ORDER -> c.setBackground(new Color(239, 154, 154));
+                            case CLEAR_TABLE  -> c.setBackground(CLEAR_TABLE_ROW_COLOR);
+                            case REMOVE_ITEM  -> c.setBackground(REMOVE_ITEM_ROW_COLOR);
+                            case DECREASE_ITEM-> c.setBackground(DECREASE_ITEM_ROW_COLOR);
+                            case CANCEL_ORDER -> c.setBackground(CANCEL_ORDER_ROW_COLOR);
                         }
                     } else {
                         c.setBackground(Color.WHITE);
