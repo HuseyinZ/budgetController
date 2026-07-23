@@ -131,10 +131,10 @@ public final class ReportWorkbookBuilder {
             tc.setCellStyle(bold);
 
             r++;
-            sheet.createRow(r++).createCell(0).setCellValue("Toplam Ciro: " + formatTl(data.totalSales()));
-            sheet.createRow(r++).createCell(0).setCellValue("Toplam Gider: " + formatTl(data.totalExpense()));
-            sheet.createRow(r++).createCell(0).setCellValue("Net Kar: " + formatTl(data.netProfit()));
-            sheet.createRow(r++).createCell(0).setCellValue("Sipariş Sayısı: " + data.payments().size());
+            writeSummaryRow(sheet, r++, "Toplam Ciro: " + formatTl(data.totalSales()));
+            writeSummaryRow(sheet, r++, "Toplam Gider: " + formatTl(data.totalExpense()));
+            writeSummaryRow(sheet, r++, "Net Kar: " + formatTl(data.netProfit()));
+            writeSummaryRow(sheet, r++, "Sipariş Sayısı: " + data.payments().size());
 
             // Ödeme yöntemi
             r++;
@@ -222,6 +222,10 @@ public final class ReportWorkbookBuilder {
     // ============================================================
     //   Yardımcılar
     // ============================================================
+
+    private static void writeSummaryRow(Sheet sheet, int rowIndex, String text) {
+        sheet.createRow(rowIndex).createCell(0).setCellValue(text);
+    }
 
     private static void writeDistributionRow(Sheet sheet, int rowIndex,
                                              String label, int count, BigDecimal amount) {
