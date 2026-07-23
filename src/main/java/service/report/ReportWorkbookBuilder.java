@@ -150,7 +150,7 @@ public final class ReportWorkbookBuilder {
                 int[] c = countByMethod.get(m);
                 BigDecimal s = sumByMethod.getOrDefault(m, BigDecimal.ZERO);
                 if (c == null && s.signum() == 0) continue;
-                writeDistributionRow(sheet, r++, describeMethod(m), c == null ? 0 : c[0], s);
+                writeDistributionRow(sheet, r++, m.getDisplayName(), c == null ? 0 : c[0], s);
             }
 
             // Saatlik dağılım
@@ -258,10 +258,6 @@ public final class ReportWorkbookBuilder {
         BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
         return new ReportData(monthly, periodLabel, payments, totalSales,
                 totalExpense, netProfit, products, expenses);
-    }
-
-    private static String describeMethod(PaymentMethod m) {
-        return m.getDisplayName();
     }
 
     /**
