@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
@@ -101,7 +100,7 @@ public final class ExpenseTemplateService {
 
     /** Dosya yoksa kullanılacak varsayılan liste. */
     private static List<ExpenseTemplate> defaultTemplates() {
-        return Arrays.asList(
+        return List.of(
                 new ExpenseTemplate("Domates",   "🍅", "kg"),
                 new ExpenseTemplate("Biber",     "🌶️", "kg"),
                 new ExpenseTemplate("Soğan",     "🧅", "kg"),
