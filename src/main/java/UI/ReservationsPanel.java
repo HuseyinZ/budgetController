@@ -14,6 +14,7 @@ import java.awt.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
@@ -106,7 +107,7 @@ public class ReservationsPanel extends JPanel {
 
     private void reload() {
         Date d = (Date) dateSpinner.getValue();
-        LocalDate date = d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        LocalDate date = toLocalDate(d);
         List<Reservation> rows = service.listForDate(date);
         model.setRowCount(0);
         for (Reservation r : rows) {
@@ -167,11 +168,9 @@ public class ReservationsPanel extends JPanel {
         g.weightx = 1;
 
         Date selectedDay = (Date) dateSpinner.getValue();
-        LocalDate baseDate = selectedDay.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
-        Date startDefault = Date.from(baseDate.atTime(LocalTime.of(19, 0))
-                .atZone(java.time.ZoneId.systemDefault()).toInstant());
-        Date endDefault = Date.from(baseDate.atTime(LocalTime.of(21, 0))
-                .atZone(java.time.ZoneId.systemDefault()).toInstant());
+        LocalDate baseDate = toLocalDate(selectedDay);
+        Date startDefault = toDate(baseDate, LocalTime.of(19, 0));
+        Date endDefault = toDate(baseDate, LocalTime.of(21, 0));
 
         // Masa: gerçek restoran masalarından picker
         final int[] selectedTableNo = { 0 };
@@ -218,10 +217,8 @@ public class ReservationsPanel extends JPanel {
                             "Uyarı", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
-                LocalDateTime s = ((Date) startF.getValue()).toInstant()
-                        .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
-                LocalDateTime e = ((Date) endF.getValue()).toInstant()
-                        .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+                LocalDateTime s = toLocalDateTime((Date) startF.getValue());
+                LocalDateTime e = toLocalDateTime((Date) endF.getValue());
                 String name = nameF.getText().trim();
                 String phone = phoneF.getText().trim();
                 int party = ((Number) partyF.getValue()).intValue();
@@ -251,6 +248,18 @@ public class ReservationsPanel extends JPanel {
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+    private static LocalDate toLocalDate(Date date) {
+        return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private static Date toDate(LocalDate date, LocalTime time) {
+        return Date.from(date.atTime(time).atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    private static LocalDateTime toLocalDateTime(Date date) {
+        return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     private void addRow(JPanel p, GridBagConstraints g, int row, String label, JComponent comp) {
