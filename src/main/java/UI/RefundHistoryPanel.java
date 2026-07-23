@@ -99,22 +99,24 @@ public class RefundHistoryPanel extends JPanel {
 
         // Renk kodlu satırlar — action_type sütununa göre
         table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            private final java.util.Map<RefundLog.ActionType, Color> rowColors = java.util.Map.of(
+                    RefundLog.ActionType.CLEAR_TABLE, CLEAR_TABLE_ROW_COLOR,
+                    RefundLog.ActionType.REMOVE_ITEM, REMOVE_ITEM_ROW_COLOR,
+                    RefundLog.ActionType.DECREASE_ITEM, DECREASE_ITEM_ROW_COLOR,
+                    RefundLog.ActionType.CANCEL_ORDER, CANCEL_ORDER_ROW_COLOR
+            );
+
             @Override
             public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected,
                                                             boolean hasFocus, int row, int col) {
                 Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
                 if (!isSelected) {
                     RefundLog log = tableModel.rowAt(t.convertRowIndexToModel(row));
-                    if (log != null && log.getActionType() != null) {
-                        switch (log.getActionType()) {
-                            case CLEAR_TABLE  -> c.setBackground(CLEAR_TABLE_ROW_COLOR);
-                            case REMOVE_ITEM  -> c.setBackground(REMOVE_ITEM_ROW_COLOR);
-                            case DECREASE_ITEM-> c.setBackground(DECREASE_ITEM_ROW_COLOR);
-                            case CANCEL_ORDER -> c.setBackground(CANCEL_ORDER_ROW_COLOR);
-                        }
-                    } else {
-                        c.setBackground(Color.WHITE);
-                    }
+                    RefundLog.ActionType actionType = log == null ? null : log.getActionType();
+                    Color rowColor = actionType == null
+                            ? Color.WHITE
+                            : rowColors.getOrDefault(actionType, Color.WHITE);
+                    c.setBackground(rowColor);
                 }
                 return c;
             }
