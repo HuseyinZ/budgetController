@@ -202,8 +202,7 @@ public class HourlyHeatmapPanel extends JPanel {
             int h = getHeight() - padTop - padBot;
 
             // Arka plan
-            g2.setColor(Color.WHITE);
-            g2.fillRect(0, 0, getWidth(), getHeight());
+            paintBackground(g2);
 
             // Aktif moda göre veri dizisi seç
             boolean amountMode = (mode == Mode.AMOUNT);
@@ -220,6 +219,25 @@ public class HourlyHeatmapPanel extends JPanel {
             Color textColor  = amountMode ? new Color(27, 94, 32)    : new Color(20, 60, 100);
 
             // Y ekseni grid + etiketler
+            paintYAxisGridAndLabels(g2, padLeft, padTop, w, h, maxVal, amountMode);
+
+            // X ekseni saat etiketleri + barlar
+            paintHourlyBarsAndLabels(g2, padLeft, padTop, w, h, maxVal, amountMode,
+                    values, colorLight, colorDark, textColor);
+
+            // Eksen çizgileri
+            paintAxesAndTitles(g2, padLeft, padTop, w, h, amountMode);
+
+            g2.dispose();
+        }
+
+        private void paintBackground(Graphics2D g2) {
+            g2.setColor(Color.WHITE);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+        }
+
+        private void paintYAxisGridAndLabels(Graphics2D g2, int padLeft, int padTop,
+                                             int w, int h, double maxVal, boolean amountMode) {
             int gridSteps = 5;
             g2.setFont(g2.getFont().deriveFont(11f));
             for (int i = 0; i <= gridSteps; i++) {
@@ -233,8 +251,12 @@ public class HourlyHeatmapPanel extends JPanel {
                         : String.valueOf((int) Math.round(stepValue));
                 g2.drawString(label, padLeft - 60, y + 4);
             }
+        }
 
-            // X ekseni saat etiketleri + barlar
+        private void paintHourlyBarsAndLabels(Graphics2D g2, int padLeft, int padTop,
+                                              int w, int h, double maxVal, boolean amountMode,
+                                              double[] values, Color colorLight, Color colorDark,
+                                              Color textColor) {
             double barWidth = w / 24.0;
             for (int hr = 0; hr < 24; hr++) {
                 double xBar = padLeft + hr * barWidth;
@@ -268,8 +290,10 @@ public class HourlyHeatmapPanel extends JPanel {
                     g2.drawString(t, tx, ty);
                 }
             }
+        }
 
-            // Eksen çizgileri
+        private void paintAxesAndTitles(Graphics2D g2, int padLeft, int padTop,
+                                        int w, int h, boolean amountMode) {
             g2.setColor(Color.GRAY);
             g2.drawLine(padLeft, padTop, padLeft, padTop + h);
             g2.drawLine(padLeft, padTop + h, padLeft + w, padTop + h);
@@ -284,8 +308,6 @@ public class HourlyHeatmapPanel extends JPanel {
             String yTitle = amountMode ? "Satış Tutarı (₺)" : "İşlem Sayısı";
             g2.drawString(yTitle, -(padTop + h/2 + 40), 14);
             g2.setTransform(old);
-
-            g2.dispose();
         }
 
         /** "12.5K" veya "750" gibi kısa para formatı (eksen etiketleri için). */
