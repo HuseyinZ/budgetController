@@ -152,7 +152,7 @@ public class RefundHistoryPanel extends JPanel {
 
     private void updateSummary() {
         int count = tableModel.getRowCount();
-        BigDecimal total = MoneyUtil.sumAmounts(tableModel.filtered, RefundLog::getAmount);
+        BigDecimal total = MoneyUtil.sumAmounts(tableModel.filteredRows(), RefundLog::getAmount);
         summaryLabel.setText("Toplam: " + count + " kayıt   |   Toplam iade tutarı: "
                 + MONEY_FMT.format(total));
     }
@@ -204,6 +204,10 @@ public class RefundHistoryPanel extends JPanel {
         RefundLog rowAt(int row) {
             if (row < 0 || row >= filtered.size()) return null;
             return filtered.get(row);
+        }
+
+        private List<RefundLog> filteredRows() {
+            return filtered;
         }
 
         @Override public int getRowCount() { return filtered.size(); }
