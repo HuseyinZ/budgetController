@@ -95,9 +95,7 @@ public class PaymentService {
                             pay.getPaidAt() == null ? "" : pay.getPaidAt().toString()
                     );
                 }
-                for (int i = 0; i <= 5; i++) {
-                    sheet.autoSizeColumn(i);
-                }
+                autoSizeColumns(sheet, 6);
                 try (FileOutputStream out = new FileOutputStream(filePath)) {
                     workbook.write(out);
                 }
@@ -109,6 +107,12 @@ public class PaymentService {
         Row header = sheet.createRow(0);
         for (int columnIndex = 0; columnIndex < columnNames.length; columnIndex++) {
             header.createCell(columnIndex).setCellValue(columnNames[columnIndex]);
+        }
+    }
+
+    static void autoSizeColumns(Sheet sheet, int columnCount) {
+        for (int columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+            sheet.autoSizeColumn(columnIndex);
         }
     }
 
