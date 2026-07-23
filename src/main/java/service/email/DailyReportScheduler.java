@@ -109,7 +109,7 @@ public class DailyReportScheduler {
                         + "Otomatik Gün Sonu raporu ekteki Excel dosyasındadır.\n\n"
                         + "— Dağkapı Ciğercisi POS";
                 emailService.sendWithAttachment(to, subject, body, fileName, bytes,
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                        ReportWorkbookBuilder.XLSX_MIME_TYPE);
                 lastSentDay = today;
                 // GÜVENLİK: alıcı adresi log'da maskelenir.
                 LOG.info("Otomatik Gün Sonu raporu gönderildi: {} → {}",

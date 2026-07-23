@@ -623,7 +623,7 @@ public class DailyReportPanel extends JPanel {
                 try {
                     byte[] bytes = buildExcelBytes(meta);
                     emailService.sendWithAttachment(finalTo, subject, body, fileName, bytes,
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                            service.report.ReportWorkbookBuilder.XLSX_MIME_TYPE);
                     return true;
                 } catch (Exception ex) {
                     errorMessage = ex.getMessage();
