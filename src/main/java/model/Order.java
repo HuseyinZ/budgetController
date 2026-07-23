@@ -28,7 +28,7 @@ public class Order extends BaseEntity {
     public Order(Long tableId, Long waiterId, OrderStatus status) {
         this.tableId = tableId;
         this.waiterId = waiterId;
-        this.status = (status != null) ? status : OrderStatus.PENDING; // <-- düzeltildi
+        this.status = (status != null) ? status : OrderStatus.PENDING;
         this.orderDate = LocalDateTime.now();
     }
 
