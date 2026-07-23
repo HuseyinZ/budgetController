@@ -147,10 +147,7 @@ public final class ReportWorkbookBuilder {
                 int[] c = countByMethod.get(m);
                 BigDecimal s = sumByMethod.getOrDefault(m, BigDecimal.ZERO);
                 if (c == null && s.signum() == 0) continue;
-                Row row = sheet.createRow(r++);
-                row.createCell(0).setCellValue(describeMethod(m));
-                row.createCell(1).setCellValue(c == null ? 0 : c[0]);
-                row.createCell(2).setCellValue(formatTl(s));
+                writeDistributionRow(sheet, r++, describeMethod(m), c == null ? 0 : c[0], s);
             }
 
             // Saatlik dağılım
@@ -168,10 +165,8 @@ public final class ReportWorkbookBuilder {
             }
             for (int h = 0; h < 24; h++) {
                 if (perHour[h] == 0 && sumPerHour[h].signum() == 0) continue;
-                Row row = sheet.createRow(r++);
-                row.createCell(0).setCellValue(String.format("%02d:00", h));
-                row.createCell(1).setCellValue(perHour[h]);
-                row.createCell(2).setCellValue(formatTl(sumPerHour[h]));
+                writeDistributionRow(sheet, r++, String.format("%02d:00", h),
+                        perHour[h], sumPerHour[h]);
             }
 
             // Ürün satış özeti
@@ -224,6 +219,14 @@ public final class ReportWorkbookBuilder {
     // ============================================================
     //   Yardımcılar
     // ============================================================
+
+    private static void writeDistributionRow(Sheet sheet, int rowIndex,
+                                             String label, int count, BigDecimal amount) {
+        Row row = sheet.createRow(rowIndex);
+        row.createCell(0).setCellValue(label);
+        row.createCell(1).setCellValue(count);
+        row.createCell(2).setCellValue(formatTl(amount));
+    }
 
     private static void createBoldSectionHeader(Sheet sheet, int rowIndex,
                                                 String title, CellStyle bold) {
