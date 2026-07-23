@@ -215,7 +215,7 @@ public class AdminPanel extends JPanel {
         JTextField fullNameField = new JTextField(15);
         // ADMIN UI'dan oluşturulamaz — sadece KASIYER ve GARSON seçilebilir.
         // Yeni admin gerekirse DB'den veya kod tarafından ekle.
-        Role[] uiRoles = java.util.Arrays.stream(Role.values())
+        Role[] uiRoles = Arrays.stream(Role.values())
                 .filter(r -> r != Role.ADMIN)
                 .toArray(Role[]::new);
         JComboBox<Role> roleComboBox = new JComboBox<>(uiRoles);
@@ -227,43 +227,10 @@ public class AdminPanel extends JPanel {
         gbc.insets = new Insets(4, 4, 4, 4);
         gbc.anchor = GridBagConstraints.WEST;
 
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        form.add(new JLabel("Kullanıcı Adı"), gbc);
-        gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1;
-        form.add(usernameField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Ad Soyad"), gbc);
-        gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1;
-        form.add(fullNameField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Rol"), gbc);
-        gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1;
-        form.add(roleComboBox, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("İlk Parola"), gbc);
-        gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1;
-        form.add(passwordField, gbc);
+        addFormRow(form, gbc, 0, "Kullanıcı Adı", usernameField);
+        addFormRow(form, gbc, 1, "Ad Soyad", fullNameField);
+        addFormRow(form, gbc, 2, "Rol", roleComboBox);
+        addFormRow(form, gbc, 3, "İlk Parola", passwordField);
 
         int result = JOptionPane.showConfirmDialog(
                 this,
@@ -310,6 +277,19 @@ public class AdminPanel extends JPanel {
             }
             passwordField.setText("");
         }
+    }
+
+    private static void addFormRow(JPanel form, GridBagConstraints gbc, int row, String labelText,
+                                   Component component) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        form.add(new JLabel(labelText), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1;
+        form.add(component, gbc);
     }
 
     private String resolveCreateUserError(RuntimeException ex) {
