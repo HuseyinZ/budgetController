@@ -29,11 +29,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 public class ExpensesPanel extends JPanel {
     private static final int COL_ID = 0;
-    private static final int COL_DATE = 1;
-    private static final int COL_DESCRIPTION = 2;
-    private static final int COL_AMOUNT = 3;
-    private static final int COL_USER = 4;
-    private static final int COL_CREATED = 5;
+    private static final String ERROR_TITLE = "Hata";
+    private static final String WARNING_TITLE = "Uyarı";
     private final AppState appState;
     private final User currentUser;
     private final DefaultTableModel tableModel;
@@ -172,7 +169,7 @@ public class ExpensesPanel extends JPanel {
             if (kgStr == null) return;
             BigDecimal kg = parseDecimal(kgStr);
             if (kg == null || kg.signum() <= 0) {
-                showMessageDialog("Geçerli kg girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Geçerli kg girin", ERROR_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             String priceStr = JOptionPane.showInputDialog(this,
@@ -181,7 +178,7 @@ public class ExpensesPanel extends JPanel {
             if (priceStr == null) return;
             BigDecimal price = parseDecimal(priceStr);
             if (price == null || price.signum() < 0) {
-                showMessageDialog("Geçerli fiyat girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Geçerli fiyat girin", ERROR_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             BigDecimal total = kg.multiply(price);
@@ -194,7 +191,7 @@ public class ExpensesPanel extends JPanel {
             if (amtStr == null) return;
             BigDecimal amount = parseDecimal(amtStr);
             if (amount == null || amount.signum() <= 0) {
-                showMessageDialog("Geçerli tutar girin", "Hata", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Geçerli tutar girin", ERROR_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             addTemplateExpense(t, amount,
@@ -213,7 +210,7 @@ public class ExpensesPanel extends JPanel {
             reloadExpenses();
         } catch (RuntimeException ex) {
             showMessageDialog("Gider eklenemedi: " + ex.getMessage(),
-                    "Hata", JOptionPane.ERROR_MESSAGE);
+                    ERROR_TITLE, JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -370,7 +367,7 @@ public class ExpensesPanel extends JPanel {
     private void addExpense() {
         String description = descriptionField.getText().trim();
         if (description.isEmpty()) {
-            showMessageDialog("Açıklama gerekli", "Uyarı", JOptionPane.WARNING_MESSAGE);
+            showMessageDialog("Açıklama gerekli", WARNING_TITLE, JOptionPane.WARNING_MESSAGE);
             return;
         }
         LocalDate date = convertToDate(expenseDateSpinner);
@@ -379,11 +376,11 @@ public class ExpensesPanel extends JPanel {
             double kg = ((Number) kgSpinner.getValue()).doubleValue();
             double kgPrice = ((Number) kgPriceSpinner.getValue()).doubleValue();
             if (kg <= 0) {
-                showMessageDialog("Kilo sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Kilo sıfırdan büyük olmalı", WARNING_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             if (kgPrice <= 0) {
-                showMessageDialog("Kg fiyatı sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Kg fiyatı sıfırdan büyük olmalı", WARNING_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             try {
@@ -394,7 +391,7 @@ public class ExpensesPanel extends JPanel {
             } catch (RuntimeException ex) {
                 showMessageDialog(
                         "Gider eklenemedi: " + ex.getMessage(),
-                        "Hata", JOptionPane.ERROR_MESSAGE);
+                        ERROR_TITLE, JOptionPane.ERROR_MESSAGE);
                 return;
             }
             descriptionField.setText("");
@@ -404,7 +401,7 @@ public class ExpensesPanel extends JPanel {
         } else {
             double amountValue = ((Number) amountSpinner.getValue()).doubleValue();
             if (amountValue <= 0) {
-                showMessageDialog("Tutar sıfırdan büyük olmalı", "Uyarı", JOptionPane.WARNING_MESSAGE);
+                showMessageDialog("Tutar sıfırdan büyük olmalı", WARNING_TITLE, JOptionPane.WARNING_MESSAGE);
                 return;
             }
             appState.addExpense(BigDecimal.valueOf(amountValue), description, date, currentUser);
@@ -468,7 +465,7 @@ public class ExpensesPanel extends JPanel {
         }
         Long expenseId = resolveExpenseId(modelRow);
         if (expenseId == null || expenseId <= 0) {
-            showMessageDialog("Seçili gider silinemedi", "Hata", JOptionPane.ERROR_MESSAGE);
+            showMessageDialog("Seçili gider silinemedi", ERROR_TITLE, JOptionPane.ERROR_MESSAGE);
             return;
         }
         int confirm = JOptionPane.showConfirmDialog(this,
@@ -487,7 +484,7 @@ public class ExpensesPanel extends JPanel {
             if (message == null || message.isBlank()) {
                 message = "Gider silinemedi.";
             }
-            showMessageDialog(message, "Hata", JOptionPane.ERROR_MESSAGE);
+            showMessageDialog(message, ERROR_TITLE, JOptionPane.ERROR_MESSAGE);
         } finally {
             updateDeleteButtonState();
         }
@@ -543,7 +540,7 @@ public class ExpensesPanel extends JPanel {
             }
             showMessageDialog("Excel dosyası kaydedildi", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
-            showMessageDialog("Excel kaydedilemedi: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+            showMessageDialog("Excel kaydedilemedi: " + ex.getMessage(), ERROR_TITLE, JOptionPane.ERROR_MESSAGE);
         }
     }
 
