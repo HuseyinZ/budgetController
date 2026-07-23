@@ -32,13 +32,17 @@ public class Product extends BaseEntity {
     }
 
     public void setName(String name) {
-        if (name == null || (name = name.trim()).isEmpty()) {
+        if (name == null) {
             throw new IllegalArgumentException("name boş olamaz");
         }
-        if (name.length() > NAME_MAX) {
+        String trimmedName = name.trim();
+        if (trimmedName.isEmpty()) {
+            throw new IllegalArgumentException("name boş olamaz");
+        }
+        if (trimmedName.length() > NAME_MAX) {
             throw new IllegalArgumentException("name uzun");
         }
-        this.name = name;
+        this.name = trimmedName;
     }
 
     public Long getCategoryId() {
