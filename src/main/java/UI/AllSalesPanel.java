@@ -5,6 +5,9 @@ import model.MoneyUtil;
 import model.PaymentMethod;
 import state.AppState;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -41,6 +44,8 @@ import java.util.Objects;
  * <p>Erişim: ADMIN-only (DashboardView'da filtrelenir).
  */
 public class AllSalesPanel extends JPanel {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AllSalesPanel.class);
 
     private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -306,6 +311,7 @@ public class AllSalesPanel extends JPanel {
                     addItemRows(rs, m, true);
                 }
             } catch (SQLException ex) {
+                LOG.debug("Order item notes unavailable; using fallback query: {}", ex.getMessage());
                 noteAvailable = false;
             }
             if (!noteAvailable) {
@@ -315,7 +321,8 @@ public class AllSalesPanel extends JPanel {
                     try (ResultSet rs = ps.executeQuery()) {
                         addItemRows(rs, m, false);
                     }
-                } catch (SQLException ignored) {
+                } catch (SQLException ex) {
+                    LOG.warn("Order item fallback query failed: {}", ex.getMessage());
                 }
             }
             if (m.getRowCount() == 0) {
