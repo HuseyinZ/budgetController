@@ -104,6 +104,24 @@ class KitchenRouterTest {
         assertTrue(grouped.isEmpty(), "Pasif yazıcı atlanmalı");
     }
 
+    @Test
+    void repeated_missing_override_printer_is_looked_up_once() {
+        FakeProductDAO products = new FakeProductDAO(Collections.emptyMap());
+        FakeKitchenPrinterDAO printers = new FakeKitchenPrinterDAO(Collections.emptyMap());
+        FakeRouteDAO routes = new FakeRouteDAO(Collections.emptyMap());
+
+        OrderItem first = newItem(null, 1, "First");
+        first.setKitchenOverrideId(99);
+        OrderItem second = newItem(null, 1, "Second");
+        second.setKitchenOverrideId(99);
+
+        KitchenRouter router = new KitchenRouter(printers, routes, products);
+        Map<KitchenPrinter, List<OrderItem>> grouped = router.routeItems(List.of(first, second));
+
+        assertTrue(grouped.isEmpty());
+        assertEquals(1, printers.findByIdCallsFor(99));
+    }
+
     // ---- yardımcılar ----
 
     private static OrderItem newItem(Long productId, int qty, String name) {
@@ -134,17 +152,24 @@ class KitchenRouterTest {
 
     static class FakeKitchenPrinterDAO implements KitchenPrinterDAO {
         private final Map<Integer, KitchenPrinter> store;
+        private final Map<Integer, Integer> findByIdCalls = new HashMap<>();
         FakeKitchenPrinterDAO(Map<Integer, KitchenPrinter> store) { this.store = store; }
         @Override public Integer create(KitchenPrinter e)        { throw new UnsupportedOperationException(); }
         @Override public void update(KitchenPrinter e)           { store.put(e.getId().intValue(), e); }
         @Override public void deleteById(Integer id)             { store.remove(id); }
-        @Override public Optional<KitchenPrinter> findById(Integer id) { return Optional.ofNullable(store.get(id)); }
+        @Override public Optional<KitchenPrinter> findById(Integer id) {
+            findByIdCalls.merge(id, 1, Integer::sum);
+            return Optional.ofNullable(store.get(id));
+        }
         @Override public List<KitchenPrinter> findAll(int o, int l)    { return new ArrayList<>(store.values()); }
         @Override public Optional<KitchenPrinter> findByCode(String c) {
             return store.values().stream().filter(p -> c.equals(p.getCode())).findFirst();
         }
         @Override public List<KitchenPrinter> findActive() {
             return store.values().stream().filter(KitchenPrinter::isActive).toList();
+        }
+        int findByIdCallsFor(Integer id) {
+            return findByIdCalls.getOrDefault(id, 0);
         }
     }
 
