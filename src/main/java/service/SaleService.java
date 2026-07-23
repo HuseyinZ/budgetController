@@ -85,9 +85,7 @@ public class SaleService {
                 row.createCell(4).setCellValue(paidAt == null ? "N/A" : paidAt.toString());
             }
 
-            for (int col = 0; col <= 4; col++) {
-                sheet.autoSizeColumn(col);
-            }
+            PaymentService.autoSizeColumns(sheet, 5);
         });
     }
 
@@ -130,9 +128,7 @@ public class SaleService {
             totalRow.createCell(1).setCellValue(MoneyUtil.two(monthTotal).toPlainString());
             totalRow.createCell(2).setCellValue(monthCount);
 
-            sheet.autoSizeColumn(0);
-            sheet.autoSizeColumn(1);
-            sheet.autoSizeColumn(2);
+            PaymentService.autoSizeColumns(sheet, 3);
         });
     }
 
