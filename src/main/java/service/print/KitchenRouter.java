@@ -112,8 +112,10 @@ public class KitchenRouter {
 
     private KitchenPrinter resolveActivePrinter(Integer printerId,
                                                  Map<Integer, KitchenPrinter> printerCache) {
-        KitchenPrinter printer = printerCache.computeIfAbsent(printerId,
-                id -> printerDAO.findById(id).orElse(null));
+        if (!printerCache.containsKey(printerId)) {
+            printerCache.put(printerId, printerDAO.findById(printerId).orElse(null));
+        }
+        KitchenPrinter printer = printerCache.get(printerId);
         return printer != null && printer.isActive() ? printer : null;
     }
 
