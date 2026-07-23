@@ -2,7 +2,6 @@ package state;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Objects;
 
 public class OrderLogEntry {
     public static final String ACTOR_SEPARATOR = " :: ";
@@ -60,7 +59,7 @@ public class OrderLogEntry {
         if (actionPart.isEmpty()) {
             actionPart = trimmed;
         }
-        return new ParsedLog(Objects.toString(actorPart, ""), Objects.toString(actionPart, ""));
+        return new ParsedLog(actorPart, actionPart);
     }
 
     private record ParsedLog(String actor, String action) {}
