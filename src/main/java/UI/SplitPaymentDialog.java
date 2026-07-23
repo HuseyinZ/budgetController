@@ -121,10 +121,7 @@ public class SplitPaymentDialog extends JDialog {
         gc.gridx = 1; gc.gridwidth = 2;
         JButton goBtn = new JButton("Bu sayıyla devam →");
         goBtn.setFont(goBtn.getFont().deriveFont(Font.BOLD, 14f));
-        goBtn.setBackground(new Color(33, 150, 243));
-        goBtn.setForeground(Color.WHITE);
-        goBtn.setOpaque(true);
-        goBtn.setBorderPainted(false);
+        styleColoredButton(goBtn, new Color(33, 150, 243));
         goBtn.setPreferredSize(new Dimension(200, 48));
         goBtn.addActionListener(e -> {
             personCount = (Integer) countSpinner.getValue();
@@ -147,16 +144,20 @@ public class SplitPaymentDialog extends JDialog {
         JButton btn = new JButton(n + " Kişi");
         btn.setFont(btn.getFont().deriveFont(Font.BOLD, 22f));
         btn.setPreferredSize(new Dimension(140, 80));
-        btn.setBackground(new Color(76, 175, 80));
-        btn.setForeground(Color.WHITE);
-        btn.setOpaque(true);
-        btn.setBorderPainted(false);
+        styleColoredButton(btn, new Color(76, 175, 80));
         btn.setFocusPainted(false);
         btn.addActionListener(e -> {
             personCount = n;
             goToStep2();
         });
         return btn;
+    }
+
+    private void styleColoredButton(JButton button, Color backgroundColor) {
+        button.setBackground(backgroundColor);
+        button.setForeground(Color.WHITE);
+        button.setOpaque(true);
+        button.setBorderPainted(false);
     }
 
     // ============================================================
@@ -183,10 +184,7 @@ public class SplitPaymentDialog extends JDialog {
 
         JButton confirm = new JButton("Onayla ve Tahsil Et");
         confirm.setFont(confirm.getFont().deriveFont(Font.BOLD, 14f));
-        confirm.setBackground(new Color(46, 125, 50));
-        confirm.setForeground(Color.WHITE);
-        confirm.setOpaque(true);
-        confirm.setBorderPainted(false);
+        styleColoredButton(confirm, new Color(46, 125, 50));
         confirm.setPreferredSize(new Dimension(220, 48));
         confirm.addActionListener(e -> finalizePayment());
         south.add(confirm);
@@ -262,10 +260,7 @@ public class SplitPaymentDialog extends JDialog {
         equalSplitBtn.setFont(equalSplitBtn.getFont().deriveFont(Font.BOLD, 12f));
         equalSplitBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         equalSplitBtn.setMaximumSize(new Dimension(140, 32));
-        equalSplitBtn.setBackground(new Color(33, 150, 243));
-        equalSplitBtn.setForeground(Color.WHITE);
-        equalSplitBtn.setOpaque(true);
-        equalSplitBtn.setBorderPainted(false);
+        styleColoredButton(equalSplitBtn, new Color(33, 150, 243));
         equalSplitBtn.setFocusPainted(false);
         equalSplitBtn.addActionListener(e -> {
             partAmounts.clear();
