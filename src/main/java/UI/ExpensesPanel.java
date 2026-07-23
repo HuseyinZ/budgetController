@@ -267,47 +267,29 @@ public class ExpensesPanel extends JPanel {
         panel.add(modePanel, gc);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Gider Tarihi"), gc);
         expenseDateSpinner.setEditor(new JSpinner.DateEditor(expenseDateSpinner, "dd-MM-yyyy"));
-        gc.gridx = 1;
-        panel.add(expenseDateSpinner, gc);
+        addLabeledRow(panel, gc, row, "Gider Tarihi", expenseDateSpinner);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Açıklama / Ürün"), gc);
-        gc.gridx = 1;
-        panel.add(descriptionField, gc);
+        addLabeledRow(panel, gc, row, "Açıklama / Ürün", descriptionField);
 
         // -- Manuel mod alanı --
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Tutar"), gc);
         amountSpinner.setEditor(new JSpinner.NumberEditor(amountSpinner, "#,##0.00"));
-        gc.gridx = 1;
-        panel.add(amountSpinner, gc);
+        addLabeledRow(panel, gc, row, "Tutar", amountSpinner);
 
         // -- Kg modu alanları --
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Kilo (kg)"), gc);
         kgSpinner.setEditor(new JSpinner.NumberEditor(kgSpinner, "#,##0.000"));
-        gc.gridx = 1;
-        panel.add(kgSpinner, gc);
+        addLabeledRow(panel, gc, row, "Kilo (kg)", kgSpinner);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Kg Fiyatı (₺/kg)"), gc);
         kgPriceSpinner.setEditor(new JSpinner.NumberEditor(kgPriceSpinner, "#,##0.00"));
-        gc.gridx = 1;
-        panel.add(kgPriceSpinner, gc);
+        addLabeledRow(panel, gc, row, "Kg Fiyatı (₺/kg)", kgPriceSpinner);
 
         row++;
-        gc.gridx = 0; gc.gridy = row;
-        panel.add(new JLabel("Toplam"), gc);
         kgCalcLabel.setFont(kgCalcLabel.getFont().deriveFont(Font.BOLD));
-        gc.gridx = 1;
-        panel.add(kgCalcLabel, gc);
+        addLabeledRow(panel, gc, row, "Toplam", kgCalcLabel);
 
         // Toplam canlı hesaplama
         javax.swing.event.ChangeListener calc = e -> refreshKgTotal();
@@ -339,6 +321,15 @@ public class ExpensesPanel extends JPanel {
 
         refreshExpenseFormMode();
         return panel;
+    }
+
+    private static void addLabeledRow(JPanel panel, GridBagConstraints gc, int row,
+                                      String label, Component component) {
+        gc.gridx = 0;
+        gc.gridy = row;
+        panel.add(new JLabel(label), gc);
+        gc.gridx = 1;
+        panel.add(component, gc);
     }
 
     /** Mod değiştiğinde alanları aktif/pasif ayarlar. */
