@@ -14,7 +14,7 @@ public class User extends BaseEntity {
 
     private String username;
     private String passwordHash;
-    private String fullName;   // <-- eklendi
+    private String fullName;
     private Role role = Role.KASIYER;
     private boolean active = true;
 
