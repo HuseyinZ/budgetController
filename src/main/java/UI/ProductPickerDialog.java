@@ -609,12 +609,6 @@ public class ProductPickerDialog extends JDialog {
     }
 
     /**
-     * Ürünün kategorisini "yemek" kabul ediyor muyuz?
-     * <p>Heuristik: kategori adı "yemek", "ana yemek", "kebap", "ızgara", "pide",
-     * "lahmacun", "ciğer", "köfte", "tavuk" gibi kelimeler içeriyorsa.
-     * <p>İleride bir flag/sütun eklenebilir.
-     */
-    /**
      * Ürünün "içecek" kategorisinde olup olmadığını tespit eder.
      * İçecek ürünleri için porsiyon/şiş yerine sadece "adet" sorulur.
      *
@@ -650,6 +644,12 @@ public class ProductPickerDialog extends JDialog {
         }
     }
 
+    /**
+     * Ürünün kategorisini "yemek" kabul ediyor muyuz?
+     * <p>Heuristik: kategori adı "yemek", "ana yemek", "kebap", "ızgara", "pide",
+     * "lahmacun", "ciğer", "köfte", "tavuk" gibi kelimeler içeriyorsa.
+     * <p>İleride bir flag/sütun eklenebilir.
+     */
     private boolean isFoodCategory(Product product) {
         if (product == null || product.getCategoryId() == null) return false;
         try {
