@@ -91,8 +91,7 @@ public class SaleService {
 
     public boolean exportMonthlySalesReport(int year, int month, String filePath) {
         List<Payment> payments = paymentService.getPaymentsInMonth(year, month);
-        Map<LocalDate, BigDecimal> dailyTotal = new TreeMap<>();
-        Map<LocalDate, Integer> dailyCount = new TreeMap<>();
+        Map<LocalDate, DailySales> dailySales = new TreeMap<>();
         for (Payment p : payments) {
             LocalDateTime paidAt = p.getPaidAt();
             if (paidAt == null) {
@@ -100,8 +99,7 @@ public class SaleService {
             }
             LocalDate day = paidAt.toLocalDate();
             BigDecimal amount = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
-            dailyTotal.put(day, dailyTotal.getOrDefault(day, BigDecimal.ZERO).add(amount));
-            dailyCount.put(day, dailyCount.getOrDefault(day, 0) + 1);
+            dailySales.computeIfAbsent(day, ignored -> new DailySales()).add(amount);
         }
 
         return writeWorkbook(filePath, workbook -> {
@@ -111,16 +109,16 @@ public class SaleService {
             int rowIndex = 1;
             BigDecimal monthTotal = BigDecimal.ZERO;
             int monthCount = 0;
-            for (LocalDate day : dailyTotal.keySet()) {
-                BigDecimal dailyAmount = dailyTotal.get(day);
-                int salesCount = dailyCount.get(day);
+            for (Map.Entry<LocalDate, DailySales> entry : dailySales.entrySet()) {
+                LocalDate day = entry.getKey();
+                DailySales sales = entry.getValue();
                 Row row = sheet.createRow(rowIndex++);
                 row.createCell(0).setCellValue(day.toString());
-                BigDecimal amount = MoneyUtil.two(dailyAmount);
+                BigDecimal amount = MoneyUtil.two(sales.amount);
                 row.createCell(1).setCellValue(amount.toPlainString());
-                row.createCell(2).setCellValue(salesCount);
-                monthTotal = monthTotal.add(dailyAmount);
-                monthCount += salesCount;
+                row.createCell(2).setCellValue(sales.count);
+                monthTotal = monthTotal.add(sales.amount);
+                monthCount += sales.count;
             }
 
             Row totalRow = sheet.createRow(rowIndex);
@@ -130,6 +128,16 @@ public class SaleService {
 
             PaymentService.autoSizeColumns(sheet, 3);
         });
+    }
+
+    private static final class DailySales {
+        private BigDecimal amount = BigDecimal.ZERO;
+        private int count;
+
+        private void add(BigDecimal paymentAmount) {
+            amount = amount.add(paymentAmount);
+            count++;
+        }
     }
 
     private boolean writeWorkbook(String filePath, Consumer<Workbook> workbookWriter) {

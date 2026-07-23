@@ -74,6 +74,60 @@ class SaleServiceTest {
         assertEquals(new BigDecimal("5.50"), total);
     }
 
+    @Test
+    void exportMonthlyReportAggregatesPaymentsByDayAndWritesTotalRow() throws Exception {
+        Payment dayTwoPayment = createPayment("7.00", LocalDateTime.of(2024, 2, 2, 9, 0));
+        Payment firstDayOnePayment = createPayment("10.10", LocalDateTime.of(2024, 2, 1, 10, 0));
+        Payment secondDayOnePayment = createPayment("5.45", LocalDateTime.of(2024, 2, 1, 11, 0));
+        Payment dayTwoNullAmount = createPayment(null, LocalDateTime.of(2024, 2, 2, 12, 0));
+        Payment missingPaidAt = createPayment("100.00", null);
+
+        List<Payment> payments = List.of(
+                dayTwoPayment,
+                firstDayOnePayment,
+                secondDayOnePayment,
+                dayTwoNullAmount,
+                missingPaidAt);
+        PaymentService paymentService = new PaymentService(new StubPaymentDAO(new ArrayList<>(payments)));
+        SaleService saleService = new SaleService(paymentService, new UserService(new StubUserDAO(null)));
+
+        Path file = Files.createTempFile("monthly-sales", ".xlsx");
+        try {
+            assertTrue(saleService.exportMonthlySalesReport(2024, 2, file.toString()));
+
+            try (Workbook workbook = WorkbookFactory.create(new FileInputStream(file.toFile()))) {
+                assertEquals(1, workbook.getNumberOfSheets());
+                var sheet = workbook.getSheet("Sales_2024-2");
+                assertNotNull(sheet);
+                assertEquals(3, sheet.getLastRowNum());
+                assertEquals("Date", sheet.getRow(0).getCell(0).getStringCellValue());
+                assertEquals("Total Sales", sheet.getRow(0).getCell(1).getStringCellValue());
+                assertEquals("Number of Sales", sheet.getRow(0).getCell(2).getStringCellValue());
+
+                assertEquals("2024-02-01", sheet.getRow(1).getCell(0).getStringCellValue());
+                assertEquals("15.55", sheet.getRow(1).getCell(1).getStringCellValue());
+                assertEquals(2, sheet.getRow(1).getCell(2).getNumericCellValue());
+
+                assertEquals("2024-02-02", sheet.getRow(2).getCell(0).getStringCellValue());
+                assertEquals("7.00", sheet.getRow(2).getCell(1).getStringCellValue());
+                assertEquals(2, sheet.getRow(2).getCell(2).getNumericCellValue());
+
+                assertEquals("TOTAL", sheet.getRow(3).getCell(0).getStringCellValue());
+                assertEquals("22.55", sheet.getRow(3).getCell(1).getStringCellValue());
+                assertEquals(4, sheet.getRow(3).getCell(2).getNumericCellValue());
+            }
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    private static Payment createPayment(String amount, LocalDateTime paidAt) {
+        Payment payment = new Payment();
+        payment.setAmount(amount == null ? null : new BigDecimal(amount));
+        payment.setPaidAt(paidAt);
+        return payment;
+    }
+
     private static User createUser(Long id, String fullName) {
         User user = new User("user" + id, "secret", Role.ADMIN, fullName);
         user.setId(id);
