@@ -32,34 +32,26 @@ public class SettingsPanel extends JPanel {
         gc.insets = new Insets(4, 4, 4, 4);
         gc.anchor = GridBagConstraints.WEST;
 
-        int row = 0;
-        gc.gridx = 0; gc.gridy = row;
-        form.add(new JLabel("JDBC URL"), gc);
-        gc.gridx = 1;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        form.add(urlField, gc);
-
-        row++; gc.gridy = row; gc.gridx = 0; gc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Kullanıcı"), gc);
-        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL;
-        form.add(userField, gc);
-
-        row++; gc.gridy = row; gc.gridx = 0; gc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Parola"), gc);
-        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL;
-        form.add(passwordField, gc);
-
-        row++; gc.gridy = row; gc.gridx = 0; gc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Maksimum Havuz"), gc);
-        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL;
-        form.add(maxPoolField, gc);
-
-        row++; gc.gridy = row; gc.gridx = 0; gc.fill = GridBagConstraints.NONE;
-        form.add(new JLabel("Minimum Bekleme"), gc);
-        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL;
-        form.add(minIdleField, gc);
+        addLabeledRow(form, gc, 0, "JDBC URL", urlField);
+        addLabeledRow(form, gc, 1, "Kullanıcı", userField);
+        addLabeledRow(form, gc, 2, "Parola", passwordField);
+        addLabeledRow(form, gc, 3, "Maksimum Havuz", maxPoolField);
+        addLabeledRow(form, gc, 4, "Minimum Bekleme", minIdleField);
 
         return form;
+    }
+
+    private static void addLabeledRow(JPanel form, GridBagConstraints gc, int row,
+                                      String label, Component component) {
+        gc.gridx = 0;
+        gc.gridy = row;
+        gc.fill = GridBagConstraints.NONE;
+        form.add(new JLabel(label), gc);
+
+        gc.gridx = 1;
+        gc.gridy = row;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        form.add(component, gc);
     }
 
     private JPanel buildActions() {
