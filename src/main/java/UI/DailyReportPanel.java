@@ -17,7 +17,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -412,7 +411,7 @@ public class DailyReportPanel extends JPanel {
 
         BigDecimal totalSales = sum(payments);
         int orderCount = payments.size();
-        BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal netProfit = MoneyUtil.two(totalSales.subtract(totalExpense));
 
         totalSalesLbl.setText(MoneyUtil.formatTl(totalSales));
         totalExpenseLbl.setText(MoneyUtil.formatTl(totalExpense));
@@ -514,11 +513,7 @@ public class DailyReportPanel extends JPanel {
     }
 
     private BigDecimal sum(List<Payment> payments) {
-        BigDecimal sum = BigDecimal.ZERO;
-        for (Payment p : payments) {
-            if (p.getAmount() != null) sum = sum.add(p.getAmount());
-        }
-        return sum.setScale(2, RoundingMode.HALF_UP);
+        return MoneyUtil.two(MoneyUtil.sumAmounts(payments, Payment::getAmount));
     }
 
     private String describePaymentMethod(PaymentMethod method) {

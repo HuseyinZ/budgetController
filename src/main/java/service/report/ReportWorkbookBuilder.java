@@ -20,7 +20,6 @@ import state.ExpenseRecord;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -244,8 +243,7 @@ public final class ReportWorkbookBuilder {
     }
 
     private static BigDecimal sumPayments(List<Payment> payments) {
-        return MoneyUtil.sumAmounts(payments, Payment::getAmount)
-                .setScale(2, RoundingMode.HALF_UP);
+        return MoneyUtil.two(MoneyUtil.sumAmounts(payments, Payment::getAmount));
     }
 
     private static ReportData createReportData(boolean monthly,
@@ -253,9 +251,9 @@ public final class ReportWorkbookBuilder {
                                                List<Payment> payments,
                                                BigDecimal totalExpense,
                                                List<ProductSummaryRow> products,
-                                               List<ExpenseRecord> expenses) {
+        List<ExpenseRecord> expenses) {
         BigDecimal totalSales = sumPayments(payments);
-        BigDecimal netProfit = totalSales.subtract(totalExpense).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal netProfit = MoneyUtil.two(totalSales.subtract(totalExpense));
         return new ReportData(monthly, periodLabel, payments, totalSales,
                 totalExpense, netProfit, products, expenses);
     }
