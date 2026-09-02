@@ -1,5 +1,5 @@
 # ============================================================================
-#   Güvenlik CI — her PR'da + her gece
+#   Güvenlik CI — her PR'da + master push'larında
 #
 #   3 iş çalıştırır:
 #   1. dependency-check  → OWASP NVD taraması (CVSS ≥ 7 build fail)
@@ -16,9 +16,6 @@ on:
   push:
     branches: [main, master]
   pull_request:
-  schedule:
-    # Her gece 04:00 UTC (07:00 İstanbul) — yeni CVE'ler için
-    - cron: '0 4 * * *'
 
 permissions:
   contents: read
@@ -31,7 +28,7 @@ jobs:
   # ============================================================
   dependency-check:
     name: OWASP Dependency-Check
-    # PR'larda çalışmaz — NVD taraması uzun; master push + gece cron yeterli
+    # PR'larda çalışmaz — NVD taraması uzun; master push'ta çalışır
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 180
