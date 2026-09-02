@@ -18,14 +18,20 @@ import java.awt.*;
 import java.util.Objects;
 
 public class App {
-    private static final AppState APP_STATE = AppState.getInstance();
-    /** Periyodik MySQL yedek servisi — Singleton. */
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(App.class);
+
+    /**
+     * C1-c: AppState/ApiServer/scheduler artık static initializer'da DEĞİL, main içinde
+     * ve yalnız şema doğrulaması geçtikten sonra oluşturulur. (AppState kurucusu
+     * dining_tables gibi DAO işlemleri yapar — doğrulamadan önce DB'ye dokunulmamalı.)
+     */
+    private static AppState appState;
+    /** Periyodik MySQL yedek servisi — DB'ye dokunmadan yapılandırma okur; erken kurulabilir. */
     private static final BackupService BACKUP_SERVICE = new BackupService();
     /** REST API server — telefonla uzaktan erişim için. */
-    private static final ApiServer API_SERVER = new ApiServer(APP_STATE);
+    private static ApiServer apiServer;
     /** Otomatik Gün Sonu mail gönderimi — config'te kapalıysa devreye girmez. */
-    private static final service.email.DailyReportScheduler DAILY_REPORT_SCHEDULER =
-            new service.email.DailyReportScheduler(APP_STATE);
+    private static service.email.DailyReportScheduler dailyReportScheduler;
 
     /**
      * Dokunmatik ekran kullanımı için ortam değişkeni veya
@@ -44,16 +50,23 @@ public class App {
 
     public static void main(String[] args) {
 
-        // İlk olarak DB şema patch'lerini uygula — eski şemada sorunlu CHECK
-        // constraint'leri varsa kaldır (sipariş eklemede patlamaması için)
-        service.db.SchemaPatcher.applyAll();
+        // 1) SALT OKUMA şema doğrulaması — DAO işlemlerinden ÖNCE, aynı havuz üzerinden.
+        //    Runtime hiçbir DDL/DML çalıştırmaz; şema hazır değilse uygulama açılmaz.
+        if (!verifySchemaOrExit()) {
+            return;
+        }
+
+        // 2) Şema doğrulandı → uygulama durumu ve servisler
+        appState = AppState.getInstance();
+        apiServer = new ApiServer(appState);
+        dailyReportScheduler = new service.email.DailyReportScheduler(appState);
 
         // Otomatik yedek — ilk 5 dakika sonra başla, sonra her 60 dakikada bir
         BACKUP_SERVICE.startScheduler(5, 60);
 
         // Otomatik Gün Sonu e-posta gönderimi (email-config.properties'te aktifse)
-        DAILY_REPORT_SCHEDULER.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(DAILY_REPORT_SCHEDULER::stop,
+        dailyReportScheduler.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(dailyReportScheduler::stop,
                 "DailyReportScheduler-shutdown"));
 
         // REST API server — mobil/uzaktan erişim için
@@ -73,7 +86,7 @@ public class App {
                     }
                     if (service.api.SecurityConfig.httpEnabled()) {
                         int apiPort = service.api.SecurityConfig.httpPort();
-                        API_SERVER.start(apiPort);
+                        apiServer.start(apiPort);
                     } else {
                         System.out.println("REST API HTTP devre dışı (API_HTTP_ENABLED=false).");
                     }
@@ -158,7 +171,42 @@ public class App {
 
     private static void onLogin(@NotNull User user) {
         User authenticated = Objects.requireNonNull(user, "user");
-        DashboardView dashboard = new DashboardView(APP_STATE, authenticated);
+        DashboardView dashboard = new DashboardView(appState, authenticated);
         dashboard.open();
+    }
+
+    /**
+     * Şema doğrulaması (C1-c). Başarısızsa: log + kullanıcıya teknik detaysız dialog +
+     * çıkış kodu 2. Bağlantı/yapılandırma hatası da "hazır değil" sayılır (stack trace yok).
+     *
+     * @return {@code true} → devam; {@code false} → uygulama sonlandırıldı
+     */
+    private static boolean verifySchemaOrExit() {
+        service.db.SchemaStartupCheck.Result result;
+        try {
+            result = service.db.SchemaStartupCheck.verifyUsingAppPool();
+        } catch (RuntimeException | Error ex) {
+            // Örn. DataConnection.Db static init: config eksik / DB kapalı
+            LOG.error("Schema check could not run ({})", ex.getClass().getSimpleName());
+            result = new service.db.SchemaStartupCheck.Result(false,
+                    "database unreachable or configuration missing");
+        }
+        if (result.ok()) {
+            return true;
+        }
+        String userMessage = "Veritabanı şeması hazır değil — uygulama başlatılmadı.\n\n"
+                + service.db.SchemaStartupCheck.MESSAGE + "\n\n"
+                + "Ayrıntı: " + result.detail() + "\n(Teknik detaylar logs/errors.log dosyasında)";
+        System.err.println(service.db.SchemaStartupCheck.MESSAGE + " [" + result.detail() + "]");
+        if (!GraphicsEnvironment.isHeadless()) {
+            try {
+                JOptionPane.showMessageDialog(null, userMessage, "budgetController",
+                        JOptionPane.ERROR_MESSAGE);
+            } catch (RuntimeException ignored) {
+                // dialog gösterilemese de çıkış kodu ve log yeterli
+            }
+        }
+        System.exit(2);
+        return false;
     }
 }
