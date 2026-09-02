@@ -98,6 +98,52 @@ class DbConfigTest {
         assertTrue(s.contains("password=****"));
     }
 
+    // ---------------- Role.MIGRATION (merkezi çözümleme) ----------------
+
+    @Test
+    void migrationRoleRequiresExplicitMigrateCredentials() {
+        DbConfig.MissingConfigException ex = assertThrows(DbConfig.MissingConfigException.class,
+                () -> DbConfig.loadFor(DbConfig.Role.MIGRATION,
+                        props("jdbc:mysql://localhost/posdb", "budget_app", "app-secret"), NONE, NONE));
+        assertEquals(java.util.List.of(DbConfig.KEY_MIGRATE_USER, DbConfig.KEY_MIGRATE_PASSWORD), ex.missingKeys());
+        assertFalse(ex.getMessage().contains("app-secret"), "runtime parolası mesajda görünmemeli");
+    }
+
+    @Test
+    void migrationRoleNeverFallsBackToRuntimeUser() {
+        Properties p = props("jdbc:mysql://localhost/posdb", "budget_app", "app-secret");
+        p.setProperty(DbConfig.KEY_MIGRATE_PASSWORD, "mig-secret"); // yalnız parola var
+        DbConfig.MissingConfigException ex = assertThrows(DbConfig.MissingConfigException.class,
+                () -> DbConfig.loadFor(DbConfig.Role.MIGRATION, p, NONE, NONE));
+        assertEquals(java.util.List.of(DbConfig.KEY_MIGRATE_USER), ex.missingKeys());
+    }
+
+    @Test
+    void migrationRoleUsesMigrateIdentityWithSharedUrl() {
+        Properties p = props("jdbc:mysql://localhost/posdb", "budget_app", "app-secret");
+        p.setProperty(DbConfig.KEY_MIGRATE_USER, "budget_migrate");
+        p.setProperty(DbConfig.KEY_MIGRATE_PASSWORD, "mig-secret");
+        DbConfig cfg = DbConfig.loadFor(DbConfig.Role.MIGRATION, p, NONE, NONE);
+        assertEquals("budget_migrate", cfg.username());
+        assertEquals("mig-secret", cfg.password());
+        assertEquals("jdbc:mysql://localhost/posdb", cfg.jdbcUrl(), "URL runtime ile ortak");
+        // RUNTIME rolü aynı dosyadan uygulama kimliğini verir — iki rol karışmaz
+        assertEquals("budget_app", DbConfig.loadFor(DbConfig.Role.RUNTIME, p, NONE, NONE).username());
+    }
+
+    @Test
+    void migrationRoleHonoursSamePrecedence() {
+        Properties file = props("jdbc:mysql://localhost/posdb", "budget_app", "app-secret");
+        file.setProperty(DbConfig.KEY_MIGRATE_USER, "file-mig");
+        file.setProperty(DbConfig.KEY_MIGRATE_PASSWORD, "file-pass");
+        Function<String, String> env = map(Map.of(DbConfig.ENV_MIGRATE_USER, "env-mig",
+                DbConfig.ENV_MIGRATE_PASSWORD, "env-pass"));
+        Function<String, String> sys = map(Map.of(DbConfig.KEY_MIGRATE_USER, "sys-mig"));
+        DbConfig cfg = DbConfig.loadFor(DbConfig.Role.MIGRATION, file, sys, env);
+        assertEquals("sys-mig", cfg.username(), "sys > env > file — runtime ile aynı kural");
+        assertEquals("env-pass", cfg.password());
+    }
+
     @Test
     void invalidPoolSettingIsRejected() {
         Properties p = props("jdbc:mysql://localhost/posdb", "budget_app", "x");

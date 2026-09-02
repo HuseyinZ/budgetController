@@ -41,6 +41,22 @@ public final class DbConfig {
     public static final String ENV_POOL_MAX = "DB_POOL_MAX";
     public static final String ENV_POOL_MIN_IDLE = "DB_POOL_MIN_IDLE";
 
+    /** Migration (DDL yetkili, örn. budget_migrate) kimliği — runtime kimliğinden AYRI. */
+    public static final String KEY_MIGRATE_USER = "db.migrate.user";
+    public static final String KEY_MIGRATE_PASSWORD = "db.migrate.password";
+    public static final String ENV_MIGRATE_USER = "DB_MIGRATE_USER";
+    public static final String ENV_MIGRATE_PASSWORD = "DB_MIGRATE_PASS";
+
+    /**
+     * Hangi kimlik isteniyor?
+     * <ul>
+     *   <li>{@link #RUNTIME}: uygulama ({@code db.user/db.password}, budget_app).</li>
+     *   <li>{@link #MIGRATION}: şema değişikliği ({@code db.migrate.user/password}) — açıkça
+     *       verilmek ZORUNDADIR; runtime kimliğine ASLA sessizce düşülmez. URL ortaktır.</li>
+     * </ul>
+     */
+    public enum Role { RUNTIME, MIGRATION }
+
     private static final String DEFAULT_POOL_MAX = "10";
     private static final String DEFAULT_POOL_MIN_IDLE = "2";
 
@@ -69,6 +85,23 @@ public final class DbConfig {
     public static DbConfig load(Properties fileProps,
                                 Function<String, String> sysProps,
                                 Function<String, String> env) {
+        return loadFor(Role.RUNTIME, fileProps, sysProps, env);
+    }
+
+    /**
+     * Rol bazlı çözümleme — öncelik ve "varsayılan yok" kuralı TEK yerde.
+     *
+     * <p>{@link Role#MIGRATION}: önce runtime yapılandırması (URL dahil) doğrulanır,
+     * sonra migrate kullanıcı/parola aynı öncelikle çözülür; ikisi de zorunludur.
+     * Dönen nesnede {@code username/password} migrate kimliğidir, URL ve havuz
+     * ayarları runtime ile ortaktır.
+     *
+     * @throws MissingConfigException eksik anahtarlar (yalnız ANAHTAR adları) ile
+     */
+    public static DbConfig loadFor(Role role, Properties fileProps,
+                                   Function<String, String> sysProps,
+                                   Function<String, String> env) {
+        Objects.requireNonNull(role, "role");
         Properties props = fileProps == null ? new Properties() : fileProps;
         Objects.requireNonNull(sysProps, "sysProps");
         Objects.requireNonNull(env, "env");
@@ -83,6 +116,19 @@ public final class DbConfig {
         if (password == null) missing.add(KEY_PASSWORD);
         if (!missing.isEmpty()) {
             throw new MissingConfigException(missing);
+        }
+
+        if (role == Role.MIGRATION) {
+            String migUser = resolve(KEY_MIGRATE_USER, ENV_MIGRATE_USER, props, sysProps, env);
+            String migPassword = resolve(KEY_MIGRATE_PASSWORD, ENV_MIGRATE_PASSWORD, props, sysProps, env);
+            List<String> missingMig = new ArrayList<>();
+            if (migUser == null) missingMig.add(KEY_MIGRATE_USER);
+            if (migPassword == null) missingMig.add(KEY_MIGRATE_PASSWORD);
+            if (!missingMig.isEmpty()) {
+                throw new MissingConfigException(missingMig); // runtime kimliğine düşülmez
+            }
+            user = migUser;
+            password = migPassword;
         }
 
         int maxPool = parsePositiveInt(
@@ -146,7 +192,7 @@ public final class DbConfig {
     public static final class MissingConfigException extends IllegalStateException {
         private final List<String> missingKeys;
 
-        MissingConfigException(List<String> missingKeys) {
+        public MissingConfigException(List<String> missingKeys) {
             super("Veritabanı yapılandırması eksik: " + String.join(", ", missingKeys)
                     + ". Beklenen kaynaklardan biri: sistem özellikleri (-Ddb.url/-Ddb.user/-Ddb.password), "
                     + "ortam değişkenleri (DB_URL/DB_USER/DB_PASS) veya ~/.budget/db.properties. "
