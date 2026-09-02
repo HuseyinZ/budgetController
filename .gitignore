@@ -43,12 +43,18 @@ build/
 src/main/resources/db.properties
 src/main/resources/email-config.properties
 
-# Yedekler (mysqldump çıktıları, şifreli olsalar dahi commit edilmez)
+# Yedekler ve üretim dump'ları (şifreli olsalar dahi commit edilmez)
+#   NOT: Şema migration'ları (src/main/resources/db/migration/V*.sql) ve
+#   docs/db/legacy altındaki sanitize edilmiş arşiv TRACKED'dir — blanket
+#   "*.sql" kuralı bilinçli olarak kaldırıldı; yalnız dump/yedek desenleri ignore.
 logs/
 backups/
-*.sql
+Backups/
+posdb_*.sql
+budget-*.sql
 *.sql.gz
 *.sql.enc
+*.sql.bak
 
 # Lokal güvenlik anahtarları
 *.pem
