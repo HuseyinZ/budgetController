@@ -2,24 +2,33 @@
 #   ÖRNEK YAPILANDIRMA — gerçek değerleri bu dosyaya YAZMAYIN
 # ============================================================================
 #
-#   GERÇEK db.properties dosyasını şuraya koyun:
+#   GERÇEK db.properties dosyasını şuraya koyun (üretim kaynağı budur):
 #
-#       Windows: C:\Users\<kullanıcı>\.budget\db.properties
+#       Windows:   C:\Users\<kullanıcı>\.budget\db.properties
 #       Linux/Mac: ~/.budget/db.properties
 #
-#   Dış config aynı anahtarları içerir, repo içine giren bu dosyanın
-#   üzerine yazar. Bu sayede secret repo'ya commit edilmez.
+#   Öncelik sırası (yüksekten düşüğe):
+#       1) sistem özellikleri:   -Ddb.url=...  -Ddb.user=...  -Ddb.password=...
+#       2) ortam değişkenleri:   DB_URL / DB_USER / DB_PASS
+#       3) ~/.budget/db.properties
 #
-#   Alternatif: sistem değişkenleriyle veya ortam değişkenleriyle override:
-#       -Ddb.url=...   /  DB_URL=...
-#       -Ddb.user=...  /  DB_USER=...
-#       -Ddb.password=...  /  DB_PASS=...
+#   Classpath'teki (src/main/resources) db.properties OKUNMAZ ve pom.xml ile
+#   JAR dışında tutulur — repo/resources altında gerçek db.properties BULUNMAMALIDIR.
+#   Yalnız bu .example şablonu tracked'dir.
+#
+#   GÖMÜLÜ VARSAYILAN HESAP YOKTUR: db.url, db.user ve db.password'den biri
+#   bulunamazsa uygulama açılışta anlaşılır bir hata verir; sessizce root'a
+#   düşmez. (Eksik anahtar adları hata mesajında listelenir, değerler asla.)
+#
+#   Uygulama hesabı: en az yetkili 'budget_app' kullanıcısı — root DEĞİL.
+#   root yalnız kurulum/migration/restore gibi yönetim işlerinde kullanılır.
+#   Yetki şablonu için KURULUM_REHBERI.md §4.5'e bakın.
 #
 # ============================================================================
 db.url=jdbc:mysql://localhost:3306/posdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Europe/Istanbul&allowPublicKeyRetrieval=true&useSSL=true&requireSSL=true
-db.user=pos_app
+db.user=budget_app
 db.password=CHANGE_ME
 
-# Pool ayarları (opsiyonel)
+# Pool ayarları (opsiyonel — credential değildir, güvenli varsayılanları vardır)
 db.pool.maxSize=10
 db.pool.minIdle=2

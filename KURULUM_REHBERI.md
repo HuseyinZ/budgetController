@@ -172,21 +172,56 @@ net stop MySQL93
 net start MySQL93
 ```
 
-### 4.5 LAN kullanıcısı oluştur (root'u doğrudan kullanmayalım)
+### 4.5 Uygulama kullanıcısı oluştur — `budget_app` (root'u uygulamada ASLA kullanma)
+
+**Kural:** `root` yalnız yönetim işlerinde kullanılır — veritabanı oluşturma, DDL/migration
+yükleme, restore. Uygulama (kasa, kat PC'leri, otomatik yedek) **en az yetkili**
+`budget_app` hesabıyla bağlanır. Uygulamanın gömülü varsayılan hesabı YOKTUR: config
+eksikse açılışta anlaşılır bir hata verir, sessizce root'a düşmez.
 
 Workbench → root ile bağlan → yeni Query penceresi:
 
 ```sql
-CREATE USER 'budget'@'192.168.1.%' IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
-CREATE USER 'budget'@'localhost'  IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
-GRANT ALL ON posdb.* TO 'budget'@'192.168.1.%';
-GRANT ALL ON posdb.* TO 'budget'@'localhost';
+-- Kasa PC (aynı makine) — üretimde bu yeterlidir
+CREATE USER 'budget_app'@'localhost' IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
+
+-- Kat PC'leri de bağlanacaksa (LAN) — yalnız kendi alt ağınız
+CREATE USER 'budget_app'@'192.168.1.%' IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
+
+-- Yalnız posdb, yalnız gereken yetkiler:
+--   DML          → günlük işlem
+--   CREATE/ALTER/INDEX → uygulamanın başlangıç şema patch'leri (SchemaPatcher)
+--   LOCK TABLES/SHOW VIEW/TRIGGER/EVENT → otomatik mysqldump yedeği
+GRANT SELECT, INSERT, UPDATE, DELETE,
+      CREATE, ALTER, INDEX,
+      LOCK TABLES, SHOW VIEW, TRIGGER, EVENT
+  ON posdb.* TO 'budget_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE,
+      CREATE, ALTER, INDEX,
+      LOCK TABLES, SHOW VIEW, TRIGGER, EVENT
+  ON posdb.* TO 'budget_app'@'192.168.1.%';
 FLUSH PRIVILEGES;
 ```
+
+Global yetki (`PROCESS`, `SUPER`, `FILE`, `*.*`) **verilmez**; başka veritabanlarına
+erişim yoktur. Otomatik yedek `mysqldump --no-tablespaces` ile çalıştığından
+`PROCESS` gerekmez.
+
+> **GEÇİCİ:** `CREATE`, `ALTER`, `INDEX` yetkileri yalnız uygulamanın başlangıçta
+> çalıştırdığı `SchemaPatcher` (reservations tablosu, eski CHECK constraint temizliği)
+> için verilmiştir. Şema yönetimi version-controlled migration'lara taşındığında (C1)
+> bu DDL yetkileri ayrı bir `budget_migrate` kullanıcısına geçecek ve `budget_app`
+> **yalnız runtime DML** (`SELECT, INSERT, UPDATE, DELETE` + yedek için
+> `LOCK TABLES, SHOW VIEW, TRIGGER, EVENT`) ile çalışacaktır. O adımda bu bölüm güncellenir.
 
 ---
 
 ## 5. Veritabanı + Migration'lar {#5-db}
+
+> **Yönetim işi — root ile yapılır.** Bu bölümdeki tüm komutlar (CREATE DATABASE, DDL
+> yükleme, migration, restore) tek seferlik/yönetim işlemleridir ve `-u root` ile
+> koşulur. Uygulama çalışırken kullanılan hesap ise §4.5'teki `budget_app`'tir;
+> uygulamaya, kat PC'lerine veya otomatik yedeğe **hiçbir zaman root parolası verilmez.**
 
 ### 5.1 Veritabanını oluştur
 
@@ -375,14 +410,20 @@ Varsayılan kurulum yolu: `C:\Users\kasa\AppData\Local\Programs\budgetController
 
 #### 8.4.1 DB bağlantısı
 
-`C:\Users\kasa\.budget\db.properties` (yoksa oluştur):
+`C:\Users\kasa\.budget\db.properties` (yoksa oluştur — **üretim config kaynağı budur**;
+repo içindeki `db.properties.example` yalnız şablondur, gerçek değer içermez):
 
 ```properties
 db.url=jdbc:mysql://localhost:3306/posdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Europe/Istanbul&allowPublicKeyRetrieval=true&sslMode=DISABLED
-db.user=budget
+db.user=budget_app
 db.password=GÜÇLÜ_BİR_SİFRE
 db.pool.maxSize=15
 ```
+
+`db.url`, `db.user`, `db.password` üçü de zorunludur; biri eksikse uygulama açılışta
+"Veritabanı yapılandırması eksik: db.password ..." benzeri bir hata verir ve
+başlamaz (gömülü varsayılan hesap yoktur). Dosyayı yalnız `kasa` kullanıcısının
+okuyabileceği şekilde tutun (Özellikler → Güvenlik).
 
 #### 8.4.2 Restoran masa düzeni
 
@@ -421,9 +462,12 @@ Her kat PC'sine aynı `.msi` kurulum dosyasını taşı ve kur.
 Kat PC'sinin `C:\Users\kat1\.budget\db.properties`:
 ```properties
 db.url=jdbc:mysql://192.168.1.10:3306/posdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Europe/Istanbul&allowPublicKeyRetrieval=true&sslMode=DISABLED
-db.user=budget
+db.user=budget_app
 db.password=GÜÇLÜ_BİR_SİFRE
 ```
+
+(Kat PC'leri de aynı en az yetkili `budget_app` hesabını kullanır — §4.5'teki
+`'budget_app'@'192.168.1.%'` tanımı bunun içindir.)
 
 **Sadece IP değişti** (`localhost` → `192.168.1.10`). Kalan her şey aynı.
 

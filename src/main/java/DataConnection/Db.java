@@ -20,21 +20,17 @@ public final class Db {
     private static final Properties CONFIG_SNAPSHOT = new Properties();
 
     static {
-        Properties props = loadProperties();
-
-        String jdbcUrl = resolve("db.url", "DB_URL", props,
-                "jdbc:mysql://127.0.0.1:3306/?user=root");
-        String username = resolve("db.user", "DB_USER", props, "root");
-        String password = resolve("db.password", "DB_PASS", props, "1234");
-        int maxPool = Integer.parseInt(resolve("db.pool.maxSize", "DB_POOL_MAX", props, "10"));
-        int minIdle = Integer.parseInt(resolve("db.pool.minIdle", "DB_POOL_MIN_IDLE", props, "2"));
+        // Öncelik: sistem özelliği > ortam değişkeni > ~/.budget/db.properties (> classpath).
+        // Gömülü varsayılan hesap YOK — eksikse DbConfig.MissingConfigException fırlar
+        // (mesaj yalnız eksik anahtar adlarını içerir; sessizce root'a düşülmez).
+        DbConfig config = DbConfig.load(loadProperties(), System::getProperty, System::getenv);
 
         HikariConfig cfg = new HikariConfig();
-        cfg.setJdbcUrl(jdbcUrl);
-        cfg.setUsername(username);
-        cfg.setPassword(password);
-        cfg.setMaximumPoolSize(maxPool);
-        cfg.setMinimumIdle(Math.min(minIdle, maxPool));
+        cfg.setJdbcUrl(config.jdbcUrl());
+        cfg.setUsername(config.username());
+        cfg.setPassword(config.password());
+        cfg.setMaximumPoolSize(config.maxPoolSize());
+        cfg.setMinimumIdle(config.minIdle());
         cfg.setPoolName("budgetController");
         cfg.addDataSourceProperty("cachePrepStmts", "true");
         cfg.addDataSourceProperty("prepStmtCacheSize", "250");
@@ -42,11 +38,11 @@ public final class Db {
 
         DS = new HikariDataSource(cfg);
 
-        CONFIG_SNAPSHOT.setProperty("db.url", jdbcUrl);
-        CONFIG_SNAPSHOT.setProperty("db.user", username);
-        CONFIG_SNAPSHOT.setProperty("db.password", password);
-        CONFIG_SNAPSHOT.setProperty("db.pool.maxSize", Integer.toString(maxPool));
-        CONFIG_SNAPSHOT.setProperty("db.pool.minIdle", Integer.toString(Math.min(minIdle, maxPool)));
+        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_URL, config.jdbcUrl());
+        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_USER, config.username());
+        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_PASSWORD, config.password());
+        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MAX, Integer.toString(config.maxPoolSize()));
+        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MIN_IDLE, Integer.toString(config.minIdle()));
 
         Runtime.getRuntime().addShutdownHook(new Thread(DS::close, "budgetController-hikari-shutdown"));
     }
@@ -111,17 +107,15 @@ public final class Db {
         }
     }
 
+    /**
+     * Yalnız dış config dosyasını okur: {@code ~/.budget/db.properties}.
+     *
+     * <p>Classpath'teki {@code db.properties} BİLİNÇLİ olarak okunmaz — JAR içine
+     * paketlenebilecek bir kaynak dosyası credential taşımamalıdır. Dosya yoksa
+     * boş Properties döner; eksik anahtarları {@link DbConfig} raporlar.
+     */
     private static Properties loadProperties() {
         Properties props = new Properties();
-
-        try (InputStream in = Db.class.getResourceAsStream("/db.properties")) {
-            if (in != null) {
-                props.load(in);
-            }
-        } catch (IOException e) {
-            throw new ExceptionInInitializerError(e);
-        }
-
         if (Files.exists(EXTERNAL_CONFIG_PATH)) {
             try (InputStream in = Files.newInputStream(EXTERNAL_CONFIG_PATH)) {
                 props.load(in);
@@ -129,24 +123,7 @@ public final class Db {
                 throw new ExceptionInInitializerError(e);
             }
         }
-
         return props;
-    }
-
-    private static String resolve(String propertyKey, String envKey, Properties props, String defaultValue) {
-        String sys = System.getProperty(propertyKey);
-        if (sys != null && !sys.isBlank()) {
-            return sys;
-        }
-        String env = System.getenv(envKey);
-        if (env != null && !env.isBlank()) {
-            return env;
-        }
-        String fromProps = props.getProperty(propertyKey);
-        if (fromProps != null && !fromProps.isBlank()) {
-            return fromProps;
-        }
-        return defaultValue;
     }
 
 }
