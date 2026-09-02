@@ -240,6 +240,20 @@
     </dependencies>
 
     <build>
+        <!-- Güvenlik: gerçek db.properties hiçbir koşulda JAR'a paketlenmez —
+             diskte yanlışlıkla bulunsa bile. Üretim config kaynağı yalnız
+             ~/.budget/db.properties'tir; kod classpath'ten bu dosyayı OKUMAZ.
+             db.properties.example şablonu serbesttir (gerçek değer içermez).
+             NOT: email-config.properties henüz classpath'ten okunuyor (EmailService);
+             ~/.budget'a taşınması ayrı bir maddedir — burada dışlanmadı. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>db.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <!-- Java derleme -->
             <plugin>

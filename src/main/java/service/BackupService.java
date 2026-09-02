@@ -60,21 +60,38 @@ public class BackupService {
     private ScheduledExecutorService scheduler;
 
     public BackupService() {
-        Properties p = loadProps();
-        String url = p.getProperty("db.url", "jdbc:mysql://localhost:3306/posdb");
-        Matcher m = URL_PATTERN.matcher(url);
-        if (m.matches()) {
+        // Db ile aynı öncelik (sistem özelliği > env > ~/.budget/db.properties) ve
+        // aynı kural: gömülü varsayılan hesap YOK. Config eksikse uygulama değil,
+        // yalnız otomatik yedek devre dışı kalır (BackupService degrade eder).
+        String url = null;
+        String resolvedUser = null;
+        String resolvedPassword = null;
+        try {
+            DataConnection.DbConfig cfg =
+                    DataConnection.DbConfig.load(loadProps(), System::getProperty, System::getenv);
+            url = cfg.jdbcUrl();
+            resolvedUser = cfg.username();
+            resolvedPassword = cfg.password();
+        } catch (DataConnection.DbConfig.MissingConfigException ex) {
+            LOG.warn("DB yapılandırması eksik ({}) — otomatik yedek devre dışı", ex.missingKeys());
+        }
+
+        Matcher m = url == null ? null : URL_PATTERN.matcher(url);
+        if (m != null && m.matches()) {
             this.host = m.group(1);
             this.port = m.group(2) == null ? 3306 : Integer.parseInt(m.group(2));
             this.dbName = m.group(3);
         } else {
-            LOG.warn("db.url ayrıştırılamadı: {} — yedek devre dışı", url);
+            if (url != null) {
+                LOG.warn("db.url ayrıştırılamadı: {} — yedek devre dışı",
+                        service.util.Mask.urlSecrets(url));
+            }
             this.host = "localhost";
             this.port = 3306;
             this.dbName = "posdb";
         }
-        this.user = p.getProperty("db.user", "root");
-        this.password = p.getProperty("db.password", "");
+        this.user = resolvedUser;
+        this.password = resolvedPassword;
         this.mysqldumpCmd = resolveMysqlDumpCommand();
         this.backupDir = Paths.get(System.getProperty("user.home"), "Backups");
     }
@@ -127,6 +144,10 @@ public class BackupService {
             LOG.warn("mysqldump bulunamadı — yedek atlandı");
             return false;
         }
+        if (user == null || password == null) {
+            LOG.warn("DB kimlik bilgisi yok — yedek atlandı (~/.budget/db.properties kontrol edin)");
+            return false;
+        }
         String stamp = LocalDateTime.now().format(STAMP);
         // BACKUP_PASS varsa şifreli yedek (.sql.enc), yoksa düz .sql
         String backupPass = System.getenv("BACKUP_PASS");
@@ -147,6 +168,10 @@ public class BackupService {
                 "--user=" + user,
                 "--default-character-set=utf8mb4",
                 "--single-transaction",
+                // MySQL 8.0.21+: tablespace bilgisi için global PROCESS yetkisi
+                // ister; least-privilege budget_app kullanıcısı bunu taşımaz.
+                // InnoDB tablolar için dump içeriği değişmez.
+                "--no-tablespaces",
                 "--routines",
                 "--triggers",
                 "--result-file=" + target.toString(),
@@ -313,24 +338,15 @@ public class BackupService {
 
     private Properties loadProps() {
         Properties p = new Properties();
-        // 1. Kullanıcı override
+        // Yalnız dış config: ~/.budget/db.properties. Classpath db.properties
+        // BİLİNÇLİ olarak okunmaz (JAR içine credential paketlenmesin).
         Path userFile = Paths.get(System.getProperty("user.home"), ".budget", "db.properties");
         if (Files.exists(userFile)) {
             try (var in = Files.newInputStream(userFile)) {
                 p.load(in);
-                return p;
             } catch (IOException ex) {
-                LOG.debug(
-                        "User override db.properties could not be loaded; falling back to classpath config: {}",
-                        ex.toString()
-                );
+                LOG.debug("User db.properties could not be loaded: {}", ex.toString());
             }
-        }
-        // 2. Classpath default
-        try (var in = BackupService.class.getResourceAsStream("/db.properties")) {
-            if (in != null) p.load(in);
-        } catch (IOException ex) {
-            LOG.debug("Classpath db.properties could not be loaded: {}", ex.toString());
         }
         return p;
     }
