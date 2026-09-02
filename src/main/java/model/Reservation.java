@@ -7,7 +7,7 @@ import java.util.Objects;
  * Masa rezervasyonu — saat bazlı.
  *
  * <p>Şema {@code reservations} tablosuyla 1-1 eşleşir
- * (bkz. {@code SchemaPatcher#ensureReservationsTable}).
+ * (bkz. {@code db/migration/V001__baseline_schema.sql}).
  */
 public class Reservation {
 

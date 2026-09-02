@@ -6,6 +6,7 @@ import model.RefundLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDate;
@@ -17,26 +18,9 @@ import java.util.List;
  *
  * <p>Tablo: {@code refund_log}. Append-only — UPDATE/DELETE açılmaz.
  *
- * <p>Şema (MySQL):
- * <pre>{@code
- * CREATE TABLE IF NOT EXISTS refund_log (
- *   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
- *   user_id     BIGINT,
- *   user_name   VARCHAR(255),
- *   action_type VARCHAR(32) NOT NULL,
- *   table_no    INT,
- *   order_id    BIGINT,
- *   product_name VARCHAR(255),
- *   quantity    INT,
- *   amount      DECIMAL(19,2),
- *   reason      VARCHAR(500),
- *   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
- *   INDEX idx_refund_created (created_at),
- *   INDEX idx_refund_user    (user_id)
- * );
- * }</pre>
- *
- * <p>Tablo yoksa ilk kullanımda otomatik oluşturulur ({@link #ensureTable()}).
+ * <p>Şema: canonical {@code V001__baseline_schema.sql} içindeki {@code refund_log}.
+ * Bu DAO runtime'da DDL ÇALIŞTIRMAZ — tablo eksikse normal SQL hatası yükselir;
+ * şema yönetimi yalnız {@code tools.Migrate} üzerinden yürür (C1).
  */
 public class RefundLogJdbcDAO implements RefundLogDAO {
 
@@ -46,19 +30,29 @@ public class RefundLogJdbcDAO implements RefundLogDAO {
             "id, user_id, user_name, action_type, table_no, order_id, " +
             "product_name, quantity, amount, reason, created_at";
 
-    private volatile boolean tableEnsured = false;
+    /** Test/DI için opsiyonel DataSource; null → uygulama havuzu ({@link Db}). */
+    private final DataSource dataSource;
 
-    public RefundLogJdbcDAO() {}
+    public RefundLogJdbcDAO() {
+        this(null);
+    }
+
+    public RefundLogJdbcDAO(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    private Connection acquireConnection() throws SQLException {
+        return dataSource != null ? dataSource.getConnection() : Db.getConnection();
+    }
 
     @Override
     public Long create(RefundLog log) {
         if (log == null) throw new IllegalArgumentException("log null");
-        ensureTable();
         final String sql = "INSERT INTO refund_log " +
                 "(user_id, user_name, action_type, table_no, order_id, " +
                 " product_name, quantity, amount, reason) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection c = Db.getConnection();
+        try (Connection c = acquireConnection();
              PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             if (log.getUserId() == null) ps.setNull(1, Types.BIGINT);
             else                          ps.setLong(1, log.getUserId());
@@ -85,14 +79,12 @@ public class RefundLogJdbcDAO implements RefundLogDAO {
 
     @Override
     public List<RefundLog> findAll() {
-        ensureTable();
         return query("SELECT " + COLS + " FROM refund_log ORDER BY created_at DESC, id DESC LIMIT 1000",
                 ps -> {});
     }
 
     @Override
     public List<RefundLog> findByDateRange(LocalDate fromInclusive, LocalDate toInclusive) {
-        ensureTable();
         return query("SELECT " + COLS + " FROM refund_log " +
                      "WHERE DATE(created_at) BETWEEN ? AND ? " +
                      "ORDER BY created_at DESC, id DESC",
@@ -104,7 +96,6 @@ public class RefundLogJdbcDAO implements RefundLogDAO {
 
     @Override
     public List<RefundLog> findByUserId(Long userId) {
-        ensureTable();
         return query("SELECT " + COLS + " FROM refund_log WHERE user_id=? " +
                      "ORDER BY created_at DESC, id DESC LIMIT 500",
                 ps -> ps.setLong(1, userId));
@@ -119,7 +110,7 @@ public class RefundLogJdbcDAO implements RefundLogDAO {
 
     private List<RefundLog> query(String sql, PsBinder b) {
         List<RefundLog> out = new ArrayList<>();
-        try (Connection c = Db.getConnection();
+        try (Connection c = acquireConnection();
              PreparedStatement ps = c.prepareStatement(sql)) {
             b.bind(ps);
             try (ResultSet rs = ps.executeQuery()) {
@@ -158,31 +149,4 @@ public class RefundLogJdbcDAO implements RefundLogDAO {
         return r;
     }
 
-    /**
-     * refund_log tablosunu yoksa oluşturur. Hem MySQL hem H2 (test) için çalışır.
-     * Sadece ilk çağrıda kontrol edilir, sonraki çağrılar fast-path geçer.
-     */
-    private synchronized void ensureTable() {
-        if (tableEnsured) return;
-        final String mysql = "CREATE TABLE IF NOT EXISTS refund_log (" +
-                "id BIGINT AUTO_INCREMENT PRIMARY KEY," +
-                "user_id BIGINT," +
-                "user_name VARCHAR(255)," +
-                "action_type VARCHAR(32) NOT NULL," +
-                "table_no INT," +
-                "order_id BIGINT," +
-                "product_name VARCHAR(255)," +
-                "quantity INT," +
-                "amount DECIMAL(19,2)," +
-                "reason VARCHAR(500)," +
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
-                ")";
-        try (Connection c = Db.getConnection();
-             Statement st = c.createStatement()) {
-            st.execute(mysql);
-            tableEnsured = true;
-        } catch (SQLException ex) {
-            LOG.warn("refund_log tablosu hazırlanamadı: {}", ex.getMessage());
-        }
-    }
 }
