@@ -1,19 +1,15 @@
 -- =====================================================================
+--  [LEGACY ARŞİV — ÇALIŞTIRMAYIN] Canonical karşılığı: V001
+--  (user_area_permissions — baseline'da DROP'suz, IF NOT EXISTS ile).
+--  NOT: Bu dosya destructive bir DROP TABLE içeriyordu; runner sistemine
+--  alınmamasının bir nedeni de budur.
+-- =====================================================================
 --  Tarih   : 2026-05-17 (C)
---  Amaç    : Garson alan yetkilendirmesi.
---            Bir garson sadece kendisine atanmış (bina, salon) çiftlerini
---            görür. Admin/Kasiyer her zaman tümünü görür.
---
---  Çalıştırma:
---      mysql -u root -p posdb < V2026_05_17c__user_area_permissions.sql
---
---  NOT (2026-05-17): users.id sütunu INT olduğu için user_id INT olarak
---  tanımlandı (BIGINT değildi). MySQL foreign key'ler aynı veri tipinde
---  olmak zorundadır.
+--  Amaç    : Garson alan yetkilendirmesi. Bir garson sadece kendisine
+--            atanmış (bina, salon) çiftlerini görür; Admin/Kasiyer tümünü.
+--  NOT     : users.id INT olduğu için user_id INT (FK tip eşleşmesi).
 -- =====================================================================
 
--- Eski (yanlış tipli) tabloyu temizle — yalnız bu tablo henüz başarıyla
--- yaratılmamışsa veya yanlış şemayla yaratıldıysa güvenli.
 DROP TABLE IF EXISTS user_area_permissions;
 
 CREATE TABLE user_area_permissions (
@@ -27,7 +23,3 @@ CREATE TABLE user_area_permissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;
 
 CREATE INDEX idx_uap_user ON user_area_permissions (user_id);
-
--- =====================================================================
---  Migration sonu
--- =====================================================================
