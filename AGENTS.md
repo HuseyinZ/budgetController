@@ -51,6 +51,43 @@ No human approval is required after these machine-enforced conditions are satisf
 
 When a MEDIUM review finds no justified code change in Round 2 or Round 3, the controller may create an empty verification commit solely to produce a new immutable HEAD SHA for the next independent review.
 
+#### Authorization issue contract
+
+The pull request body must contain the exact line:
+
+```text
+Authorization: #<issue number>
+```
+
+The pull request branch must be named exactly:
+
+```text
+agent/issue-<issue number>
+```
+
+One authorization issue authorizes exactly one branch. Without this binding, any open and labelled issue could be reused by an unrelated pull request whose files happen to fit its `Allowed-Paths:` block.
+
+`Protected paths (risk gate)` reads that issue and verifies: the head branch matches `agent/issue-<n>`, it is an issue and not a pull request, it is open, its author is `HuseyinZ` with `author_association` `OWNER`, it carries the `agent:auto-medium` label, the actor who applied that label is `HuseyinZ` and did not act through a GitHub App, its body contains the exact line `Risk: MEDIUM`, its body contains an `Allowed-Paths:` block, every changed file appears in that block, and the change stays within 5 files and 400 added plus deleted lines.
+
+A changed path containing a newline is rejected outright: the `Allowed-Paths:` block is line-based and could never contain it.
+
+The `Allowed-Paths:` block ends at the first line that is not a `- path` item:
+
+```text
+Allowed-Paths:
+- src/main/java/state/AppState.java
+```
+
+#### Controller identity
+
+The runtime controller must operate under its own identity, separate from `HuseyinZ`, and that identity must not hold `issues: write` or triage permission. The controller must never create, edit, label, relabel, reopen, or comment-to-modify an authorization issue. Authorization must originate from a human action the controller cannot perform; otherwise issue-based authorization becomes self-certifying and the gate provides no protection.
+
+The gate cannot verify this by itself — it is a repository and GitHub App permission setting, and it is a precondition for any MEDIUM autonomy.
+
+#### Re-verification before merge
+
+The gate runs on pull request events only. If the authorization issue is edited, closed, relabeled, or its `Allowed-Paths:` block is changed after the gate reports success, no pull request event fires and the stale success remains visible. Before squash merging, the controller must re-run every authorization check above against the final HEAD and the current issue state, and must abort when anything has changed. This is the mechanical counterpart of condition 12.
+
 ### HIGH risk
 
 The agent must:
@@ -122,6 +159,22 @@ Never modify or auto-merge these areas through LOW or MEDIUM autonomy:
 - build wrappers and executable scripts
 - credential, certificate, key, environment, backup, export, archive, PDF, or Office files
 
+Named exactly, as enforced by `Protected paths (risk gate)`:
+
+- `src/main/java/DataConnection/Db.java` — connection pool and database bootstrap
+- `src/main/java/org/budget/App.java` — startup sequencing, schema gating, exit behavior
+- `src/main/java/service/db/**` — migration runner, adoption, startup schema verification
+- `src/main/java/tools/Migrate.java` — migration CLI and credential separation
+- `src/main/java/tools/BackupDecrypt.java`
+- `src/main/java/service/api/SecurityConfig.java`, `SessionStore.java`, `RateLimiter.java`, `AuthFailureTracker.java`
+- `src/main/java/service/security/**`, `src/main/java/service/audit/**`
+- `src/main/java/service/UserService.java`, `src/main/java/service/BackupService.java`, `src/main/java/service/util/Mask.java`
+- `src/main/java/dao/**`
+- `src/main/resources/db/**`, `src/main/resources/db.properties*`, `src/main/resources/email-config.properties*`
+- `**/*.sql`, `**/*.sql.bak`, `scripts/**`
+
+Protecting migration SQL without protecting the code that applies, checksums, and adopts it would leave the schema safety model open, which is why the runner and CLI are named here.
+
 Changes to these areas require controlled infrastructure bootstrap or human-directed work and must never be performed by the runtime controller.
 
 ## Bounded MEDIUM areas
@@ -133,10 +186,11 @@ These areas may be modified only through authorized MEDIUM mode and only when na
 - PWA JavaScript/HTML/CSS files
 - Swing UI files
 - non-security service logic
-- non-mutating DAO reads
 - tests and documentation supporting the scoped change
 
-DAO mutation logic remains HIGH unless the issue is explicitly reclassified by a future policy change.
+DAO files are hard-protected in full. Read paths and mutation paths live in the same files, so no path pattern can separate them, and order-item mutation identity rules also live there. DAO work — including read-only changes — requires human-directed HIGH handling.
+
+The mechanical gate can only enforce path patterns. Category entries above that are not expressible as paths (`non-security service logic`, `Swing UI files`) are bounded by the authorization issue and the review rounds, not by the gate.
 
 ## MEDIUM three-round protocol
 

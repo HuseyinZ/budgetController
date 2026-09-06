@@ -1,22 +1,45 @@
 # ============================================================================
-#   Risk Gate (Phase B) — PR korumalı alana dokunuyorsa FAIL.
+#   Risk Gate — iki katmanlı korumalı alan kapısı (Phase B + yetki farkındalığı)
 #
-#   AGENTS.md'deki "protected areas" listesinin MEKANİK karşılığıdır:
-#   agent kendini yanlış LOW sınıflasa bile bu check auto-merge'ü kilitler.
+#   TIER 1 (hard-protected): hiçbir yetkilendirme geçemez → her zaman FAIL.
+#   TIER 2 (bounded MEDIUM): yalnız AGENTS.md'ye uygun, İNSAN tarafından
+#           açılmış ve etiketlenmiş yetkilendirme issue'su ile geçer.
 #
-#   - Secret ve third-party action KULLANMAZ (yalnız actions/checkout)
-#   - pull_request + contents:read → fork PR'larında güvenlidir
+#   Yetki kaynağı bilinçli olarak PR metni DEĞİLDİR: PR'ı açan taraf kendi
+#   yetkisini kendi yazabilirdi ve kapı kendi kendini onaylar hale gelirdi.
+#   Yetki, controller'ın yazamayacağı yerden okunur: issue'nun sahibi ve
+#   `agent:auto-medium` etiketini UYGULAYAN aktör (timeline event'i).
+#
+#   GÜVENLİK ÖNKOŞULU — bu workflow doğrulayamaz, repo/App ayarıdır:
+#   runtime controller kendi kimliğiyle çalışmalı ve o kimlikte
+#   issues:write / triage YETKİSİ OLMAMALIDIR. Controller, yetkilendirme
+#   issue'sunu oluşturamaz, düzenleyemez ve etiketleyemez. Aksi halde issue
+#   tabanlı yetki de kendi kendini onaylayan hale gelir. (AGENTS.md)
+#
+#   KALAN SINIR: bu workflow yalnız pull_request olaylarında çalışır. Gate
+#   yeşil olduktan SONRA yetkilendirme issue'su değiştirilirse burada
+#   yakalanmaz; MEDIUM controller final merge adımında aynı doğrulamaları
+#   tekrar çalıştırmak zorundadır (AGENTS.md, MEDIUM koşul 12).
+#
+#   - Third-party action KULLANMAZ (actions/checkout + runner'daki gh/jq)
+#   - permissions: contents:read + issues:read — hiçbir yazma yetkisi yok
+#   - Repository secret KULLANMAZ; gh yalnız yerleşik github.token ile çalışır
+#   - PR gövdesi run bloğuna ASLA interpolate edilmez, env ile geçirilir
+#     (script injection'a kapalı)
 #   - Dosya listesi NUL-delimited işlenir (boşluklu/özel karakterli path'ler)
-#   - Diff-filter yok: add/modify/delete/rename (— --no-renames ile
-#     rename'ler delete+add görünür, eski VE yeni path yakalanır)
+#   - --no-renames: rename'ler delete+add görünür, eski VE yeni path yakalanır
 # ============================================================================
 name: risk-gate
 
 on:
   pull_request:
+    # 'edited' şart: PR gövdesindeki Authorization satırı sonradan
+    # değiştirilirse gate yeniden çalışmalı.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
+  issues: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,51 +50,177 @@ jobs:
     name: Protected paths (risk gate)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      AUTHORIZER: HuseyinZ
+      MEDIUM_LABEL: 'agent:auto-medium'
+      MAX_FILES: '5'
+      MAX_LINES: '400'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Fail if protected paths changed
+      # ------------------------------------------------------------------
+      #  1) Sınıflandırma — TIER 1 varsa yetkiye hiç bakılmadan FAIL
+      # ------------------------------------------------------------------
+      - name: Classify changed paths
+        id: classify
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          violations=0
-          count=0
-          while IFS= read -r -d '' f; do
-            count=$((count + 1))
+          mapfile -d '' CHANGED < <(git diff --name-only -z --no-renames "$BASE_SHA...$HEAD_SHA")
+          # Liste adımlar arasında da NUL-delimited taşınır; satır tabanlı
+          # dosyaya çevirmek boşluklu/newline'lı path'lerde eşleşmeyi bozardı.
+          : > "$RUNNER_TEMP/changed.nul"
+          tier1=0
+          tier2=0
+          for f in ${CHANGED+"${CHANGED[@]}"}; do
+            [ -n "$f" ] || continue
+            if [[ "$f" == *$'\n'* ]]; then
+              echo "::error::Değişen yol adı satır sonu içeriyor; Allowed-Paths bloğu satır tabanlı olduğundan bu yol asla kapsanamaz — fail-closed reddedildi."
+              exit 1
+            fi
+            printf '%s\0' "$f" >> "$RUNNER_TEMP/changed.nul"
             echo "changed: $f"
             case "$f" in
-              src/main/java/state/AppState.java|\
-              src/main/java/service/api/*|\
-              src/main/java/dao/*|\
+              # ---------- TIER 1: hard-protected, yetkiyle bile geçilemez ----------
+              # NOT: case glob'unda '*' '/' karakterini de geçer; dizin
+              # pattern'leri bu yüzden alt klasörleri de kapsar.
+              src/main/java/DataConnection/Db.java|\
+              src/main/java/org/budget/App.java|\
+              src/main/java/service/db/*|\
+              src/main/java/tools/Migrate.java|\
+              src/main/java/tools/BackupDecrypt.java|\
+              src/main/java/service/api/SecurityConfig.java|\
+              src/main/java/service/api/SessionStore.java|\
+              src/main/java/service/api/RateLimiter.java|\
+              src/main/java/service/api/AuthFailureTracker.java|\
               src/main/java/service/security/*|\
               src/main/java/service/audit/*|\
               src/main/java/service/UserService.java|\
               src/main/java/service/BackupService.java|\
               src/main/java/service/util/Mask.java|\
-              src/main/java/tools/BackupDecrypt.java|\
-              src/main/java/DataConnection/Db.java|\
+              src/main/java/dao/*|\
               src/main/resources/db/*|\
-              *.sql|\
-              *.sql.bak|\
               src/main/resources/db.properties*|\
               src/main/resources/email-config.properties*|\
+              *.sql|\
+              *.sql.bak|\
               scripts/*|\
               pom.xml|\
               owasp-suppressions.xml|\
               .github/workflows/*|\
               AGENTS.md)
-                echo "::error file=$f::Protected path changed: $f"
-                violations=1
+                echo "::error file=$f::TIER-1 protected path changed: $f"
+                tier1=1
+                ;;
+              # ---------- TIER 2: yalnız yetkili MEDIUM ile geçer ----------
+              src/main/java/state/AppState.java|\
+              src/main/java/service/api/ApiServer.java)
+                echo "::warning file=$f::TIER-2 bounded MEDIUM path changed: $f"
+                tier2=1
                 ;;
             esac
-          done < <(git diff --name-only -z --no-renames "$BASE_SHA...$HEAD_SHA")
-          echo "Toplam degisen dosya: $count"
-          if [ "$violations" -ne 0 ]; then
-            echo "Korumalı alan değişti — bu PR LOW risk sayılamaz (AGENTS.md)."
+          done
+          if [ "$tier1" -eq 1 ]; then
+            echo "TIER-1 alan değişti — hiçbir yetkilendirme bunu geçemez."
+            echo "Bu iş human-directed HIGH akışıyla yürütülmelidir (AGENTS.md)."
             exit 1
           fi
-          echo "OK: korumalı alanlara dokunulmadı."
+          echo "tier2=$tier2" >> "$GITHUB_OUTPUT"
+          if [ "$tier2" -eq 0 ]; then
+            echo "Korumalı alan değişmedi."
+          fi
+
+      # ------------------------------------------------------------------
+      #  2) TIER 2 için yetkilendirme doğrulaması — fail-closed
+      # ------------------------------------------------------------------
+      - name: Verify MEDIUM authorization
+        if: steps.classify.outputs.tier2 == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # PR gövdesi yalnız env üzerinden; run bloğuna interpolate EDİLMEZ.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          BODY=$(printf '%s' "${PR_BODY:-}" | tr -d '\r')
+          ISSUE=$(printf '%s\n' "$BODY" \
+            | sed -n 's/^Authorization:[[:space:]]*#\([0-9][0-9]*\)[[:space:]]*$/\1/p' | head -1)
+          [ -n "$ISSUE" ] || fail "TIER-2 yol değişti ama PR gövdesinde tam 'Authorization: #<issue>' satırı yok."
+          echo "Yetkilendirme issue'su: #$ISSUE"
+
+          # Yetki tek bir branch'e bağlıdır: issue #N yalnız agent/issue-N'i
+          # yetkilendirir. Aksi halde açık ve etiketli bir issue, Allowed-Paths
+          # uyduğu sürece başka PR'lar tarafından yeniden kullanılabilirdi.
+          [ "$HEAD_REF" = "agent/issue-$ISSUE" ] \
+            || fail "Yetkilendirme bu branch'e bağlı değil: branch '$HEAD_REF', beklenen 'agent/issue-$ISSUE'."
+
+          J=$(gh api -H "Accept: application/vnd.github+json" "repos/$REPO/issues/$ISSUE")
+
+          [ -z "$(jq -r '.pull_request // empty' <<<"$J")" ] \
+            || fail "#$ISSUE bir issue değil, pull request."
+          [ "$(jq -r '.state' <<<"$J")" = "open" ] \
+            || fail "Yetkilendirme issue'su açık değil (AGENTS.md MEDIUM koşul 2)."
+          [ "$(jq -r '.user.login' <<<"$J")" = "$AUTHORIZER" ] \
+            || fail "Issue sahibi $AUTHORIZER değil (koşul 1)."
+          [ "$(jq -r '.author_association' <<<"$J")" = "OWNER" ] \
+            || fail "Issue author_association OWNER değil."
+          jq -e --arg l "$MEDIUM_LABEL" 'any(.labels[]?; .name == $l)' <<<"$J" >/dev/null \
+            || fail "'$MEDIUM_LABEL' etiketi yok (koşul 3)."
+
+          # Etiketi KİM uyguladı? Timeline, performed_via_github_app alanını taşır.
+          TL=$(gh api --paginate -H "Accept: application/vnd.github+json" \
+                 "repos/$REPO/issues/$ISSUE/timeline?per_page=100" | jq -s 'add')
+          LAST=$(jq -c --arg l "$MEDIUM_LABEL" \
+                   '[.[] | select(.event == "labeled" and .label.name == $l)] | last' <<<"$TL")
+          [ "$LAST" != "null" ] || fail "Etiketin uygulandığı timeline olayı bulunamadı."
+          LABEL_ACTOR=$(jq -r '.actor.login // empty' <<<"$LAST")
+          LABEL_APP=$(jq -r 'if .performed_via_github_app == null then "" else (.performed_via_github_app.slug // "app") end' <<<"$LAST")
+          [ "$LABEL_ACTOR" = "$AUTHORIZER" ] \
+            || fail "Etiketi uygulayan $AUTHORIZER değil: ${LABEL_ACTOR:-bilinmiyor}"
+          [ -z "$LABEL_APP" ] \
+            || fail "Etiket bir GitHub App tarafından uygulanmış ($LABEL_APP) — insan onayı sayılmaz."
+
+          IB=$(jq -r '.body // ""' <<<"$J" | tr -d '\r')
+          printf '%s\n' "$IB" | grep -qx 'Risk: MEDIUM' \
+            || fail "Issue gövdesinde tam 'Risk: MEDIUM' satırı yok (koşul 4)."
+
+          ALLOWED=$(printf '%s\n' "$IB" | awk '
+            /^Allowed-Paths:[[:space:]]*$/ { inb = 1; next }
+            inb && /^[[:space:]]*-[[:space:]]+/ {
+              line = $0
+              sub(/^[[:space:]]*-[[:space:]]+/, "", line)
+              sub(/[[:space:]]+$/, "", line)
+              print line
+              next
+            }
+            inb { exit }
+          ')
+          [ -n "$ALLOWED" ] || fail "'Allowed-Paths:' bloğu bulunamadı veya boş (koşul 5)."
+          echo "Allowed-Paths:"; printf '%s\n' "$ALLOWED" | sed 's/^/  /'
+
+          # NUL-delimited okunur; '--' ile tire ile başlayan path'ler de
+          # grep seçeneği sanılmaz.
+          while IFS= read -r -d '' f; do
+            [ -n "$f" ] || continue
+            printf '%s\n' "$ALLOWED" | grep -qxF -- "$f" \
+              || fail "Değişen dosya Allowed-Paths dışında: $f (koşul 6)."
+          done < "$RUNNER_TEMP/changed.nul"
+
+          NFILES=$(tr -cd '\0' < "$RUNNER_TEMP/changed.nul" | wc -c | tr -d ' ')
+          [ "$NFILES" -le "$MAX_FILES" ] \
+            || fail "Dosya limiti aşıldı: $NFILES > $MAX_FILES (koşul 8)."
+          NLINES=$(git diff --numstat "$BASE_SHA...$HEAD_SHA" \
+                     | awk '{ a += ($1 == "-" ? 0 : $1); d += ($2 == "-" ? 0 : $2) } END { print a + d + 0 }')
+          [ "$NLINES" -le "$MAX_LINES" ] \
+            || fail "Satır limiti aşıldı: $NLINES > $MAX_LINES (koşul 8)."
+
+          echo "Yetkilendirme geçerli: issue #$ISSUE, $NFILES dosya, $NLINES satır."
