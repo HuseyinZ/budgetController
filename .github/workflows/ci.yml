@@ -176,7 +176,7 @@ jobs:
             n=$(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='$t'")
             test "$n" = "1" || { echo "EKSİK TABLO: $t"; exit 1; }
           done
-          gen=$(q "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='order_items' AND EXTRA LIKE '%GENERATED%'")
+          gen=$(q "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='order_items' AND COLUMN_NAME IN ('net_amount','tax_amount','line_total') AND EXTRA LIKE '%STORED GENERATED%'")
           echo "generated columns: $gen"; test "$gen" = "3"
           echo "16 canonical tablo + generated kolonlar OK"
 
