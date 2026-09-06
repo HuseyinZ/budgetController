@@ -60,3 +60,182 @@ jobs:
 
       - name: Package (skip tests)
         run: mvn -B clean package -DskipTests
+
+  # ============================================================
+  #   Fresh install — gerçek MySQL 8.4 üzerinde migration sistemi (C1-d)
+  #
+  #   Boş DB → budget_migrate/budget_app oluştur → Migrate --status/--apply
+  #   → schema_version/roles/16 tablo doğrula → budget_app DDL yapamaz
+  #   → salt-okuma status (SchemaStartupCheck ile aynı yol) → adoption reddi.
+  #   Tamamen ephemeral test credential'ları; repository secret GEREKTİRMEZ.
+  # ============================================================
+  fresh-install:
+    name: Fresh install (MySQL 8.4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-only
+          MYSQL_DATABASE: posdb_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-only --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      CI_DB: posdb_ci
+      CI_ROOT_PASS: ci-root-only
+      CI_APP_USER: budget_app
+      CI_APP_PASS: ci-app-only
+      CI_MIG_USER: budget_migrate
+      CI_MIG_PASS: ci-migrate-only
+      # Migrate CLI / DbConfig: yalnız env üzerinden (~/.budget/db.properties yok)
+      DB_URL: jdbc:mysql://127.0.0.1:3306/posdb_ci?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USER: budget_app
+      DB_PASS: ci-app-only
+      DB_MIGRATE_USER: budget_migrate
+      DB_MIGRATE_PASS: ci-migrate-only
+      JAR: target/budgetController-1.0-SNAPSHOT.jar
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+          cache: maven
+
+      - name: Install MySQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -uroot -p"$CI_ROOT_PASS" --silent 2>/dev/null; then
+              echo "MySQL hazır"; exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL hazır olmadı"; exit 1
+
+      - name: Create users and least-privilege grants
+        run: |
+          mysql -h 127.0.0.1 -uroot -p"$CI_ROOT_PASS" <<SQL
+          CREATE USER '$CI_MIG_USER'@'%' IDENTIFIED BY '$CI_MIG_PASS';
+          GRANT SELECT, INSERT, UPDATE, DELETE,
+                CREATE, ALTER, DROP, INDEX, REFERENCES
+            ON $CI_DB.* TO '$CI_MIG_USER'@'%';
+          CREATE USER '$CI_APP_USER'@'%' IDENTIFIED BY '$CI_APP_PASS';
+          -- Canonical runtime grant (C1): yalnız DML. DDL yok; TRIGGER/EVENT/
+          -- LOCK TABLES/SHOW VIEW yok. Yedek hesabının yetki modeli ayrı iştir (H3).
+          GRANT SELECT, INSERT, UPDATE, DELETE
+            ON $CI_DB.* TO '$CI_APP_USER'@'%';
+          FLUSH PRIVILEGES;
+          SQL
+
+      - name: Build application JAR
+        run: mvn -B -DskipTests package
+
+      - name: Migrate --status on empty database (metadata missing, all pending)
+        run: |
+          out=$(java -cp "$JAR" tools.Migrate --status)
+          echo "$out"
+          echo "$out" | grep -q "başlatılmamış"
+          echo "$out" | grep -q "V1"
+          echo "$out" | grep -q "GÜNCEL DEĞİL"
+
+      - name: Migrate --apply (V001-V003)
+        run: java -cp "$JAR" tools.Migrate --apply
+
+      - name: Migrate --status after apply (up to date, runtime credential)
+        run: |
+          out=$(java -cp "$JAR" tools.Migrate --status)
+          echo "$out"
+          echo "$out" | grep -q "Durum: GÜNCEL$"
+
+      - name: Migrate --apply is idempotent
+        run: java -cp "$JAR" tools.Migrate --apply | grep -q "uygulanacak migration yok"
+
+      - name: Verify schema_version, roles and canonical tables
+        run: |
+          q() { mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "$1" "$CI_DB"; }
+          versions=$(q "SELECT GROUP_CONCAT(version ORDER BY version) FROM schema_version")
+          echo "schema_version: $versions"; test "$versions" = "1,2,3"
+          roles=$(q "SELECT COUNT(*) FROM roles WHERE name IN ('ADMIN','KASIYER','GARSON')")
+          echo "roles: $roles"; test "$roles" = "3"
+          printers=$(q "SELECT COUNT(*) FROM kitchen_printers WHERE is_active=0 AND host LIKE '192.0.2.%'")
+          echo "placeholder printers: $printers"; test "$printers" = "3"
+          for t in roles users categories products dining_tables kitchen_printers orders order_items \
+                   payments order_logs expenses refund_log reservations category_printer_routes \
+                   print_jobs user_area_permissions; do
+            n=$(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='$t'")
+            test "$n" = "1" || { echo "EKSİK TABLO: $t"; exit 1; }
+          done
+          gen=$(q "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='order_items' AND EXTRA LIKE '%GENERATED%'")
+          echo "generated columns: $gen"; test "$gen" = "3"
+          echo "16 canonical tablo + generated kolonlar OK"
+
+      - name: Runtime user can run DML (SELECT/INSERT/UPDATE/DELETE)
+        run: |
+          app() { mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "$1" "$CI_DB"; }
+          app "INSERT INTO categories (name) VALUES ('__ci_dml_probe__')"
+          app "UPDATE categories SET name='__ci_dml_probe2__' WHERE name='__ci_dml_probe__'"
+          n=$(app "SELECT COUNT(*) FROM categories WHERE name='__ci_dml_probe2__'")
+          test "$n" = "1" || { echo "HATA: budget_app INSERT/UPDATE yapamadı"; exit 1; }
+          app "DELETE FROM categories WHERE name='__ci_dml_probe2__'"
+          n=$(app "SELECT COUNT(*) FROM categories WHERE name LIKE '__ci_dml_probe%'")
+          test "$n" = "0" || { echo "HATA: budget_app DELETE yapamadı"; exit 1; }
+          echo "budget_app SELECT/INSERT/UPDATE/DELETE OK"
+
+      - name: Runtime user cannot run DDL / TRIGGER / EVENT
+        run: |
+          deny() {
+            if mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -e "$2" "$CI_DB" 2>/dev/null; then
+              echo "HATA: budget_app $1 çalıştırabildi"; exit 1
+            fi
+            echo "  $1 reddedildi (beklenen)"
+          }
+          deny "CREATE TABLE" "CREATE TABLE ddl_probe (id INT)"
+          deny "ALTER TABLE"  "ALTER TABLE roles ADD COLUMN ci_probe INT NULL"
+          deny "DROP TABLE"   "DROP TABLE schema_version"
+          deny "CREATE TRIGGER" \
+            "CREATE TRIGGER trg_ci_probe BEFORE INSERT ON categories FOR EACH ROW SET NEW.name = NEW.name"
+          deny "CREATE EVENT" \
+            "CREATE EVENT ev_ci_probe ON SCHEDULE EVERY 1 DAY DO SELECT 1"
+          # Yan etki bırakılmadığını doğrula
+          left=$(mysql -h 127.0.0.1 -uroot -p"$CI_ROOT_PASS" -N -s -e \
+            "SELECT (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='ddl_probe')
+                  + (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='roles' AND COLUMN_NAME='ci_probe')
+                  + (SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='$CI_DB')
+                  + (SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA='$CI_DB')")
+          test "$left" = "0" || { echo "HATA: DDL denemeleri yan etki bıraktı"; exit 1; }
+          echo "budget_app DDL/TRIGGER/EVENT reddedildi, yan etki yok (beklenen)"
+
+      - name: Runtime user can read schema_version (startup check path)
+        run: |
+          # SchemaStartupCheck ile aynı salt-okuma yol: budget_app olarak status → GÜNCEL
+          n=$(mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "SELECT COUNT(*) FROM schema_version" "$CI_DB")
+          test "$n" = "3"
+          java -cp "$JAR" tools.Migrate --status | grep -q "Durum: GÜNCEL$"
+
+      - name: Adoption is refused on an already versioned database
+        run: |
+          if java -cp "$JAR" tools.Migrate --adopt-existing; then
+            echo "HATA: versiyonlanmış DB'de adoption kabul edildi"; exit 1
+          fi
+          echo "adoption reddedildi (beklenen)"
+
+      - name: Mutating command fails without migrate credentials
+        env:
+          DB_MIGRATE_USER: ""
+          DB_MIGRATE_PASS: ""
+        run: |
+          if java -cp "$JAR" tools.Migrate --apply; then
+            echo "HATA: migrate credential olmadan --apply çalıştı"; exit 1
+          fi
+          echo "credential ayrımı korunuyor (beklenen)"
