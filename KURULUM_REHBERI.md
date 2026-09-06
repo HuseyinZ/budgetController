@@ -17,7 +17,7 @@ ekranları tam — başka kaynağa bakmana gerek yok.
 2. [Donanım Listesi ve Bütçe](#2-donanım)
 3. [Ağ Kurulumu](#3-ağ)
 4. [Kasada MySQL Kurulumu](#4-mysql)
-5. [Veritabanı + Migration'lar](#5-db)
+5. [Veritabanı Şeması — Migration Sistemi](#5-db)
 6. [Programı Derleme — JAR](#6-jar)
 7. [Programı Windows Uygulaması Yapma — EXE](#7-exe)
 8. [Ana Bilgisayara (Kasaya) Kurulum](#8-kasa)
@@ -130,7 +130,8 @@ ping 192.168.1.241  :: yazıcı cevap verirse OK
 1. https://dev.mysql.com/downloads/installer/ → **"MySQL Installer for Windows"**
 2. Yükleyici → **Setup Type**: Custom
 3. Seçilecek bileşenler:
-   - MySQL Server 9.3.0
+   - **MySQL Server 8.4 LTS** (9.x "Innovation" sürümü değil — LTS uzun destek alır;
+     CI de 8.4 üzerinde doğrulanır)
    - MySQL Workbench 8.x (yönetim için)
    - MySQL Shell (opsiyonel)
 4. **Type and Networking** ekranında:
@@ -141,7 +142,7 @@ ping 192.168.1.241  :: yazıcı cevap verirse OK
    - Root parolasını gir (**GÜÇLÜ** — en az 16 karakter, sembol içersin)
    - Bir yere not et — bir daha bulamazsın
 6. **Windows Service**:
-   - Service adı: MySQL93
+   - Service adı: MySQL84
    - "Start the MySQL Server at System Startup" işaretli
 7. Apply → tamamlandı.
 
@@ -149,7 +150,7 @@ ping 192.168.1.241  :: yazıcı cevap verirse OK
 
 MySQL kurulduktan sonra, kat PC'lerinden bağlanabilmesi için:
 
-Konfig dosyası: `C:\ProgramData\MySQL\MySQL Server 9.3\my.ini` (Notepad'i yönetici olarak aç)
+Konfig dosyası: `C:\ProgramData\MySQL\MySQL Server 8.4\my.ini` (Notepad'i yönetici olarak aç)
 
 ```ini
 [mysqld]
@@ -168,62 +169,102 @@ Bu sadece LAN'ı (192.168.1.x) kabul eder, dışarıdan erişim kapalıdır.
 ### 4.4 MySQL'i yeniden başlat
 
 ```cmd
-net stop MySQL93
-net start MySQL93
+net stop MySQL84
+net start MySQL84
 ```
 
-### 4.5 Uygulama kullanıcısı oluştur — `budget_app` (root'u uygulamada ASLA kullanma)
+### 4.5 İki veritabanı kullanıcısı — `budget_migrate` (şema) ve `budget_app` (runtime)
 
-**Kural:** `root` yalnız yönetim işlerinde kullanılır — veritabanı oluşturma, DDL/migration
-yükleme, restore. Uygulama (kasa, kat PC'leri, otomatik yedek) **en az yetkili**
-`budget_app` hesabıyla bağlanır. Uygulamanın gömülü varsayılan hesabı YOKTUR: config
-eksikse açılışta anlaşılır bir hata verir, sessizce root'a düşmez.
+**Kural:** `root` yalnız veritabanını oluşturmak, kullanıcıları tanımlamak ve restore
+etmek için kullanılır. Ondan sonra iki ayrı, en az yetkili hesap vardır:
+
+| Hesap | Ne için | Ne zaman | DDL |
+|---|---|---|---|
+| `budget_migrate` | Şema migration'ları (`tools.Migrate --apply / --adopt-existing`) | Yalnız kurulum ve sürüm yükseltme anında, yönetici elinde | **Evet** (yalnız `posdb`) |
+| `budget_app` | Uygulamanın kendisi (kasa, kat PC'leri, açılış şema kontrolü ve — H3'e kadar — uygulama içi `BackupService`) | Sürekli | **HAYIR** — CREATE/ALTER/DROP yok |
+
+Uygulama runtime'da **hiçbir DDL/veri düzeltmesi çalıştırmaz** (eski `SchemaPatcher`
+kaldırıldı); açılışta yalnız `schema_version` tablosunu OKUR. Gömülü varsayılan hesap
+YOKTUR: config eksikse açılışta anlaşılır hata verir, root'a düşmez.
 
 Workbench → root ile bağlan → yeni Query penceresi:
 
 ```sql
--- Kasa PC (aynı makine) — üretimde bu yeterlidir
-CREATE USER 'budget_app'@'localhost' IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
-
--- Kat PC'leri de bağlanacaksa (LAN) — yalnız kendi alt ağınız
-CREATE USER 'budget_app'@'192.168.1.%' IDENTIFIED BY 'GÜÇLÜ_BİR_SİFRE';
-
--- Yalnız posdb, yalnız gereken yetkiler:
---   DML          → günlük işlem
---   CREATE/ALTER/INDEX → uygulamanın başlangıç şema patch'leri (SchemaPatcher)
---   LOCK TABLES/SHOW VIEW/TRIGGER/EVENT → otomatik mysqldump yedeği
+-- 1) Şema kullanıcısı — yalnız kasa PC'sinden, yalnız migration anında
+CREATE USER 'budget_migrate'@'localhost' IDENTIFIED BY 'MIGRATE_ICIN_GUCLU_SIFRE';
 GRANT SELECT, INSERT, UPDATE, DELETE,
-      CREATE, ALTER, INDEX,
-      LOCK TABLES, SHOW VIEW, TRIGGER, EVENT
-  ON posdb.* TO 'budget_app'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE,
-      CREATE, ALTER, INDEX,
-      LOCK TABLES, SHOW VIEW, TRIGGER, EVENT
-  ON posdb.* TO 'budget_app'@'192.168.1.%';
+      CREATE, ALTER, DROP, INDEX, REFERENCES
+  ON posdb.* TO 'budget_migrate'@'localhost';
+
+-- 2) Runtime kullanıcısı — kasa PC (localhost) ve gerekirse kat PC'leri (LAN)
+--    CANONICAL RUNTIME GRANT: yalnız dört DML yetkisi. Başka hiçbir şey eklenmez.
+CREATE USER 'budget_app'@'localhost'   IDENTIFIED BY 'APP_ICIN_GUCLU_SIFRE';
+CREATE USER 'budget_app'@'192.168.1.%' IDENTIFIED BY 'APP_ICIN_GUCLU_SIFRE';
+GRANT SELECT, INSERT, UPDATE, DELETE ON posdb.* TO 'budget_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON posdb.* TO 'budget_app'@'192.168.1.%';
 FLUSH PRIVILEGES;
 ```
 
-Global yetki (`PROCESS`, `SUPER`, `FILE`, `*.*`) **verilmez**; başka veritabanlarına
-erişim yoktur. Otomatik yedek `mysqldump --no-tablespaces` ile çalıştığından
-`PROCESS` gerekmez.
+`budget_app` **yalnız uygulamanın günlük DML işlemlerini** yapabilir. Bilinçli olarak
+verilmeyenler:
 
-> **GEÇİCİ:** `CREATE`, `ALTER`, `INDEX` yetkileri yalnız uygulamanın başlangıçta
-> çalıştırdığı `SchemaPatcher` (reservations tablosu, eski CHECK constraint temizliği)
-> için verilmiştir. Şema yönetimi version-controlled migration'lara taşındığında (C1)
-> bu DDL yetkileri ayrı bir `budget_migrate` kullanıcısına geçecek ve `budget_app`
-> **yalnız runtime DML** (`SELECT, INSERT, UPDATE, DELETE` + yedek için
-> `LOCK TABLES, SHOW VIEW, TRIGGER, EVENT`) ile çalışacaktır. O adımda bu bölüm güncellenir.
+| Yetki | Neden verilmiyor |
+|---|---|
+| `CREATE` / `ALTER` / `DROP` / `INDEX` / `REFERENCES` | Şema işi `budget_migrate`'in; runtime hiç DDL çalıştırmaz |
+| `TRIGGER` | Uygulama trigger oluşturmaz/kullanmaz |
+| `EVENT` | Zamanlanmış işler MySQL'de değil, uygulama/Görev Zamanlayıcısı tarafında |
+| `LOCK TABLES`, `SHOW VIEW` | Yalnız dump araçlarının ihtiyacı; runtime'ın değil |
+| `PROCESS`, `SUPER`, `FILE`, `RELOAD`, `GRANT OPTION`, `*.*` | Sunucu geneli yetki — hiçbir hesaba verilmez |
+
+> **Yedekleme yetkileri buraya eklenmez — ve bunun bilinen bir sonucu vardır.**
+> Uygulama içindeki `BackupService` şu an **runtime credential'ını** (`db.user` /
+> `db.password`, yani `budget_app`) kullanarak
+> `mysqldump --single-transaction --no-tablespaces --routines --triggers` çalıştırır.
+> `budget_app` bilinçli olarak yalnız SELECT/INSERT/UPDATE/DELETE yetkisine sahip
+> olduğundan, **bu least-privilege modelinde otomatik yedeğin sorunsuz çalışacağı
+> garanti edilmez** (`--routines` / `--triggers` ek yetki isteyebilir).
+>
+> Bu bilinçli bir kabuldür: yedeklemenin credential ve yetki ayrımı ayrı bir iş
+> kalemidir (audit **H3 — backup credential / privilege modeli**) ve **production'a
+> geçmeden önce H3 tamamlanmalıdır.** Sorunu `budget_app`'e `TRIGGER`, `EVENT`,
+> global `SELECT` veya benzeri ek yetkiler vererek çözmeyin — doğru çözüm, yedeğin
+> kendi ayrı hesabını ve gerekiyorsa kendi mysqldump bayraklarını kullanmasıdır.
+
+`REFERENCES`, migration'ların foreign key tanımlayabilmesi için `budget_migrate`'te
+gereklidir (MySQL 8). Bu ayrım CI'da her değişiklikte doğrulanır
+(`.github/workflows/ci.yml` → *Fresh install (MySQL 8.4)* job'ı): `budget_app` ile
+SELECT/INSERT/UPDATE/DELETE'in **çalıştığı**, `CREATE TABLE` / `ALTER TABLE` /
+`DROP TABLE` / `CREATE TRIGGER` / `CREATE EVENT`'in ise **reddedildiği** doğrulanır.
+
+> `budget_migrate` parolasını `~/.budget/db.properties` dosyasına yazmak zorunda
+> değilsiniz; §5'teki gibi yalnız migration komutunu çalıştırırken ortam değişkeni
+> olarak vermeniz yeterlidir. Runtime dosyasında yalnız `budget_app` bulunur.
 
 ---
 
-## 5. Veritabanı + Migration'lar {#5-db}
+## 5. Veritabanı Şeması — Migration Sistemi {#5-db}
 
-> **Yönetim işi — root ile yapılır.** Bu bölümdeki tüm komutlar (CREATE DATABASE, DDL
-> yükleme, migration, restore) tek seferlik/yönetim işlemleridir ve `-u root` ile
-> koşulur. Uygulama çalışırken kullanılan hesap ise §4.5'teki `budget_app`'tir;
-> uygulamaya, kat PC'lerine veya otomatik yedeğe **hiçbir zaman root parolası verilmez.**
+Şema artık **repo içinde versiyonlu SQL dosyalarıyla** yönetilir ve `tools.Migrate`
+aracıyla uygulanır. Elle dump/DDL yükleme dönemi bitti:
 
-### 5.1 Veritabanını oluştur
+> **ESKİ YÖNTEM — ARTIK KULLANILMAZ:** `posdb_*.sql` dump'larını ve `V2026_05_*` dosyalarını
+> `mysql -u root ... <` ile tek tek yüklemek. Dump'lar üretim verisi/kullanıcı içerir ve
+> **Git'e konmaz** (`.gitignore`); eski migration'lar yalnız tarihsel referans olarak
+> `docs/db/legacy/` altındadır ve çalıştırılmaz.
+
+Dosyalar: `src/main/resources/db/migration/`
+| Dosya | İçerik |
+|---|---|
+| `V001__baseline_schema.sql` | Canonical şema — 16 tablo (roles, users, categories, products, dining_tables, kitchen_printers, orders, order_items, payments, order_logs, expenses, refund_log, reservations, category_printer_routes, print_jobs, user_area_permissions). Veri yok. |
+| `V002__seed_roles.sql` | ADMIN / KASIYER / GARSON rolleri (idempotent). Kullanıcı **yok**. |
+| `V003__seed_kitchen_printers.sql` | DONER / FIRIN / OCAK yazıcı şablonları — `host` placeholder (`192.0.2.x`), `is_active = 0`. Gerçek IP §10.4'te girilir. |
+
+Uygulanan her migration `schema_version` tablosuna (versiyon, açıklama, SHA-256 checksum,
+zaman) yazılır. Uygulanmış bir dosya sonradan değiştirilirse Migrate checksum
+uyuşmazlığıyla **durur**. Rollback / destructive (DROP, veri silen) migration **yoktur**;
+her değişiklik ileri yönlü ve idempotent yazılır.
+
+### 5.1 Veritabanını oluştur (root, tek sefer)
 
 Workbench Query'de:
 ```sql
@@ -231,49 +272,81 @@ CREATE DATABASE posdb
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_turkish_ci;
 ```
+Sonra §4.5'teki iki kullanıcıyı (`budget_migrate`, `budget_app`) oluştur.
 
-### 5.2 Ana DDL'leri yükle
+### 5.2 Migrate aracının çalıştırılması
 
-Komut satırında (proje klasöründe):
-```cmd
-cd C:\Users\husey\IdeaProjects\budgetController
-set MYSQL="C:\Program Files\MySQL\MySQL Server 9.3\bin\mysql.exe"
+`tools.Migrate` uygulama JAR'ının içindedir. Bağlantı bilgisi `~/.budget/db.properties`
+(§8.4.1) + ortam değişkenlerinden okunur; **şema değiştiren komutlar için `budget_migrate`
+kimliği ayrıca ve açıkça verilmek zorundadır** — verilmezse komut çalışmaz, `budget_app`'e
+düşmez. Kasa PC'de (PowerShell):
 
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_roles.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_users.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_categories.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_products.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_dining_tables.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_orders.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_order_items.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_payments.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_expenses.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_returns.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < posdb_routines.sql
+```powershell
+cd "C:\Program Files\budgetController"          # JAR'ın bulunduğu klasör
+$env:DB_MIGRATE_USER = "budget_migrate"
+$env:DB_MIGRATE_PASS = "MIGRATE_ICIN_GUCLU_SIFRE"    # oturum kapanınca silinir
+
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status
 ```
 
-### 5.3 Migration'ları sırayla çalıştır
+Komutlar:
 
-```cmd
-cd C:\Users\husey\IdeaProjects\budgetController\src\main\resources\db\migration
+| Komut | Ne yapar | Kimlik | Ne zaman |
+|---|---|---|---|
+| `--status` | **Salt okuma.** Uygulanmış/bekleyen migration'ları ve checksum durumunu listeler; hiçbir şey yazmaz | `budget_app` yeter | Her zaman güvenli — önce bunu çalıştır |
+| `--apply` | Bekleyen migration'ları versiyon sırasıyla uygular, `schema_version`'a kaydeder | `budget_migrate` **zorunlu** | Boş DB kurulumu ve her sürüm yükseltmesi |
+| `--adopt-existing` | Elle kurulmuş **eski** DB'yi versiyon sistemine alır: şemanın V001 ile yapısal uyumunu (tablo/kolon/tip/PK/UNIQUE/FK/CHECK) doğrular; uyumluysa yalnız **V001**'i uygulanmış işaretler. Uyumsuzsa hiçbir kayıt yazmadan durur. **Veri/şema değiştirmez.** | `budget_migrate` **zorunlu** | Yalnız bir kez, migration sistemine geçişte |
 
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < V2026_05_15__kitchen_printers.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < V2026_05_17__multi_kitchen_and_override.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < V2026_05_17b__portion_pricing_and_kg_expenses.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < V2026_05_17c__user_area_permissions.sql
-%MYSQL% --default-character-set=utf8mb4 -u root -p posdb < V2026_05_18__order_item_notes.sql
+### 5.3 Sıfırdan kurulum (boş `posdb`)
+
+```powershell
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status    # "Migration metadata başlatılmamış", V1 V2 V3 bekleyen
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --apply     # V001 → V002 → V003
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status    # "Durum: GÜNCEL"
 ```
 
-### 5.4 Doğrulama
+### 5.4 Mevcut (eski, elle kurulmuş) `posdb`'yi geçirme
 
-Workbench'te:
+```powershell
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status           # metadata yok beklenir
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --adopt-existing   # yapısal doğrulama + V001 işareti
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --apply            # V002/V003: eksik rol / placeholder yazıcı eklenir
+java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status           # "Durum: GÜNCEL"
+```
+Seed'ler idempotenttir: mevcut roller ve **gerçek yazıcı kayıtlarına dokunulmaz**, yalnız
+eksik olanlar eklenir. Adoption "uyumsuz" derse listeyi okuyun; şemayı elle düzeltmek yerine
+durumu bildirin — düzeltici migration (`V004+`) repo üzerinden gelir.
+
+### 5.5 Uygulama açılışındaki şema kontrolü
+
+Uygulama her açılışta `schema_version` tablosunu **yalnız okur** (DDL yetkisi gerekmez).
+Şu durumlarda **açılmaz** ve şu mesajı gösterir:
+
+> *Database schema is not ready. Run Migrate --status / --apply / --adopt-existing.*
+
+- `schema_version` yok → DB hiç migrate/adopt edilmemiş → §5.3 veya §5.4
+- bekleyen migration var → yeni sürüm kuruldu ama `--apply` çalıştırılmadı
+- checksum uyuşmazlığı → uygulanmış bir migration dosyası değiştirilmiş (normalde olmamalı; destek isteyin)
+- veritabanına ulaşılamıyor / `db.properties` eksik → §15
+
+Bu bilinçli bir tasarımdır: şema eksikken uygulama "yarım çalışıp" sessizce veri
+bozmaktansa hiç açılmaz. Teknik ayrıntı `logs/errors.log` dosyasındadır.
+
+### 5.6 Kaldırılan otomatik veri düzeltmesi
+
+Eski sürümler açılışta `products` tablosundaki negatif stokları otomatik 0'a çekiyordu.
+Bu davranış **kaldırıldı**: uygulama artık açılışta hiçbir veri değiştirmez. Böyle bir
+düzeltme gerekirse ayrı, yöneticinin bilinçli çalıştıracağı bir bakım adımı olarak
+sunulacaktır (bu sürümde yok).
+
+### 5.7 Doğrulama
+
+Workbench'te (root veya budget_app):
 ```sql
 USE posdb;
-SHOW TABLES;
--- En az şu tabloları görmelisin:
--- categories, dining_tables, expenses, kitchen_printers,
--- category_printer_routes, order_items, orders, payments,
--- print_jobs, products, roles, user_area_permissions, users
+SELECT version, description, applied_at FROM schema_version ORDER BY version;  -- 1, 2, 3
+SELECT name FROM roles;                                                          -- ADMIN, KASIYER, GARSON
+SHOW TABLES;                                                                     -- 16 tablo + schema_version
 ```
 
 ---
@@ -425,6 +498,14 @@ db.pool.maxSize=15
 başlamaz (gömülü varsayılan hesap yoktur). Dosyayı yalnız `kasa` kullanıcısının
 okuyabileceği şekilde tutun (Özellikler → Güvenlik).
 
+Migration kimliği (`budget_migrate`) bu dosyaya **yazılmak zorunda değildir**; §5.2'deki
+gibi `DB_MIGRATE_USER` / `DB_MIGRATE_PASS` ortam değişkeni olarak yalnız Migrate
+çalıştırırken verilir. İstenirse `db.migrate.user` / `db.migrate.password` anahtarları
+olarak da dosyaya konabilir — uygulama runtime'ı bu anahtarları hiç okumaz.
+
+Öncelik sırası (tüm anahtarlar için): JVM `-D` sistem özelliği > ortam değişkeni
+(`DB_URL`, `DB_USER`, `DB_PASS`, `DB_MIGRATE_USER`, `DB_MIGRATE_PASS`) > `~/.budget/db.properties`.
+
 #### 8.4.2 Restoran masa düzeni
 
 `C:\Users\kasa\.budget\restaurant-layout.properties` (yoksa oluştur, içine
@@ -516,11 +597,17 @@ Yazıcıdan test fişi çıkıyorsa OK.
 
 ### 10.4 DB'de yazıcı kayıtlarını güncelle
 
-Workbench:
+`V003__seed_kitchen_printers.sql` üç yazıcıyı **placeholder host ile ve `is_active = 0`**
+olarak oluşturur (bkz. §5). Gerçek IP'leri burada girip yazıcıları etkinleştirirsin —
+şema değişikliği değil, normal veri güncellemesidir; `budget_app` yetkisiyle de yapılabilir.
+
+Workbench (kendi ağındaki gerçek IP'leri yaz):
 ```sql
-UPDATE kitchen_printers SET host='192.168.1.241' WHERE code='DONER';
-UPDATE kitchen_printers SET host='192.168.1.242' WHERE code='FIRIN';
-UPDATE kitchen_printers SET host='192.168.1.243' WHERE code='OCAK';
+UPDATE kitchen_printers SET host='192.168.1.241', port=9100, is_active=1 WHERE code='DONER';
+UPDATE kitchen_printers SET host='192.168.1.242', port=9100, is_active=1 WHERE code='FIRIN';
+UPDATE kitchen_printers SET host='192.168.1.243', port=9100, is_active=1 WHERE code='OCAK';
+
+SELECT code, host, port, is_active FROM kitchen_printers;   -- 192.0.2.x kalmamalı
 ```
 
 ---
@@ -619,7 +706,7 @@ Her PC açıldığında uygulama tek başına açılmalı.
 
 Kurulumda zaten "Start on system startup" işaretliydi. Doğrula:
 ```cmd
-sc query MySQL93
+sc query MySQL84
 ```
 
 `STATE: RUNNING` görmelisin.
@@ -651,6 +738,16 @@ Her sorunun cevabı "Evet" ise sistem canlıya hazır.
 
 ### 14.1 Otomatik yedekleme
 
+> **Not (yetki modeli — production öncesi çözülmeli):** İki ayrı yedek yolu var.
+> Harici `scripts/backup_posdb.bat` betiği kendi içinde tanımlanan hesapla çalışır
+> (parolası **repoya girmez**). Uygulama içindeki `BackupService` ise **runtime
+> credential'ını (`budget_app`) kullanır**; o hesapta bilinçle yalnız
+> SELECT/INSERT/UPDATE/DELETE bulunduğundan (§4.5) `--routines --triggers` içeren
+> mysqldump çağrısının bu modelde çalışacağı **garanti değildir**. Yedek hesap/yetki
+> ayrımı audit **H3** kapsamındadır ve **production'a geçmeden önce tamamlanmalıdır**;
+> bu arada `budget_app`'e ek yetki verilerek geçiştirilmemelidir. Yedeklerini elle
+> doğrula (§14.1 adım 5).
+
 `BULUT_YEDEKLEME.md`'ye göre:
 1. OneDrive masaüstü uygulamasını kur, hesap aç
 2. `scripts/backup_posdb.bat`'i `C:\budget\scripts\` altına kopyala
@@ -675,9 +772,20 @@ Her sorunun cevabı "Evet" ise sistem canlıya hazır.
 - Kat PC'den `telnet 192.168.1.10 3306` test et
 - `GRANT` cümlesinde `192.168.1.%` doğru mu?
 
-### "Uygulama açılırken hata: db.properties bulunamadı"
-- `C:\Users\<kullanıcı>\.budget\db.properties` mevcut mu?
-- Yoksa: kurulum klasöründeki default kullanılır, ama localhost'a bakar
+### "Veritabanı yapılandırması eksik: db.url / db.user / db.password"
+- `C:\Users\<kullanıcı>\.budget\db.properties` mevcut mu, üç anahtar da dolu mu? (§8.4.1)
+- Gömülü varsayılan hesap **yoktur**; dosya yoksa uygulama açılmaz.
+
+### "Database schema is not ready. Run Migrate --status / --apply / --adopt-existing."
+Uygulama açılışta şemayı yalnız okuyarak doğrular; hazır değilse bilinçli olarak başlamaz (§5.5).
+- Önce (güvenli, salt okuma): `java -cp budgetController-1.0-SNAPSHOT.jar tools.Migrate --status`
+- Çıktı **"Migration metadata başlatılmamış"** → DB hiç geçirilmemiş:
+  boş DB ise `--apply` (§5.3); eski elle kurulmuş DB ise önce `--adopt-existing`, sonra `--apply` (§5.4).
+- Çıktı **bekleyen migration** listeliyor → yeni sürüm kuruldu; `--apply` çalıştır.
+- Çıktı **checksum uyuşmazlığı** → uygulanmış bir migration dosyası değişmiş; elle düzeltme yapma, destek iste.
+- Dialogda "database unreachable or configuration missing" → MySQL servisi çalışıyor mu, `db.properties` doğru mu (§4, §8.4.1).
+- `--apply`/`--adopt-existing` "migrate kimliği eksik" diyorsa `DB_MIGRATE_USER` / `DB_MIGRATE_PASS` verilmemiştir (§5.2); `budget_app`'e düşmez.
+- Ayrıntı: `logs/errors.log`.
 
 ### "Yazıcı bulunamadı / fiş basmıyor"
 - `ping 192.168.1.241` cevap veriyor mu?
@@ -722,14 +830,18 @@ jpackage --name budgetController --app-version 1.0.0 ^
   --input target --main-jar budgetController-1.0-SNAPSHOT.jar ^
   --main-class org.budget.App --type msi --win-shortcut --win-menu
 
+:: Şema durumu (salt okuma) / migration uygula (DB_MIGRATE_USER + DB_MIGRATE_PASS gerekli)
+java -cp target\budgetController-1.0-SNAPSHOT.jar tools.Migrate --status
+java -cp target\budgetController-1.0-SNAPSHOT.jar tools.Migrate --apply
+
 :: MySQL bağlan
-mysql -u budget -h 192.168.1.10 -p posdb
+mysql -u budget_app -h 192.168.1.10 -p posdb
 
-:: Yedek al
-mysqldump --default-character-set=utf8mb4 -u root -p posdb > posdb-backup.sql
+:: Yedek al (dump Git'e KONMAZ — .gitignore: posdb_*.sql)
+mysqldump --default-character-set=utf8mb4 --single-transaction --no-tablespaces --routines --triggers -u root -p posdb > posdb_backup.sql
 
-:: Yedekten geri yükle
-mysql --default-character-set=utf8mb4 -u root -p posdb < posdb-backup.sql
+:: Yedekten geri yükle (sonra Migrate --status ile şema durumunu doğrula)
+mysql --default-character-set=utf8mb4 -u root -p posdb < posdb_backup.sql
 
 :: Uygulamayı yeniden başlat (process kapat, masaüstünden çift tıkla)
 taskkill /F /IM javaw.exe
