@@ -841,7 +841,3 @@ mysql --default-character-set=utf8mb4 -u root -p posdb < posdb_backup.sql
 taskkill /F /IM javaw.exe
 ```
 
----
-
-*Hazırlayan: Claude — Tarih: 2026-05-18*
-*budgetController v1.0 için kurulum rehberi*
