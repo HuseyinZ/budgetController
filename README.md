@@ -1,120 +1,101 @@
 # BudgetController
 
-BudgetController is a Java 22 restaurant POS and operations-management application built around a Swing desktop client, a Javalin REST API, PWA assets, and MySQL persistence.
+BudgetController is a restaurant POS and management application written in Java 22. It started as a desktop application and gradually grew to include a REST API, PWA access, MySQL persistence, multi-terminal support, and network kitchen printers.
 
-The project is designed as a practical restaurant system rather than a standalone demo: it covers desktop/PWA access, database lifecycle, security controls, multi-screen deployment, and network kitchen-printer integration.
+The main goal of the project is to manage day-to-day restaurant operations from a single system: orders, tables, users, payments, products, kitchen routing, and related administrative tasks.
 
-## Highlights
+## Main Features
 
-- Restaurant POS and order-management workflow
-- Java Swing desktop interface
-- Javalin REST API for client integrations
-- MySQL 8.4 persistence with HikariCP connection pooling
-- Versioned database migrations and startup schema verification
-- Role-based access and authentication-related security controls
-- Externalized production credentials and least-privilege database access
-- PWA assets for browser/mobile access
-- Multi-screen / multi-terminal deployment support
-- ESC/POS kitchen-printer routing over the local network
-- Backup and restore documentation
-- OWASP Dependency-Check and CycloneDX SBOM support
+- Table and order management
+- Product and category management
+- User roles and authorization
+- Payment and sales flow
+- Swing desktop interface
+- REST API with Javalin
+- PWA access for other devices
+- MySQL database with HikariCP
+- Versioned database migrations
+- Network kitchen-printer support with ESC/POS
+- Backup and restore utilities
+- Dependency scanning with OWASP Dependency-Check
 
 ## Tech Stack
 
 | Area | Technology |
 | --- | --- |
 | Language | Java 22 |
-| Desktop UI | Swing + FlatLaf |
-| API | Javalin 6 / Jetty |
+| Desktop UI | Swing, FlatLaf |
+| API | Javalin, Jetty |
 | Database | MySQL 8.4 |
-| Database access | JDBC + HikariCP |
-| JSON | Jackson / Gson |
-| Authentication | BCrypt-based password hashing |
-| Testing | JUnit 5 + H2 |
+| Database access | JDBC, HikariCP |
+| JSON | Jackson, Gson |
+| Authentication | BCrypt |
+| Testing | JUnit 5, H2 |
 | Build | Maven |
-| Security tooling | OWASP Dependency-Check |
-| Supply-chain metadata | CycloneDX SBOM |
+| Security | OWASP Dependency-Check |
+| SBOM | CycloneDX |
 
 ## Architecture
 
 ```text
-                    ┌──────────────────────┐
-                    │   Swing Desktop UI   │
-                    └──────────┬───────────┘
-                               │
-                         Application Layer
-                               │
-             ┌─────────────────┼─────────────────┐
-             │                 │                 │
-        JDBC / HikariCP    Javalin REST API   Printing
-             │                 │                 │
-             ▼                 ▼                 ▼
-          MySQL 8.4       PWA / clients     ESC/POS printers
+Swing Desktop App
+        |
+        +---- JDBC / HikariCP ----> MySQL
+        |
+        +---- Javalin REST API ---> PWA / other clients
+        |
+        +---- Printing -----------> ESC/POS kitchen printers
 ```
 
-## Database Lifecycle
+## Database
 
-The repository uses versioned schema migrations and verifies the expected schema at startup. Runtime database credentials are kept outside version control.
+The database schema is managed through versioned migrations. The application checks the schema version at startup and does not modify the schema automatically during normal runtime.
 
-Production configuration is read from:
+Production database credentials are stored outside the repository in:
 
 ```text
 ~/.budget/db.properties
 ```
 
-See [KURULUM_REHBERI.md](KURULUM_REHBERI.md) for the full installation and migration workflow.
+More details are available in [KURULUM_REHBERI.md](KURULUM_REHBERI.md).
 
-## Kitchen Printing
+## Kitchen Printers
 
-The project contains support and documentation for routing order items to network-connected ESC/POS kitchen printers.
+Orders can be routed to different kitchen printers according to product category. The current implementation uses network-connected ESC/POS printers.
 
-See:
+Related documentation:
 
 - [MUTFAK_YAZICI_KURULUM.md](MUTFAK_YAZICI_KURULUM.md)
 - [COKLU_EKRAN_KURULUM.md](COKLU_EKRAN_KURULUM.md)
 
-## Backup
+## Build
 
-Backup and restore guidance is documented in:
-
-- [BULUT_YEDEKLEME.md](BULUT_YEDEKLEME.md)
-- [KURULUM_REHBERI.md](KURULUM_REHBERI.md)
-
-## Build and Verification
-
-### Prerequisites
+Requirements:
 
 - Java 22
 - Maven
-- MySQL 8.x for production use
+- MySQL 8.x for production
 
-### Run tests
+Run tests:
 
 ```bash
 mvn test
 ```
 
-### Build
+Build the project:
 
 ```bash
 mvn clean package
 ```
 
-### Dependency security scan
+Run dependency checks:
 
 ```bash
 mvn org.owasp:dependency-check-maven:check
 ```
 
-The build also supports CycloneDX SBOM generation.
+## Notes
 
-## Security Notes
-
-- Do not commit database, email, or other runtime credentials.
-- Production secrets are intentionally externalized from the application JAR.
-- The project includes dependency-vulnerability scanning and dependency-version controls.
-- Database runtime access follows a least-privilege model; schema migration is handled separately.
-
-## Project Status
-
-Active development. The current focus is production hardening, deployment reliability, database migration safety, and operational readiness.
+- Runtime credentials and other secrets are not stored in the repository.
+- Database access uses separate runtime and migration accounts.
+- The project is still under active development and is being prepared for real restaurant use.
