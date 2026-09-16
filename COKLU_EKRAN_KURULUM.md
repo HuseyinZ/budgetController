@@ -193,6 +193,4 @@ Kasada günde 1 kez otomatik MySQL dump'ı önerilir:
    ```
 4. Tüm ekranlardaki uygulamayı yeniden başlat.
 
----
 
-*Hazırlayan: Claude — Tarih: 2026-05-17*
