@@ -190,7 +190,16 @@ These areas may be modified only through authorized MEDIUM mode and only when na
 
 DAO files are hard-protected in full. Read paths and mutation paths live in the same files, so no path pattern can separate them, and order-item mutation identity rules also live there. DAO work — including read-only changes — requires human-directed HIGH handling.
 
-The mechanical gate can only enforce path patterns. Category entries above that are not expressible as paths (`non-security service logic`, `Swing UI files`) are bounded by the authorization issue and the review rounds, not by the gate.
+`Protected paths (risk gate)` enforces these bounded MEDIUM areas mechanically as Tier 2 — they fail unless the pull request carries a valid authorization issue:
+
+- `src/main/java/state/AppState.java`
+- `src/main/java/service/api/ApiServer.java`
+- `src/main/java/UI/**` — Swing UI files
+- `src/main/resources/webapp/**` — PWA JavaScript, HTML, and CSS
+
+Tier 1 always wins over Tier 2: a hard-protected pattern matching a file under these directories still fails unconditionally.
+
+`non-security service logic` stays outside the gate on purpose. It is a semantic category, and any glob wide enough to cover it (`src/main/java/service/*`) would also cover authentication, backup, and migration code. That area is bounded by the authorization issue and the review rounds, not by a path pattern.
 
 ## MEDIUM three-round protocol
 

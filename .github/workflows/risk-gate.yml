@@ -117,8 +117,17 @@ jobs:
                 tier1=1
                 ;;
               # ---------- TIER 2: yalnız yetkili MEDIUM ile geçer ----------
+              # TIER-1 arm'ı yukarıda olduğu için önceliklidir: case ilk
+              # eşleşen dalı seçer, yani UI/webapp altına düşen bir TIER-1
+              # pattern'i (örn. *.sql) yine TIER 1 olarak yakalanır.
+              # 'non-security service logic' semantik bir kategoridir ve
+              # bilinçli olarak buraya alınmaz — geniş bir service/* glob'u
+              # güvenlik kodunu da kapsardı; o alan controller + review
+              # yargısında kalır.
               src/main/java/state/AppState.java|\
-              src/main/java/service/api/ApiServer.java)
+              src/main/java/service/api/ApiServer.java|\
+              src/main/java/UI/*|\
+              src/main/resources/webapp/*)
                 echo "::warning file=$f::TIER-2 bounded MEDIUM path changed: $f"
                 tier2=1
                 ;;
