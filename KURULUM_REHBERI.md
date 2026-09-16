@@ -14,7 +14,7 @@ ekranları tam — başka kaynağa bakmana gerek yok.
 ## İçindekiler
 
 1. [Genel Durum ve Topoloji](#1-genel-durum)
-2. [Donanım Listesi ve Bütçe](#2-donanım)
+2. [Donanım Listesi](#2-donanım)
 3. [Ağ Kurulumu](#3-ağ)
 4. [Kasada MySQL Kurulumu](#4-mysql)
 5. [Veritabanı Şeması — Migration Sistemi](#5-db)
@@ -63,27 +63,23 @@ ekranları tam — başka kaynağa bakmana gerek yok.
 
 ---
 
-## 2. Donanım Listesi ve Bütçe {#2-donanım}
+## 2. Donanım Listesi {#2-donanım}
 
-| Donanım | Adet | Birim ₺ | Toplam | Notlar |
-|---|---|---:|---:|---|
-| **Kasa PC** (Mini-PC veya endüstriyel POS) — Intel i5, 8GB RAM, 256GB SSD | 1 | 18.000 | 18.000 | MySQL barındıracak |
-| **Kasa Dokunmatik Ekran** 17" | 1 | 4.500 | 4.500 | HDMI + USB touch |
-| **Kat PC** (mini PC veya All-in-One dokunmatik) — Intel i3, 4GB RAM, 128GB SSD | 3 | 8.000 | 24.000 | Her kat için 1 |
-| **Wi-Fi router** (Cat6 LAN portlu) | 1 | 1.500 | 1.500 | Çoğu restoranda var |
-| **LAN switch** 8-port | 1 | 800 | 800 | Cihaz fazlaysa |
-| **Cat6 kablo** (50m makara) | 1 | 600 | 600 | Kasa↔switch↔ekranlar |
-| **Mutfak yazıcı** Epson TM-T20III LAN | 3 | 7.000 | 21.000 | Döner/Fırın/Ocak |
-| **Wi-Fi köprü** TP-Link TL-WR802N | 3 | 500 | 1.500 | Yazıcı kablosuz için |
-| **80mm termal kağıt** (10 lı paket) | 2 | 350 | 700 | İlk stok |
-| **UPS** (Kasada güç kesintisinde DB bozulmasın) | 1 | 2.500 | 2.500 | 5-10 dk yeter |
-| **Toplam donanım** | | | **~75.000 ₺** | (kameralar, ses hariç) |
+| Donanım | Adet | Notlar |
+|---|---:|---|
+| **Kasa PC** (Mini-PC veya endüstriyel POS) — Intel i5, 8GB RAM, 256GB SSD | 1 | MySQL barındıracak |
+| **Kasa Dokunmatik Ekran** 17" | 1 | HDMI + USB touch |
+| **Kat PC** (mini PC veya All-in-One dokunmatik) — Intel i3, 4GB RAM, 128GB SSD | 3 | Her kat için 1 |
+| **Wi-Fi router** (Cat6 LAN portlu) | 1 | Çoğu restoranda var |
+| **LAN switch** 8-port | 1 | Cihaz fazlaysa |
+| **Cat6 kablo** (50m makara) | 1 | Kasa↔switch↔ekranlar |
+| **Mutfak yazıcı** Epson TM-T20III LAN | 3 | Döner/Fırın/Ocak |
+| **Wi-Fi köprü** TP-Link TL-WR802N | 3 | Yazıcı kablosuz için |
+| **80mm termal kağıt** (10'lu paket) | 2 | İlk stok |
+| **UPS** (Kasada güç kesintisinde DB bozulmasın) | 1 | Kısa süreli kesintiler için |
 
-**Karşılaştırma**: PDF'deki Max Bilişim teklifi POS+yazıcı kısmı için ~120.000 ₺
-istiyordu. Burada yazılım sıfır, sadece donanım masrafı **75.000 ₺**.
-
-> İndirim için: Kat PC'lerini hep aynı modelle al — toplu indirim alırsın.
-> Sahibinden ikinci el dokunmatik POS ekranlarına bakmak ciddi bütçe kurtarır.
+> Fiyatlar hızlı değiştiği için bu rehberde sabit donanım fiyatı tutulmaz.
+> Satın alma öncesinde güncel fiyat ve stok ayrıca doğrulanmalıdır.
 
 ---
 
@@ -650,7 +646,7 @@ INSERT INTO categories (name) VALUES
 `Ürünler` sekmesi → Yeni → her ürün için:
 - Ad: "Kuzu Ciğer Şiş"
 - Kategori: "Ciğer"
-- Porsiyon Fiyatı: 360,00 ₺
+- Porsiyon Fiyatı: güncel menü fiyatını gir
 - Birim: "şiş"
 - Porsiyondaki şiş adeti: 4
 
@@ -720,14 +716,12 @@ Tüm kurulum bittikten sonra şu senaryoyu uçtan uca dene:
 1. ✅ Kasa PC'yi kapat ve aç → uygulama otomatik açılıyor mu?
 2. ✅ Kat PC'sini aç → DB'ye bağlanıyor mu?
 3. ✅ Ahmet ile giriş yap → sadece 1. kat görünüyor mu?
-4. ✅ Bir masaya 5 şiş ciğer + 1 ayran ekle → fiyat doğru hesaplandı mı?
-   (5×90 = 450 ₺ olmalı; 1 porsiyon 4 şiş × 90 ₺ = 360 ₺ ise birim 90/4=22.50)
-   Yanlış! Doğrusu: porsiyon fiyatı 360 ₺ ise şiş başı 90 ₺, 5 şiş 450 ₺.
+4. ✅ Bir masaya 5 şiş ciğer + 1 ayran ekle → porsiyon/birim fiyat hesabı doğru çalışıyor mu?
 5. ✅ "Mutfağa Gönder" → Ocak yazıcıdan fiş çıkıyor mu?
 6. ✅ Fişte salon + masa no büyük punto, vurgulu kalem var mı?
 7. ✅ Kasada satış yap → Nakit → masa boşalıyor mu?
 8. ✅ Aynı masaya yeniden ürün ekle → "YENİ" sarı vurgu var mı?
-9. ✅ Admin → Gün Sonu → bugün ki ciro 450 ₺ görünüyor mu?
+9. ✅ Admin → Gün Sonu → yapılan satışın ciroya doğru yansıdığını doğrula.
 10. ✅ Admin → Saatlik Yoğunluk → şimdiki saat dilimi 1 işlem gösteriyor mu?
 
 Her sorunun cevabı "Evet" ise sistem canlıya hazır.
