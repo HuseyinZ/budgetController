@@ -314,4 +314,3 @@ C: SQL ile güncelleyin (`UPDATE kitchen_printers SET host='...' WHERE
 
 ---
 
-*Hazırlayan: Claude · Tarih: 2026-05-17*
