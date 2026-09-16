@@ -4,10 +4,7 @@ target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -38,15 +35,10 @@ build/
 .DS_Store
 
 ### Güvenlik: gerçek secret içeren dosyalar repo'ya GİRMESİN ###
-# Bunlar yerel olarak ~/.budget/ altında veya geliştirici makinesinde tutulur.
-# Repo içinde sadece .example versiyonları paylaşılır.
 src/main/resources/db.properties
 src/main/resources/email-config.properties
 
-# Yedekler ve üretim dump'ları (şifreli olsalar dahi commit edilmez)
-#   NOT: Şema migration'ları (src/main/resources/db/migration/V*.sql) ve
-#   docs/db/legacy altındaki sanitize edilmiş arşiv TRACKED'dir — blanket
-#   "*.sql" kuralı bilinçli olarak kaldırıldı; yalnız dump/yedek desenleri ignore.
+# Yedekler ve üretim dump'ları
 logs/
 backups/
 Backups/
@@ -63,14 +55,8 @@ budget-*.sql
 *.jks
 *.p12
 
-# Yerel kullanım için backup script (gerçek MySQL şifresi içerebilir)
-# Repo'ya örnek olan scripts/backup_posdb.bat.example commit edilir.
 scripts/backup_posdb.bat
 
-# Özel/ticari hassas belgeler — repo'da tutulmaz
-# (PDF/DOCX dosya adları Türkçe karakterli olduğu için NFC↔NFD normalize
-#  farkı pattern eşleşmesini bozar; bu yüzden tüm pdf/docx'leri ignore'a
-#  alıyoruz. Gerçekten commit edilmesi gereken bir döküman olursa
-#  `!docs/<dosya>.pdf` gibi negation ile dahil edilebilir.)
+# Özel/ticari hassas belgeler
 *.pdf
 *.docx
