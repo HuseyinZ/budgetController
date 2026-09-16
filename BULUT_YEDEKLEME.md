@@ -168,6 +168,3 @@ Disk seviyesinde (Veeam, Macrium) tüm sistemi yedekle. Hızlı geri dönüş i�
 
 Yukarıdaki üç seçenek küçük-orta restoranlar için **gereksiz**. Tek günlük dump + bulut yeterlidir.
 
----
-
-*Hazırlayan: Claude — Tarih: 2026-05-18*
