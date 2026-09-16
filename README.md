@@ -40,7 +40,7 @@ Database credentials are kept outside the repository:
 ~/.budget/db.properties
 ```
 
-The full setup process is documented in [KURULUM_REHBERI.md](KURULUM_REHBERI.md).
+The full setup process is documented in [KURULUM_REHBERI.md](docs/KURULUM_REHBERI.md).
 
 ## Build and test
 
@@ -70,9 +70,9 @@ mvn org.owasp:dependency-check-maven:check
 
 ## Documentation
 
-- [Installation guide](KURULUM_REHBERI.md)
-- [Kitchen printer setup](MUTFAK_YAZICI_KURULUM.md)
-- [Multi-screen setup](COKLU_EKRAN_KURULUM.md)
-- [Cloud backup notes](BULUT_YEDEKLEME.md)
+- [Installation guide](docs/KURULUM_REHBERI.md)
+- [Kitchen printer setup](docs/MUTFAK_YAZICI_KURULUM.md)
+- [Multi-screen setup](docs/COKLU_EKRAN_KURULUM.md)
+- [Cloud backup notes](docs/BULUT_YEDEKLEME.md)
 
 The project is still being developed and tested before being used in the restaurant.
