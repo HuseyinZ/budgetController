@@ -1,82 +1,56 @@
 # BudgetController
 
-BudgetController is a restaurant POS and management application written in Java 22. It started as a desktop application and gradually grew to include a REST API, PWA access, MySQL persistence, multi-terminal support, and network kitchen printers.
+BudgetController is a Java-based restaurant management and POS project that I have been developing for a real restaurant use case.
 
-The main goal of the project is to manage day-to-day restaurant operations from a single system: orders, tables, users, payments, products, kitchen routing, and related administrative tasks.
+It started as a desktop application with Swing and MySQL. As the project grew, I added a REST API, PWA access, multi-terminal support, database migrations, kitchen printer integration, backup features, and additional security controls.
 
-## Main Features
+The main parts of the system are order and table management, products, users and roles, payments, kitchen routing, and basic reporting.
 
-- Table and order management
-- Product and category management
-- User roles and authorization
-- Payment and sales flow
-- Swing desktop interface
-- REST API with Javalin
-- PWA access for other devices
-- MySQL database with HikariCP
-- Versioned database migrations
-- Network kitchen-printer support with ESC/POS
-- Backup and restore utilities
-- Dependency scanning with OWASP Dependency-Check
+## Technologies
 
-## Tech Stack
+- Java 22
+- Swing and FlatLaf
+- Javalin and Jetty
+- MySQL 8.4
+- JDBC and HikariCP
+- Jackson and Gson
+- JUnit 5 and H2
+- Maven
+- BCrypt
+- OWASP Dependency-Check
+- CycloneDX
 
-| Area | Technology |
-| --- | --- |
-| Language | Java 22 |
-| Desktop UI | Swing, FlatLaf |
-| API | Javalin, Jetty |
-| Database | MySQL 8.4 |
-| Database access | JDBC, HikariCP |
-| JSON | Jackson, Gson |
-| Authentication | BCrypt |
-| Testing | JUnit 5, H2 |
-| Build | Maven |
-| Security | OWASP Dependency-Check |
-| SBOM | CycloneDX |
+## How the system is used
 
-## Architecture
+The desktop application is the main client. Data is stored in MySQL, and the Javalin API is used by the PWA and other clients.
 
-```text
-Swing Desktop App
-        |
-        +---- JDBC / HikariCP ----> MySQL
-        |
-        +---- Javalin REST API ---> PWA / other clients
-        |
-        +---- Printing -----------> ESC/POS kitchen printers
-```
+Kitchen orders can be sent to network-connected ESC/POS printers. Product categories can be mapped to different printers so that an order is printed in the correct kitchen.
+
+The project also supports multiple terminals connected to the same database.
 
 ## Database
 
-The database schema is managed through versioned migrations. The application checks the schema version at startup and does not modify the schema automatically during normal runtime.
+The database schema is managed with versioned migrations.
 
-Production database credentials are stored outside the repository in:
+The application checks the schema version during startup. Schema changes are applied separately instead of being performed automatically while the application is running.
+
+Database credentials are kept outside the repository:
 
 ```text
 ~/.budget/db.properties
 ```
 
-More details are available in [KURULUM_REHBERI.md](KURULUM_REHBERI.md).
+The full setup process is documented in [KURULUM_REHBERI.md](KURULUM_REHBERI.md).
 
-## Kitchen Printers
-
-Orders can be routed to different kitchen printers according to product category. The current implementation uses network-connected ESC/POS printers.
-
-Related documentation:
-
-- [MUTFAK_YAZICI_KURULUM.md](MUTFAK_YAZICI_KURULUM.md)
-- [COKLU_EKRAN_KURULUM.md](COKLU_EKRAN_KURULUM.md)
-
-## Build
+## Build and test
 
 Requirements:
 
 - Java 22
 - Maven
-- MySQL 8.x for production
+- MySQL 8.x
 
-Run tests:
+Run the tests:
 
 ```bash
 mvn test
@@ -88,14 +62,17 @@ Build the project:
 mvn clean package
 ```
 
-Run dependency checks:
+Run the dependency scan:
 
 ```bash
 mvn org.owasp:dependency-check-maven:check
 ```
 
-## Notes
+## Documentation
 
-- Runtime credentials and other secrets are not stored in the repository.
-- Database access uses separate runtime and migration accounts.
-- The project is still under active development and is being prepared for real restaurant use.
+- [Installation guide](KURULUM_REHBERI.md)
+- [Kitchen printer setup](MUTFAK_YAZICI_KURULUM.md)
+- [Multi-screen setup](COKLU_EKRAN_KURULUM.md)
+- [Cloud backup notes](BULUT_YEDEKLEME.md)
+
+The project is still being developed and tested before being used in the restaurant.
