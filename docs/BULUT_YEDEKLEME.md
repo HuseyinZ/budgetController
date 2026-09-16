@@ -170,4 +170,3 @@ Yukarıdaki üç seçenek küçük-orta restoranlar için **gereksiz**. Tek gün
 
 ---
 
-*Hazırlayan: Claude — Tarih: 2026-05-18*

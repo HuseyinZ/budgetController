@@ -259,6 +259,3 @@ Tailscale + AnyDesk + bulut yedek genelde yeterli.
 - Yedeği OneDrive yerine **şifreli klasör**e (örn. Cryptomator) koymak daha güvenli
 - AnyDesk **"Whitelist"** modu — sadece senin ID'nden bağlantı kabul etsin
 
----
-
-*Hazırlayan: Claude — Tarih: 2026-05-18*
