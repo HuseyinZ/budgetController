@@ -1,10 +1,5 @@
 # Bulut Yedekleme Kurulum Kılavuzu
 
-Restoran verilerinizi kaybetmemek için günlük otomatik MySQL yedekleme
-+ bulut senkronizasyonu. **Yangında, hırsızlıkta, disk arızasında
-verileriniz kurtarılır.**
-
----
 
 ## Yaklaşım
 
