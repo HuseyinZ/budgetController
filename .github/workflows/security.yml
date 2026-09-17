@@ -123,3 +123,5 @@ jobs:
             target/bom.json
             target/bom.xml
           retention-days: 90
+
+# HIGH review protocol smoke test - DO NOT MERGE
