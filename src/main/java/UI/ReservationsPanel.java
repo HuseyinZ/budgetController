@@ -278,19 +278,32 @@ public class ReservationsPanel extends JPanel {
         JDialog picker = new JDialog(owner, "Masa Seç", Dialog.ModalityType.APPLICATION_MODAL);
         final Integer[] picked = { null };
 
-        java.util.List<RestaurantTable> tables;
-        try {
-            tables = tableService.getAllTables();
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(owner, "Masalar alınamadı: " + ex.getMessage(),
-                    "Hata", JOptionPane.ERROR_MESSAGE);
-            return null;
+        // Masa numaralarının kaynağı YAPILANDIRILMIŞ LAYOUT'tur, dining_tables değil.
+        // Açılış artık eksik masa satırı oluşturmadığı için (read-only startup),
+        // DB'yi kaynak almak sıfır kurulumda picker'ı boş bırakırdı.
+        java.util.List<Integer> tableNumbers = new java.util.ArrayList<>();
+        for (state.AppState.AreaDefinition area : state.AppState.getInstance().getAreas()) {
+            for (Integer no : area.getTableNumbers()) {
+                if (no != null && !tableNumbers.contains(no)) {
+                    tableNumbers.add(no);
+                }
+            }
         }
-        tables.sort((a, b) -> {
-            int an = a.getTableNo() == null ? 0 : a.getTableNo();
-            int bn = b.getTableNo() == null ? 0 : b.getTableNo();
-            return Integer.compare(an, bn);
-        });
+        tableNumbers.sort(Integer::compare);
+
+        // Mevcut kayıtlar yalnız dolu/boş GÖRSEL İPUCU için, tek okumada.
+        // Kaydı olmayan masa boş kabul edilir; hiçbir masa oluşturulmaz.
+        java.util.Map<Integer, Boolean> occupied = new java.util.HashMap<>();
+        try {
+            for (RestaurantTable t : tableService.getAllTables()) {
+                if (t != null && t.getTableNo() != null) {
+                    occupied.put(t.getTableNo(), t.isOccupied());
+                }
+            }
+        } catch (Exception ex) {
+            // İpucu alınamadı — seçim yine de yapılabilmeli; hepsi boş görünür.
+            occupied.clear();
+        }
 
         // Scrollable JPanel: viewport genişliğine uy, yüksekliğe değil → dikey scroll çalışır
         JPanel grid = new JPanel(new GridLayout(0, 5, 8, 8)) {
@@ -302,17 +315,16 @@ public class ReservationsPanel extends JPanel {
             }
         };
         grid.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        if (tables.isEmpty()) {
+        if (tableNumbers.isEmpty()) {
             grid.add(new JLabel("Tanımlı masa yok"));
         }
-        for (RestaurantTable t : tables) {
-            if (t.getTableNo() == null) continue;
-            int no = t.getTableNo();
+        for (Integer tableNo : tableNumbers) {
+            int no = tableNo;
             JButton b = new JButton("Masa " + no);
             b.setPreferredSize(new Dimension(110, 60));
             b.setFont(b.getFont().deriveFont(Font.BOLD, 14f));
-            // Doluysa hafif renkli ipucu
-            if (t.isOccupied()) {
+            // Doluysa hafif renkli ipucu; kaydı yoksa boş kabul edilir
+            if (Boolean.TRUE.equals(occupied.get(no))) {
                 b.setBackground(new Color(252, 232, 232));
                 b.setToolTipText("Dolu (yine de rezervasyon eklenebilir)");
             } else {
