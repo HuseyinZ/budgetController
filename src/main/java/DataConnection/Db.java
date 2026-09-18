@@ -14,48 +14,101 @@ import java.sql.SQLException;
 import java.util.Properties;
 import java.util.function.Function;
 
+/**
+ * Uygulama veritabanı havuzu.
+ *
+ * <p><b>C2 — tembel kurulum:</b> Hikari havuzu sınıf yüklenince değil, ilk
+ * kullanımda ({@link Holder}) kurulur. Böylece {@code Db} sınıfına dokunmak
+ * tek başına veritabanı bağlantısı gerektirmez; erişilebilirlik kararı
+ * {@code service.db.StartupHealth} tarafından açık bir retry döngüsüyle verilir.
+ *
+ * <p>Havuz {@code initializationFailTimeout = -1} ile kurulur: MySQL o anda
+ * kapalı olsa bile havuz nesnesi oluşur, hata ilk {@code getConnection()}
+ * çağrısında yüzeye çıkar. Bekleme süresi {@link #CONNECTION_TIMEOUT_MS} ile
+ * sınırlandırılmıştır; Hikari varsayılanı olan ~30 saniye, 3 saniyelik startup
+ * retry temposuyla uyumsuz olurdu.
+ *
+ * <p>Gömülü varsayılan hesap YOKTUR: yapılandırma eksikse
+ * {@link DbConfig.MissingConfigException} yükselir.
+ */
 public final class Db {
-    private static final Path EXTERNAL_CONFIG_PATH = Path.of(System.getProperty("user.home"), ".budget", "db.properties");
-    private static final HikariDataSource DS;
-    private static final Properties CONFIG_SNAPSHOT = new Properties();
 
-    static {
-        // Öncelik: sistem özelliği > ortam değişkeni > ~/.budget/db.properties (> classpath).
-        // Gömülü varsayılan hesap YOK — eksikse DbConfig.MissingConfigException fırlar
-        // (mesaj yalnız eksik anahtar adlarını içerir; sessizce root'a düşülmez).
-        DbConfig config = DbConfig.load(loadProperties(), System::getProperty, System::getenv);
+    private static final Path EXTERNAL_CONFIG_PATH =
+            Path.of(System.getProperty("user.home"), ".budget", "db.properties");
 
+    /** -1: havuz kurulumu bağlantı denemesi yapmaz ve kapalı DB yüzünden patlamaz. */
+    static final long INITIALIZATION_FAIL_TIMEOUT_MS = -1L;
+
+    /** Bağlantı bekleme üst sınırı — startup retry aralığının (3 sn) altında tutulur. */
+    static final long CONNECTION_TIMEOUT_MS = 2_500L;
+
+    /** Doğrulama beklemesi connectionTimeout'u aşmamalıdır. */
+    static final long VALIDATION_TIMEOUT_MS = 2_000L;
+
+    static final String POOL_NAME = "budgetController";
+
+    private Db() {
+    }
+
+    /**
+     * Tembel kurulum taşıyıcısı — yalnız gerçekten bağlantı/konfigürasyon
+     * istendiğinde yüklenir (JLS 12.4.1 sınıf başlatma kuralları).
+     */
+    private static final class Holder {
+        static final HikariDataSource DS;
+        static final Properties CONFIG_SNAPSHOT = new Properties();
+
+        static {
+            // Öncelik: sistem özelliği > ortam değişkeni > ~/.budget/db.properties.
+            // Gömülü varsayılan hesap YOK — eksikse MissingConfigException fırlar
+            // (mesaj yalnız eksik ANAHTAR adlarını içerir; sessizce root'a düşülmez).
+            DbConfig config = DbConfig.load(loadProperties(), System::getProperty, System::getenv);
+
+            DS = new HikariDataSource(buildHikariConfig(config));
+
+            CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_URL, config.jdbcUrl());
+            CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_USER, config.username());
+            CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_PASSWORD, config.password());
+            CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MAX, Integer.toString(config.maxPoolSize()));
+            CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MIN_IDLE, Integer.toString(config.minIdle()));
+
+            Runtime.getRuntime().addShutdownHook(new Thread(DS::close, "budgetController-hikari-shutdown"));
+        }
+
+        private Holder() {
+        }
+    }
+
+    /**
+     * Havuz yapılandırmasını üretir — DB'ye dokunmaz, test edilebilir.
+     *
+     * @param config çözümlenmiş credential ve havuz ayarları
+     */
+    static HikariConfig buildHikariConfig(DbConfig config) {
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(config.jdbcUrl());
         cfg.setUsername(config.username());
         cfg.setPassword(config.password());
         cfg.setMaximumPoolSize(config.maxPoolSize());
         cfg.setMinimumIdle(config.minIdle());
-        cfg.setPoolName("budgetController");
+        cfg.setPoolName(POOL_NAME);
+        cfg.setInitializationFailTimeout(INITIALIZATION_FAIL_TIMEOUT_MS);
+        cfg.setConnectionTimeout(CONNECTION_TIMEOUT_MS);
+        cfg.setValidationTimeout(VALIDATION_TIMEOUT_MS);
         cfg.addDataSourceProperty("cachePrepStmts", "true");
         cfg.addDataSourceProperty("prepStmtCacheSize", "250");
+        // NOT: aşağıdaki anahtar adındaki yazım hatası bilinçli olarak korunuyor —
+        // düzeltmek davranışı değiştirir ve ayrı bir iş kalemidir (M5).
         cfg.addDataSourceProperty("prepStmtCacheSqlLimiét", "2048");
-
-        DS = new HikariDataSource(cfg);
-
-        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_URL, config.jdbcUrl());
-        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_USER, config.username());
-        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_PASSWORD, config.password());
-        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MAX, Integer.toString(config.maxPoolSize()));
-        CONFIG_SNAPSHOT.setProperty(DbConfig.KEY_POOL_MIN_IDLE, Integer.toString(config.minIdle()));
-
-        Runtime.getRuntime().addShutdownHook(new Thread(DS::close, "budgetController-hikari-shutdown"));
-    }
-
-    private Db() {
+        return cfg;
     }
 
     public static Connection getConnection() throws SQLException {
-        return DS.getConnection();
+        return Holder.DS.getConnection();
     }
 
     public static DataSource getDataSource() {
-        return DS;
+        return Holder.DS;
     }
 
     public static Path externalConfigPath() {
@@ -72,7 +125,7 @@ public final class Db {
      */
     public static Properties currentConfiguration() {
         Properties copy = new Properties();
-        copy.putAll(CONFIG_SNAPSHOT);
+        copy.putAll(Holder.CONFIG_SNAPSHOT);
         copy.setProperty("db.password", "****");
         String url = copy.getProperty("db.url", "");
         copy.setProperty("db.url", maskUrlSecrets(url));

@@ -50,13 +50,19 @@ public class App {
 
     public static void main(String[] args) {
 
-        // 1) SALT OKUMA şema doğrulaması — DAO işlemlerinden ÖNCE, aynı havuz üzerinden.
+        // 1) C2: veritabanı erişilebilir olana kadar bekle (90 sn boyunca 3 sn'de bir).
+        //    MySQL servisi henüz ayağa kalkmadıysa uygulama hemen ölmez.
+        if (!awaitDatabaseOrExit()) {
+            return;
+        }
+
+        // 2) SALT OKUMA şema doğrulaması — DAO işlemlerinden ÖNCE, aynı havuz üzerinden.
         //    Runtime hiçbir DDL/DML çalıştırmaz; şema hazır değilse uygulama açılmaz.
         if (!verifySchemaOrExit()) {
             return;
         }
 
-        // 2) Şema doğrulandı → uygulama durumu ve servisler
+        // 3) DB erişilebilir VE şema doğrulandı → ancak şimdi uygulama durumu ve servisler
         appState = AppState.getInstance();
         apiServer = new ApiServer(appState);
         dailyReportScheduler = new service.email.DailyReportScheduler(appState);
@@ -173,6 +179,97 @@ public class App {
         User authenticated = Objects.requireNonNull(user, "user");
         DashboardView dashboard = new DashboardView(appState, authenticated);
         dashboard.open();
+    }
+
+    /**
+     * C2 — veritabanının açılması beklenir. Bekleme sırasında kullanıcıya
+     * "Veritabanı bekleniyor…" penceresi gösterilir (headless'ta konsol/log).
+     * Süre dolarsa teknik ayrıntı içermeyen bir mesajla çıkılır.
+     *
+     * @return {@code true} → DB hazır; {@code false} → uygulama sonlandırıldı
+     */
+    private static boolean awaitDatabaseOrExit() {
+        boolean headless = GraphicsEnvironment.isHeadless();
+        JDialog waiting = headless ? null : showWaitingDialog();
+        if (waiting == null) {
+            System.out.println(service.db.StartupHealth.MESSAGE_WAITING);
+        }
+
+        service.db.StartupHealth.Result result;
+        try {
+            result = service.db.StartupHealth.production().await();
+        } finally {
+            closeWaitingDialog(waiting);
+        }
+
+        if (result.available()) {
+            return true;
+        }
+
+        String userMessage = result.userMessage()
+                + "\n\n(Teknik ayrıntılar logs/errors.log dosyasında)";
+        System.err.println(result.userMessage());
+        if (!headless) {
+            try {
+                JOptionPane.showMessageDialog(null, userMessage, "budgetController",
+                        JOptionPane.ERROR_MESSAGE);
+            } catch (RuntimeException ignored) {
+                // dialog gösterilemese de çıkış kodu ve log yeterli
+            }
+        }
+        System.exit(2);
+        return false;
+    }
+
+    /** Basit, modal OLMAYAN bekleme penceresi; EDT üzerinde oluşturulur. */
+    private static JDialog showWaitingDialog() {
+        final JDialog[] holder = new JDialog[1];
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                JDialog dialog = new JDialog((Frame) null, "budgetController", false);
+                dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+                JLabel label = new JLabel(service.db.StartupHealth.MESSAGE_WAITING, SwingConstants.CENTER);
+                label.setBorder(BorderFactory.createEmptyBorder(28, 40, 28, 40));
+                dialog.add(label);
+                dialog.pack();
+                dialog.setLocationRelativeTo(null);
+                dialog.setVisible(true);
+                holder[0] = dialog;
+            });
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception ex) {
+            LOG.warn("Waiting dialog could not be shown ({})", ex.getClass().getSimpleName());
+            return null;
+        }
+        return holder[0];
+    }
+
+    /**
+     * Bekleme biter bitmez pencereyi kapatır — SENKRON. Sonraki adım (hata
+     * dialogu veya {@code System.exit}) çalışmadan önce pencere gerçekten
+     * kapanmış olmalıdır; {@code invokeLater} bunu garanti etmezdi.
+     */
+    private static void closeWaitingDialog(JDialog dialog) {
+        if (dialog == null) {
+            return;
+        }
+        Runnable close = () -> {
+            dialog.setVisible(false);
+            dialog.dispose();
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            close.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(close);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ex) {
+            LOG.warn("Waiting dialog could not be closed ({})", ex.getClass().getSimpleName());
+        }
     }
 
     /**
