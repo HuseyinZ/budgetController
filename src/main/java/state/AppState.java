@@ -1132,9 +1132,13 @@ public class AppState {
         for (Integer tableNo : layouts.keySet()) {
             if (tableNo == fromTableNo) continue;
             if (!canAccessTable(tableNo, user)) continue;
-            Long tableId = tableIds.get(tableNo);
-            if (tableId == null) continue;
-            if (orderService.getOpenOrderByTable(tableId).isPresent()) continue;
+            // SALT OKUMA: DB kaydı olmayan masa da geçerli bir hedeftir. Açılış
+            // artık eksik masaları yazmadığı için kaydı yok demek "boş" demektir;
+            // kaydı olmayan masanın açık siparişi de olamaz.
+            Long tableId = findExistingTableId(tableNo);
+            if (tableId != null && orderService.getOpenOrderByTable(tableId).isPresent()) {
+                continue;
+            }
             result.add(tableNo);
         }
         Collections.sort(result);
@@ -1390,7 +1394,10 @@ public class AppState {
     public List<PrintingService.PrintResult> sendOrderToKitchens(int tableNo,
                                                                  User user,
                                                                  PrintingService printing) {
-        Long tableId = tableIds.get(tableNo);
+        // SALT OKUMA çözümleme: masa bu örneğin açılışından SONRA (örn. kat PC'de)
+        // oluşmuş olabilir; yalnız yerel cache'e bakmak mutfak fişini sessizce
+        // düşürürdü. Masa oluşturulmaz — kaydı yoksa açık sipariş de yoktur.
+        Long tableId = findExistingTableId(tableNo);
         if (tableId == null) {
             return List.of();
         }

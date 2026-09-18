@@ -87,6 +87,32 @@ class AppStateStartupReadOnlyTest {
     }
 
     @Test
+    void transferTargetsIncludeTablesWithoutDatabaseRows() {
+        String body = bodyOf("public synchronized List<Integer> getAvailableTransferTargets(int fromTableNo, User user)");
+        assertNoWrite(body, "getAvailableTransferTargets");
+        assertTrue(body.contains("layouts.keySet()"),
+                "tüm yapılandırılmış masalar değerlendirilmeli");
+        assertTrue(body.contains("findExistingTableId("),
+                "salt okuma çözümleyicisi kullanılmalı");
+        assertFalse(body.contains("tableIds.get("),
+                "yalnız yerel cache'e bakmak DB kaydı olmayan boş masayı elerdi");
+        assertTrue(body.contains("tableId != null && orderService.getOpenOrderByTable(tableId).isPresent()"),
+                "açık sipariş kontrolü yalnız kaydı olan masaya uygulanmalı");
+        assertTrue(body.contains("canAccessTable("), "erişim kontrolü korunmalı");
+    }
+
+    @Test
+    void kitchenSendResolvesTablesCreatedByOtherInstances() {
+        // Masa, bu örneğin açılışından sonra başka bir PC'de oluşmuş olabilir;
+        // yalnız yerel cache'e bakmak mutfak fişini sessizce düşürürdü.
+        String body = bodyOf("public List<PrintingService.PrintResult> sendOrderToKitchens(int tableNo,");
+        assertNoWrite(body, "sendOrderToKitchens");
+        assertTrue(body.contains("findExistingTableId("),
+                "masa salt okuma ile yeniden çözümlenmeli");
+        assertFalse(body.contains("tableIds.get("), "yalnız yerel cache'e güvenilmemeli");
+    }
+
+    @Test
     void readOnlyResolverDoesNotWrite() {
         String body = bodyOf("private Long findExistingTableId(int tableNo)");
         assertFalse(body.contains(CREATE_TABLE), "findExistingTableId masa oluşturmamalı");
