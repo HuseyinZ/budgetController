@@ -181,7 +181,7 @@ public class AppState {
         this.reportsService = new ReportsService();
         this.areas = createDefaultAreas();
         buildLayouts();
-        initializeTables();
+        initializeTableCache();
         this.poller = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "app-state-poller");
             t.setDaemon(true);
@@ -326,12 +326,24 @@ public class AppState {
         }
     }
 
-    private void initializeTables() {
-        for (Integer tableNo : layouts.keySet()) {
-            try {
-                ensureTableExists(tableNo);
-            } catch (RuntimeException ex) {
-                LOG.warn("Masa senkronizasyonu başarısız: " + tableNo + " - " + ex.getMessage());
+    /**
+     * SALT OKUMA açılış önbelleği. Mevcut {@code dining_tables} kayıtlarını tek
+     * SELECT ile okuyup {@link #tableIds} cache'ine alır.
+     *
+     * <p>Açılışta hiçbir INSERT/UPDATE/DELETE yapılmaz: eksik masa oluşturulmaz,
+     * ilk gerçek kullanıcı aksiyonuna kadar bekler.
+     *
+     * <p><b>Fail-fast:</b> Bu metot {@code StartupHealth} ve
+     * {@code SchemaStartupCheck} geçtikten SONRA çalışır; bu noktada
+     * {@code dining_tables} okuması hâlâ başarısızsa hata yutulmaz, yukarı
+     * yayılır. Cache boşmuş gibi devam etmek sorunu gizlerdi.
+     */
+    private void initializeTableCache() {
+        for (RestaurantTable table : tableService.getAllTables()) {
+            if (table != null
+                    && table.getId() != null
+                    && layouts.containsKey(table.getTableNo())) {
+                tableIds.put(table.getTableNo(), table.getId());
             }
         }
     }
@@ -550,15 +562,25 @@ public class AppState {
         pcs.removePropertyChangeListener(listener);
     }
 
+    /**
+     * SALT OKUMA — görüntüleme yolu. Masa henüz DB'de yoksa oluşturulmaz,
+     * boş snapshot döner.
+     */
     public synchronized TableSnapshot snapshot(int tableNo) {
         TableLayout layout = requireLayout(tableNo);
-        Long tableId = ensureTableExists(tableNo);
-        Optional<Order> optOrder = orderService.getOpenOrderByTable(tableId);
+        Long tableId = findExistingTableId(tableNo);
 
         TableOrderStatus status = TableOrderStatus.EMPTY;
         List<OrderLine> lines = List.of();
         List<OrderLogEntry> history = List.of();
         BigDecimal total = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        if (tableId == null) {
+            return new TableSnapshot(tableNo, layout.building(), layout.section(),
+                    status, lines, resolveHistorySnapshot(tableNo, List.of()), total);
+        }
+
+        Optional<Order> optOrder = orderService.getOpenOrderByTable(tableId);
 
         if (optOrder.isPresent()) {
             Order order = optOrder.get();
@@ -1110,9 +1132,13 @@ public class AppState {
         for (Integer tableNo : layouts.keySet()) {
             if (tableNo == fromTableNo) continue;
             if (!canAccessTable(tableNo, user)) continue;
-            Long tableId = tableIds.get(tableNo);
-            if (tableId == null) continue;
-            if (orderService.getOpenOrderByTable(tableId).isPresent()) continue;
+            // SALT OKUMA: DB kaydı olmayan masa da geçerli bir hedeftir. Açılış
+            // artık eksik masaları yazmadığı için kaydı yok demek "boş" demektir;
+            // kaydı olmayan masanın açık siparişi de olamaz.
+            Long tableId = findExistingTableId(tableNo);
+            if (tableId != null && orderService.getOpenOrderByTable(tableId).isPresent()) {
+                continue;
+            }
             result.add(tableNo);
         }
         Collections.sort(result);
@@ -1368,7 +1394,10 @@ public class AppState {
     public List<PrintingService.PrintResult> sendOrderToKitchens(int tableNo,
                                                                  User user,
                                                                  PrintingService printing) {
-        Long tableId = tableIds.get(tableNo);
+        // SALT OKUMA çözümleme: masa bu örneğin açılışından SONRA (örn. kat PC'de)
+        // oluşmuş olabilir; yalnız yerel cache'e bakmak mutfak fişini sessizce
+        // düşürürdü. Masa oluşturulmaz — kaydı yoksa açık sipariş de yoktur.
+        Long tableId = findExistingTableId(tableNo);
         if (tableId == null) {
             return List.of();
         }
@@ -1619,6 +1648,14 @@ public class AppState {
         return layout;
     }
 
+    /**
+     * MUTASYON YOLU — masa yoksa oluşturur. Yalnız gerçek kullanıcı aksiyonlarında
+     * (sipariş açma, kalem ekleme, ödeme, masa taşıma vb.) çağrılır.
+     *
+     * <p>Açılış ve poller bu metodu ASLA kullanmaz; onlar
+     * {@link #findExistingTableId(int)} ile salt okuma yapar. Masa düzeninin
+     * tamamen DB'ye taşındığı aşamada bu metot kaldırılacaktır.
+     */
     private Long ensureTableExists(int tableNo) {
         return tableIds.computeIfAbsent(tableNo, no -> {
             Optional<RestaurantTable> existing = tableService.getByTableNo(no);
@@ -1626,9 +1663,30 @@ public class AppState {
                 return existing.get().getId();
             }
             TableLayout layout = requireLayout(no);
-            Long id = tableService.createTable(no, layout.building() + " / " + layout.section());
-            return id;
+            return tableService.createTable(no, layout.building() + " / " + layout.section());
         });
+    }
+
+    /**
+     * SALT OKUMA masa çözümleme yolu. Cache'de yoksa DB'de arar ve bulursa
+     * cache'e ekler; eksik masayı OLUŞTURMAZ. Bulunamazsa {@code null} döner
+     * ve çağıran masayı "boş" kabul eder.
+     */
+    private Long findExistingTableId(int tableNo) {
+        requireLayout(tableNo);
+        Long cached = tableIds.get(tableNo);
+        if (cached != null) {
+            return cached;
+        }
+        return tableService.getByTableNo(tableNo)
+                .map(table -> {
+                    Long id = table.getId();
+                    if (id != null) {
+                        tableIds.putIfAbsent(tableNo, id);
+                    }
+                    return id;
+                })
+                .orElse(null);
     }
 
     private Product ensureProduct(String name, BigDecimal price) {
@@ -2017,8 +2075,12 @@ public class AppState {
         }
     }
 
+    /** SALT OKUMA — poller yolu. Eksik masa oluşturulmaz, boş imza döner. */
     private TableSignature captureSignature(int tableNo) {
-        Long tableId = ensureTableExists(tableNo);
+        Long tableId = findExistingTableId(tableNo);
+        if (tableId == null) {
+            return new TableSignature(null, null, TableStatus.EMPTY);
+        }
         TableStatus status = tableService.getByTableNo(tableNo)
                 .map(RestaurantTable::getStatus)
                 .orElse(TableStatus.EMPTY);
