@@ -65,7 +65,7 @@ jobs:
   #   Fresh install — gerçek MySQL 8.4 üzerinde migration sistemi (C1-d)
   #
   #   Boş DB → budget_migrate/budget_app oluştur → Migrate --status/--apply
-  #   → schema_version/roles/16 tablo doğrula → budget_app DDL yapamaz
+  #   → schema_version/roles/19 tablo + V004 seed'leri doğrula → budget_app DDL yapamaz
   #   → salt-okuma status (SchemaStartupCheck ile aynı yol) → adoption reddi.
   #   Tamamen ephemeral test credential'ları; repository secret GEREKTİRMEZ.
   # ============================================================
@@ -149,7 +149,7 @@ jobs:
           echo "$out" | grep -q "V1"
           echo "$out" | grep -q "GÜNCEL DEĞİL"
 
-      - name: Migrate --apply (V001-V003)
+      - name: Migrate --apply (V001-V004)
         run: java -cp "$JAR" tools.Migrate --apply
 
       - name: Migrate --status after apply (up to date, runtime credential)
@@ -165,20 +165,37 @@ jobs:
         run: |
           q() { mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "$1" "$CI_DB"; }
           versions=$(q "SELECT GROUP_CONCAT(version ORDER BY version) FROM schema_version")
-          echo "schema_version: $versions"; test "$versions" = "1,2,3"
+          echo "schema_version: $versions"; test "$versions" = "1,2,3,4"
           roles=$(q "SELECT COUNT(*) FROM roles WHERE name IN ('ADMIN','KASIYER','GARSON')")
           echo "roles: $roles"; test "$roles" = "3"
           printers=$(q "SELECT COUNT(*) FROM kitchen_printers WHERE is_active=0 AND host LIKE '192.0.2.%'")
           echo "placeholder printers: $printers"; test "$printers" = "3"
           for t in roles users categories products dining_tables kitchen_printers orders order_items \
                    payments order_logs expenses refund_log reservations category_printer_routes \
-                   print_jobs user_area_permissions; do
+                   print_jobs user_area_permissions \
+                   restaurant_areas restaurant_table_layout product_units; do
             n=$(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='$t'")
             test "$n" = "1" || { echo "EKSİK TABLO: $t"; exit 1; }
           done
           gen=$(q "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$CI_DB' AND TABLE_NAME='order_items' AND COLUMN_NAME IN ('net_amount','tax_amount','line_total') AND EXTRA LIKE '%STORED GENERATED%'")
           echo "generated columns: $gen"; test "$gen" = "3"
-          echo "16 canonical tablo + generated kolonlar OK"
+          echo "19 canonical tablo + generated kolonlar OK"
+
+      - name: Verify V004 seeds (areas, table layout, product units)
+        run: |
+          q() { mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "$1" "$CI_DB"; }
+          areas=$(q "SELECT COUNT(*) FROM restaurant_areas")
+          echo "restaurant_areas: $areas"; test "$areas" = "13"
+          layout=$(q "SELECT COUNT(*) FROM restaurant_table_layout")
+          echo "restaurant_table_layout: $layout"; test "$layout" = "70"
+          linked=$(q "SELECT COUNT(*) FROM restaurant_table_layout l JOIN restaurant_areas a ON a.id = l.area_id")
+          test "$linked" = "70" || { echo "HATA: masa-alan bağı eksik ($linked)"; exit 1; }
+          units=$(q "SELECT COUNT(*) FROM product_units WHERE is_active=1 AND code IN ('porsiyon','şiş','adet','kg','tabak','kase')")
+          echo "standart aktif birim: $units"; test "$units" = "6"
+          # Boş kurulumda products tablosu boştur → özel birim aktarımı beklenmez
+          total=$(q "SELECT COUNT(*) FROM product_units")
+          echo "toplam birim: $total"; test "$total" = "6"
+          echo "V004 seed doğrulaması OK"
 
       - name: Runtime user can run DML (SELECT/INSERT/UPDATE/DELETE)
         run: |
@@ -220,7 +237,7 @@ jobs:
         run: |
           # SchemaStartupCheck ile aynı salt-okuma yol: budget_app olarak status → GÜNCEL
           n=$(mysql -h 127.0.0.1 -u"$CI_APP_USER" -p"$CI_APP_PASS" -N -s -e "SELECT COUNT(*) FROM schema_version" "$CI_DB")
-          test "$n" = "3"
+          test "$n" = "4"
           java -cp "$JAR" tools.Migrate --status | grep -q "Durum: GÜNCEL$"
 
       - name: Adoption is refused on an already versioned database
