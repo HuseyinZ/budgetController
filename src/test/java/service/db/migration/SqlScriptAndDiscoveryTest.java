@@ -96,8 +96,8 @@ class SqlScriptAndDiscoveryTest {
     @Test
     void classpathDiscoveryFindsBaselineAndSeeds() {
         List<Migration> found = MigrationDiscovery.discover();
-        assertEquals(List.of(1, 2, 3), found.stream().map(Migration::version).toList(),
-                "src/main/resources/db/migration altında V001-V003 bulunmalı; legacy klasörü classpath'te değil");
+        assertEquals(List.of(1, 2, 3, 4), found.stream().map(Migration::version).toList(),
+                "src/main/resources/db/migration altında V001-V004 bulunmalı; legacy klasörü classpath'te değil");
         assertTrue(found.get(0).description().contains("baseline"));
         // Baseline SQL statement sözleşmesi: literal içinde ';' yok → 16 CREATE TABLE
         long creates = SqlScript.splitStatements(found.get(0).sql()).stream()
