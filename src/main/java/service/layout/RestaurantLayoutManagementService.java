@@ -8,8 +8,13 @@ import model.TableLayoutEntry;
 import model.User;
 
 import java.sql.Connection;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Masa düzeni YÖNETİMİ — yönetici (ADMIN) işlemleri.
@@ -296,20 +301,22 @@ public class RestaurantLayoutManagementService {
         });
     }
 
-    /** Görsel yerleşimi ve sırayı günceller. Masa numarası ve alan değişmez. */
+    /**
+     * Görsel yerleşimi ve sırayı günceller. Masa numarası ve alan değişmez.
+     *
+     * <p>Tek masalık kısayol: toplu yola delege eder, böylece çakışma
+     * doğrulaması her yerleşim yazmasında AYNI şekilde uygulanır.
+     */
     public void updatePlacement(User user, TableLayoutEntry table) {
-        requireAdmin(user, "masa yerleşimi güncelle");
-        LayoutPlacementRules.validateAndNormalize(table);
-        tx.execute(conn -> {
-            dao.findTableByNo(conn, table.getTableNo())
-                    .orElseThrow(() -> new LayoutRuleViolationException(
-                            "Masa bulunamadı: " + table.getTableNo()));
-            dao.updatePlacement(conn, table);
-            return null;
-        });
+        updatePlacements(user, List.of(table));
     }
 
-    /** Birden çok masanın yerleşimini TEK transaction'da günceller (editör kaydı). */
+    /**
+     * Birden çok masanın yerleşimini TEK transaction'da günceller (editör kaydı).
+     *
+     * <p>Çakışma kontrolü BURADA yapılır — servis katmanı yetkilidir. UI'daki
+     * ön kontrol yalnız hızlı geri bildirim içindir; ona güvenilmez.
+     */
     public void updatePlacements(User user, List<TableLayoutEntry> tables) {
         requireAdmin(user, "masa yerleşimi güncelle");
         if (tables == null || tables.isEmpty()) {
@@ -320,11 +327,33 @@ public class RestaurantLayoutManagementService {
         }
         requireDistinctTableNumbers(tables);
         tx.execute(conn -> {
+            // 1) Hepsi var mı? Alan bilgisi DAİMA DB'den alınır: editör masayı
+            //    başka alana taşıyamaz, gelen kayıttaki area_id dikkate alınmaz.
+            Map<Integer, TableLayoutEntry> incoming = new LinkedHashMap<>();
+            Set<Integer> affectedAreas = new LinkedHashSet<>();
             for (TableLayoutEntry t : tables) {
-                dao.findTableByNo(conn, t.getTableNo())
+                TableLayoutEntry existing = dao.findTableByNo(conn, t.getTableNo())
                         .orElseThrow(() -> new LayoutRuleViolationException(
                                 "Masa bulunamadı: " + t.getTableNo()));
+                incoming.put(t.getTableNo(), t);
+                affectedAreas.add(existing.getAreaId());
             }
+
+            // 2) Etkilenen HER alan için NİHAİ düzeni kur ve çakışmayı reddet.
+            //    Değişmeyen mevcut masalar da hesaba katılır; pasif masalar
+            //    dışarıda bırakılır (runtime düzen yalnız aktifleri yükler).
+            for (Integer areaId : affectedAreas) {
+                List<TableLayoutEntry> resulting = new ArrayList<>();
+                for (TableLayoutEntry current : dao.findTablesByArea(conn, areaId, true)) {
+                    TableLayoutEntry changed = incoming.get(current.getTableNo());
+                    resulting.add(changed == null ? current : changed);
+                }
+                LayoutPlacementRules.findOverlap(resulting).ifPresent(message -> {
+                    throw new LayoutRuleViolationException(message);
+                });
+            }
+
+            // 3) Doğrulama bittikten SONRA yazma — aynı transaction içinde.
             for (TableLayoutEntry t : tables) {
                 dao.updatePlacement(conn, t);
             }

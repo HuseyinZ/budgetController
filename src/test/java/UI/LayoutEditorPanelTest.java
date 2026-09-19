@@ -85,7 +85,22 @@ class LayoutEditorPanelTest {
         int overlapCheck = body.indexOf("findOverlap(");
         int save = body.indexOf("SwingWorker");
         assertTrue(overlapCheck >= 0 && overlapCheck < save,
-                "çakışma kontrolü kaydetmeden ÖNCE yapılmalı");
+                "UI ön kontrolü kaydetmeden ÖNCE yapılmalı (hızlı geri bildirim)");
+    }
+
+    @Test
+    void overlapIsEnforcedByTheServiceNotOnlyByTheUi() {
+        String service = readSource(Path.of("src", "main", "java", "service", "layout",
+                "RestaurantLayoutManagementService.java"));
+        String body = bodyOf(service, "public void updatePlacements(User user, List<TableLayoutEntry> tables)");
+        assertTrue(body.contains("LayoutPlacementRules.findOverlap("),
+                "servis katmanı çakışmayı kendisi reddetmeli");
+        int overlap = body.indexOf("findOverlap(");
+        int write = body.indexOf("dao.updatePlacement(");
+        assertTrue(overlap >= 0 && write > overlap,
+                "doğrulama tüm yazmalardan ÖNCE tamamlanmalı");
+        assertTrue(body.contains("findTablesByArea(conn, areaId, true)"),
+                "değişmeyen aktif masalar da nihai düzene dahil edilmeli");
     }
 
     @Test
