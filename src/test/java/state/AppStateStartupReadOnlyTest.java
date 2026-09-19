@@ -40,6 +40,41 @@ class AppStateStartupReadOnlyTest {
     }
 
     @Test
+    void layoutComesFromTheDatabaseOnly() {
+        String ctor = bodyOf("private AppState()");
+        assertTrue(ctor.contains("loadAreasFromDatabase()"),
+                "masa düzeni DB'den yüklenmeli");
+        assertFalse(ctor.contains("createDefaultAreas()"),
+                "eski properties/fallback yükleyicisi çağrılmamalı");
+
+        // Not: dosya adı yalnız javadoc'ta geçebilir; aranan şey gerçek OKUMA.
+        assertFalse(source.contains("getResourceAsStream"),
+                "classpath layout kaynağı okunmamalı");
+        assertFalse(source.contains("props.load("),
+                "properties dosyası runtime'da yüklenmemeli");
+        assertFalse(source.contains("parseAreas("),
+                "properties ayrıştırıcısı kalmamalı");
+        assertFalse(source.contains("new AreaDefinition(\"1. Bina\""),
+                "gömülü varsayılan düzen kalmamalı");
+
+        String loader = bodyOf("private List<AreaDefinition> loadAreasFromDatabase()");
+        assertTrue(loader.contains("layoutService.loadActiveLayout()"),
+                "tek kaynak RestaurantLayoutService olmalı");
+        assertNoWrite(loader, "loadAreasFromDatabase");
+    }
+
+    @Test
+    void areaDefinitionHoldsAnExplicitTableNumberList() {
+        // startTableNo + tableCount modeli bitişik numara varsayardı; DB keyfi
+        // numaralara izin verir.
+        String getter = bodyOf("public List<Integer> getTableNumbers()");
+        assertTrue(getter.contains("return tableNumbers"), "açık liste dönmeli");
+        assertFalse(getter.contains("IntStream.range"), "aralık türetmesi kalmamalı");
+        assertTrue(source.contains("private final List<Integer> tableNumbers"),
+                "masa numaraları değişmez liste olarak tutulmalı");
+    }
+
+    @Test
     void constructorUsesTheReadOnlyCacheInitializer() {
         String ctor = bodyOf("private AppState()");
         assertTrue(ctor.contains("initializeTableCache()"),

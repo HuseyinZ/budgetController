@@ -21,6 +21,7 @@ import service.OrderService;
 import service.PaymentService;
 import service.ProductService;
 import service.ReportsService;
+import service.RestaurantLayoutService;
 import service.RestaurantTableService;
 import service.UserService;
 import service.print.PrintingService;
@@ -88,21 +89,35 @@ public class AppState {
         private final String building;
         private final String section;   // "Kat" anlamına gelir (örn. "1. Kat", "Bahçe")
         private final String salon;     // Opsiyonel — kat içindeki alt salon (örn. "1. Salon")
-        private final int startTableNo;
-        private final int tableCount;
+        /**
+         * Alana ait masa numaraları — DEĞİŞMEZ ve açık liste.
+         *
+         * <p>Eskiden alan {@code startTableNo + tableCount} ile modellenirdi;
+         * bu, numaraların bitişik olmasını şart koşuyordu. DB kaynağı (V004)
+         * keyfi/boşluklu numaralara izin verir, bu yüzden liste tutulur.
+         */
+        private final List<Integer> tableNumbers;
 
         /** 3 seviyeli (geriye uyum): Bina + Kat + Masa. Salon boş. */
         public AreaDefinition(String building, String section, int startTableNo, int tableCount) {
             this(building, section, "", startTableNo, tableCount);
         }
 
-        /** 4 seviyeli: Bina + Kat + Salon + Masa. */
+        /** Bitişik aralık kısayolu — testler ve eski çağrılar için. */
         public AreaDefinition(String building, String section, String salon, int startTableNo, int tableCount) {
+            this(building, section, salon,
+                    java.util.stream.IntStream.range(0, Math.max(tableCount, 0))
+                            .map(i -> startTableNo + i)
+                            .boxed()
+                            .collect(Collectors.toList()));
+        }
+
+        /** Açık masa numarası listesi — DB kaynağının kullandığı biçim. */
+        public AreaDefinition(String building, String section, String salon, List<Integer> tableNumbers) {
             this.building = building == null ? "" : building;
             this.section = section == null ? "" : section;
             this.salon = salon == null ? "" : salon;
-            this.startTableNo = startTableNo;
-            this.tableCount = tableCount;
+            this.tableNumbers = tableNumbers == null ? List.of() : List.copyOf(tableNumbers);
         }
 
         public String getBuilding() {
@@ -123,11 +138,9 @@ public class AppState {
             return salon != null && !salon.isBlank();
         }
 
+        /** Alandaki masa numaraları, DB sırasında. Değiştirilemez. */
         public List<Integer> getTableNumbers() {
-            return java.util.stream.IntStream.range(0, tableCount)
-                    .map(i -> startTableNo + i)
-                    .boxed()
-                    .collect(Collectors.toList());
+            return tableNumbers;
         }
     }
 
@@ -153,6 +166,8 @@ public class AppState {
     private final ReportsService reportsService;
     /** Ürün birimleri — DB tek kaynak (V004). */
     private final service.ProductUnitService productUnitService;
+    /** Masa düzeni — DB tek kaynak (V004); properties/fallback YOK. */
+    private final RestaurantLayoutService layoutService;
     private final UserAreaPermissionDAO areaPermissionDAO = new UserAreaPermissionJdbcDAO();
     private final KitchenPrinterDAO kitchenPrinterDAO = new KitchenPrinterJdbcDAO();
     private final CategoryPrinterRouteDAO categoryRouteDAO = new CategoryPrinterRouteJdbcDAO();
@@ -182,7 +197,8 @@ public class AppState {
         this.orderLogService = new OrderLogService();
         this.reportsService = new ReportsService();
         this.productUnitService = new service.ProductUnitService();
-        this.areas = createDefaultAreas();
+        this.layoutService = new RestaurantLayoutService();
+        this.areas = loadAreasFromDatabase();
         buildLayouts();
         initializeTableCache();
         this.poller = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -195,130 +211,27 @@ public class AppState {
     }
 
     /**
-     * Masa düzenini yükler.
+     * Masa düzenini VERİTABANINDAN yükler — tek kaynak {@code restaurant_areas}
+     * + {@code restaurant_table_layout} (V004).
      *
-     * <p>Yükleme öncelik sırası:
-     * <ol>
-     *   <li><code>~/.budget/restaurant-layout.properties</code>  (kullanıcı override'ı)</li>
-     *   <li>Classpath: <code>/restaurant-layout.properties</code> (JAR içindeki varsayılan)</li>
-     *   <li>Hardcoded fallback (her iki dosya da yoksa)</li>
-     * </ol>
+     * <p>{@code restaurant-layout.properties} artık runtime'da OKUNMAZ ve
+     * gömülü varsayılan düzen yoktur. Düzen okunamaz veya tutarsızsa
+     * {@link service.RestaurantLayoutService.LayoutUnavailableException}
+     * yükselir ve uygulama açılmaz: yanlış bir masa düzeniyle çalışmak
+     * siparişin yanlış masaya yazılmasına yol açabilir.
      *
-     * <p>Restoran sahibi {@code restaurant-layout.properties} dosyasını
-     * düzenleyerek bina/salon/masa numaralarını değiştirebilir. Format
-     * için dosyanın başındaki yorumlara bakın.
+     * <p>Yalnız SELECT çalıştırır; hiçbir alan/masa oluşturmaz.
      */
-    private List<AreaDefinition> createDefaultAreas() {
-        java.util.Properties props = new java.util.Properties();
-        boolean loaded = false;
-
-        // 1) Kullanıcı override'ı
-        java.nio.file.Path userFile = java.nio.file.Path.of(
-                System.getProperty("user.home"), ".budget", "restaurant-layout.properties");
-        if (java.nio.file.Files.exists(userFile)) {
-            try (java.io.InputStream in = java.nio.file.Files.newInputStream(userFile)) {
-                props.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
-                loaded = true;
-                LOG.info("Masa düzeni yüklendi: {}", userFile);
-            } catch (java.io.IOException ex) {
-                LOG.warn("restaurant-layout.properties okunamadı: " + ex.getMessage());
-            }
-        }
-
-        // 2) Classpath default
-        if (!loaded) {
-            try (java.io.InputStream in =
-                         AppState.class.getResourceAsStream("/restaurant-layout.properties")) {
-                if (in != null) {
-                    props.load(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
-                    loaded = true;
-                }
-            } catch (java.io.IOException ex) {
-                LOG.warn("Classpath layout okunamadı: " + ex.getMessage());
-            }
-        }
-
-        // 3) Hardcoded fallback (her ikisi de yoksa)
-        if (!loaded || props.isEmpty()) {
-            LOG.warn("UYARI: restaurant-layout.properties bulunamadı; varsayılan kullanılacak.");
-            List<AreaDefinition> fallback = new ArrayList<>();
-            // 1. Bina — 3 kat, her katta 2 salon (5'er masa)
-            fallback.add(new AreaDefinition("1. Bina", "1. Kat", "1. Salon", 101, 5));
-            fallback.add(new AreaDefinition("1. Bina", "1. Kat", "2. Salon", 106, 5));
-            fallback.add(new AreaDefinition("1. Bina", "2. Kat", "1. Salon", 111, 5));
-            fallback.add(new AreaDefinition("1. Bina", "2. Kat", "2. Salon", 116, 5));
-            fallback.add(new AreaDefinition("1. Bina", "3. Kat", "1. Salon", 121, 5));
-            fallback.add(new AreaDefinition("1. Bina", "3. Kat", "2. Salon", 126, 5));
-            // 2. Bina — 3 kat, her katta 2 salon
-            fallback.add(new AreaDefinition("2. Bina", "1. Kat", "1. Salon", 201, 5));
-            fallback.add(new AreaDefinition("2. Bina", "1. Kat", "2. Salon", 206, 5));
-            fallback.add(new AreaDefinition("2. Bina", "2. Kat", "1. Salon", 211, 5));
-            fallback.add(new AreaDefinition("2. Bina", "2. Kat", "2. Salon", 216, 5));
-            fallback.add(new AreaDefinition("2. Bina", "3. Kat", "1. Salon", 221, 5));
-            fallback.add(new AreaDefinition("2. Bina", "3. Kat", "2. Salon", 226, 5));
-            // 3. Bina — açık alan, tek katlı, tek salonlu
-            fallback.add(new AreaDefinition("3. Bina", "Bahçe",  "",         301, 10));
-            return Collections.unmodifiableList(fallback);
-        }
-
-        return Collections.unmodifiableList(parseAreas(props));
-    }
-
-    /** Properties → AreaDefinition listesi. area.<N>.* anahtarları sıralı okunur. */
-    private List<AreaDefinition> parseAreas(java.util.Properties props) {
-        // Önce hangi N indeks numaralarının var olduğunu çıkar
-        java.util.SortedSet<Integer> indexes = new java.util.TreeSet<>();
-        for (Object key : props.keySet()) {
-            String k = key.toString();
-            if (!k.startsWith("area.")) continue;
-            int firstDot = k.indexOf('.');
-            int secondDot = k.indexOf('.', firstDot + 1);
-            if (secondDot < 0) continue;
-            String numStr = k.substring(firstDot + 1, secondDot);
-            try {
-                indexes.add(Integer.parseInt(numStr));
-            } catch (NumberFormatException ignore) {}
-        }
-
+    private List<AreaDefinition> loadAreasFromDatabase() {
         List<AreaDefinition> defs = new ArrayList<>();
-        for (Integer idx : indexes) {
-            String prefix = "area." + idx + ".";
-            String building = trim(props.getProperty(prefix + "building"));
-            // Eski sürüm "section", yeni sürüm "floor" — ikisini de destekle (floor öncelikli)
-            String section  = trim(props.getProperty(prefix + "floor"));
-            if (section.isEmpty()) {
-                section = trim(props.getProperty(prefix + "section"));
-            }
-            String salon    = trim(props.getProperty(prefix + "salon"));
-            String startStr = trim(props.getProperty(prefix + "startTableNo"));
-            String countStr = trim(props.getProperty(prefix + "tableCount"));
-            if (building.isEmpty() || section.isEmpty() || startStr.isEmpty() || countStr.isEmpty()) {
-                LOG.warn("UYARI: area." + idx + " eksik alan, atlanıyor.");
-                continue;
-            }
-            int startTableNo;
-            int tableCount;
-            try {
-                startTableNo = Integer.parseInt(startStr);
-                tableCount = Integer.parseInt(countStr);
-            } catch (NumberFormatException ex) {
-                LOG.warn("UYARI: area." + idx + " sayısal hata, atlanıyor: " + ex.getMessage());
-                continue;
-            }
-            if (tableCount <= 0 || startTableNo <= 0) {
-                LOG.warn("UYARI: area." + idx + " geçersiz değerler, atlanıyor.");
-                continue;
-            }
-            defs.add(new AreaDefinition(building, section, salon, startTableNo, tableCount));
+        for (RestaurantLayoutService.AreaTables entry : layoutService.loadActiveLayout()) {
+            defs.add(new AreaDefinition(
+                    entry.area().getBuilding(),
+                    entry.area().getFloor(),
+                    entry.area().getSalon(),
+                    entry.tableNumbers()));
         }
-        if (defs.isEmpty()) {
-            LOG.warn("UYARI: restaurant-layout.properties'de geçerli area yok.");
-        }
-        return defs;
-    }
-
-    private static String trim(String s) {
-        return s == null ? "" : s.trim();
+        return Collections.unmodifiableList(defs);
     }
 
     private void buildLayouts() {
