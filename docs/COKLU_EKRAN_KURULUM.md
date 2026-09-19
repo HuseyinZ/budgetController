@@ -4,9 +4,10 @@ Restoranın her katında bir POS ekranı + kasada bir ana bilgisayar kullanarak
 tüm sipariş akışını tek MySQL veritabanı üzerinden senkronize etmek.
 
 > **TL;DR:** Mevcut kodda **hiçbir değişiklik yapmaya gerek yok**. Sadece
-> her ekrana aynı JAR'ı kurun, hepsi aynı MySQL'e baksın, masa layout'unu
-> ortak `restaurant-layout.properties` üzerinden tanımlayın. AppState
-> her 2 saniyede bir DB'yi yokladığı için ekranlar otomatik senkron olur.
+> her ekrana aynı JAR'ı kurun ve hepsi aynı MySQL'e baksın; masa düzeni de
+> veritabanında (`restaurant_areas` / `restaurant_table_layout`) tutulduğu için
+> ayrıca dağıtılacak bir yapılandırma dosyası yoktur. AppState her 2 saniyede
+> bir DB'yi yokladığı için ekranlar otomatik senkron olur.
 
 ---
 
@@ -97,9 +98,8 @@ tüm sipariş akışını tek MySQL veritabanı üzerinden senkronize etmek.
      db.user=budget
      db.password=GÜÇLÜ_ŞİFRE
      ```
-   - (Opsiyonel) `C:\Users\<kullanıcı>\.budget\restaurant-layout.properties`
-     dosyasını **kasadaki ile aynı içerikle** kopyala. Yoksa JAR içindeki
-     varsayılan kullanılır — bu da her ekranda aynıdır.
+   - Masa düzeni için kopyalanacak dosya **yok**: düzen veritabanından okunur,
+     bu yüzden tüm ekranlar aynı tanımı görür.
 4. Uygulamayı başlat. Garson hesabıyla giriş yap.
 5. Garson sadece **kendi katına atanmış salonu** görecektir (`Kullanıcı İşlemleri → Alan Yetkileri` üzerinden atayın).
 
@@ -184,12 +184,15 @@ Kasada günde 1 kez otomatik MySQL dump'ı önerilir:
 
 1. Yeni PC'yi LAN'a bağla.
 2. JAR'ı kopyala, `db.properties` ekle (aynı MySQL'i göstersin).
-3. `restaurant-layout.properties` dosyasına yeni salon ekle:
-   ```properties
-   area.8.building     = 4. Bina
-   area.8.section      = Teras
-   area.8.startTableNo = 401
-   area.8.tableCount   = 8
+3. Yeni salonu **veritabanına** ekle (tek yerde; tüm ekranlar görür):
+   ```sql
+   INSERT INTO restaurant_areas (building, floor, salon, display_order)
+   VALUES ('4. Bina', 'Teras', '', 14);
+
+   INSERT INTO restaurant_table_layout (table_no, area_id, display_order)
+   SELECT 401, id, 1 FROM restaurant_areas
+   WHERE building='4. Bina' AND floor='Teras' AND salon='';
    ```
+   Masa numaraları bitişik olmak zorunda değildir; her masa için bir satır eklenir.
 4. Tüm ekranlardaki uygulamayı yeniden başlat.
 

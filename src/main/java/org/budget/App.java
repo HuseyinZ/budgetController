@@ -62,8 +62,11 @@ public class App {
             return;
         }
 
-        // 3) DB erişilebilir VE şema doğrulandı → ancak şimdi uygulama durumu ve servisler
-        appState = AppState.getInstance();
+        // 3) DB erişilebilir VE şema doğrulandı → ancak şimdi uygulama durumu ve servisler.
+        //    Masa düzeni DB'den okunur; geçersizse uygulama açılmaz.
+        if (!initializeAppStateOrExit()) {
+            return;
+        }
         apiServer = new ApiServer(appState);
         dailyReportScheduler = new service.email.DailyReportScheduler(appState);
 
@@ -219,6 +222,46 @@ public class App {
         }
         System.exit(2);
         return false;
+    }
+
+    /**
+     * Uygulama durumunu kurar. {@code AppState} masa düzenini DB'den okur;
+     * düzen eksik veya tutarsızsa kullanıcıya teknik ayrıntı içermeyen bir
+     * mesaj gösterilip çıkış kodu 2 ile sonlanılır.
+     *
+     * <p>Yalnız masa düzeni hatası ele alınır: ilgisiz hatalar YUTULMAZ,
+     * oldukları gibi yukarı yayılır. {@code AppState} tekil olduğundan kurucu
+     * hatası {@link ExceptionInInitializerError} içine sarılı gelir; bu yüzden
+     * sarmalayıcının nedeni incelenir.
+     *
+     * @return {@code true} → devam; {@code false} → uygulama sonlandırıldı
+     */
+    private static boolean initializeAppStateOrExit() {
+        try {
+            appState = AppState.getInstance();
+            return true;
+        } catch (RuntimeException | ExceptionInInitializerError ex) {
+            Throwable cause = (ex instanceof ExceptionInInitializerError) ? ex.getCause() : ex;
+            if (!(cause instanceof service.RestaurantLayoutService.LayoutUnavailableException)) {
+                throw ex;   // ilgisiz hata — sessizce yutulmaz
+            }
+            LOG.error("Restaurant layout unavailable ({})", cause.getClass().getSimpleName());
+            String userMessage = "Masa düzeni veritabanından okunamadı veya geçersiz — "
+                    + "uygulama başlatılmadı.\n\n"
+                    + "Yönetici: masa düzeni kayıtlarını kontrol edin.\n"
+                    + "(Teknik ayrıntılar logs/errors.log dosyasında)";
+            System.err.println("Masa düzeni geçersiz — uygulama başlatılmadı.");
+            if (!GraphicsEnvironment.isHeadless()) {
+                try {
+                    JOptionPane.showMessageDialog(null, userMessage, "budgetController",
+                            JOptionPane.ERROR_MESSAGE);
+                } catch (RuntimeException ignored) {
+                    // dialog gösterilemese de çıkış kodu ve log yeterli
+                }
+            }
+            System.exit(2);
+            return false;
+        }
     }
 
     /** Basit, modal OLMAYAN bekleme penceresi; EDT üzerinde oluşturulur. */
