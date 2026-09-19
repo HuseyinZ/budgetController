@@ -151,6 +151,8 @@ public class AppState {
     private final ExpenseService expenseService;
     private final OrderLogService orderLogService;
     private final ReportsService reportsService;
+    /** Ürün birimleri — DB tek kaynak (V004). */
+    private final service.ProductUnitService productUnitService;
     private final UserAreaPermissionDAO areaPermissionDAO = new UserAreaPermissionJdbcDAO();
     private final KitchenPrinterDAO kitchenPrinterDAO = new KitchenPrinterJdbcDAO();
     private final CategoryPrinterRouteDAO categoryRouteDAO = new CategoryPrinterRouteJdbcDAO();
@@ -179,6 +181,7 @@ public class AppState {
         this.expenseService = new ExpenseService();
         this.orderLogService = new OrderLogService();
         this.reportsService = new ReportsService();
+        this.productUnitService = new service.ProductUnitService();
         this.areas = createDefaultAreas();
         buildLayouts();
         initializeTableCache();
@@ -350,6 +353,15 @@ public class AppState {
 
     public List<AreaDefinition> getAreas() {
         return areas;
+    }
+
+    /**
+     * Aktif ürün birimleri — kaynağı {@code product_units} tablosudur (V004).
+     * Liste kodda hardcoded DEĞİLDİR; UI bunu kullanır. Okuma başarısız olursa
+     * hata yüzeye çıkar (fallback yok).
+     */
+    public List<model.ProductUnit> getActiveProductUnits() {
+        return productUnitService.getActiveUnits();
     }
 
     public synchronized List<Product> getAvailableProducts() {

@@ -30,9 +30,8 @@ public class ProductEditDialog extends JDialog {
     private final JComboBox<CategoryItem> categoryCombo = new JComboBox<>();
     private final JTextField priceField = new JTextField(10);
     private final JSpinner stockSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 1));
-    private final JComboBox<String> unitLabelCombo = new JComboBox<>(new String[]{
-            "porsiyon", "şiş", "adet", "kg", "tabak", "kase"
-    });
+    /** Birimler DB'den yüklenir (V004) — hardcoded liste YOK, bkz. {@link ProductUnitOptions}. */
+    private final JComboBox<String> unitLabelCombo = new JComboBox<>();
     private final JSpinner piecesPerPortionSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
     private final JLabel piecesHintLabel = new JLabel("0 → şiş bazlı değil");
     private final JLabel messageLabel = new JLabel(" ");
@@ -138,8 +137,9 @@ public class ProductEditDialog extends JDialog {
         // Stok alanı şimdilik UI'dan gizli.
 
         row++;
-        unitLabelCombo.setEditable(true);
-        unitLabelCombo.setToolTipText("Bir porsiyonun tanımı: 'porsiyon', 'şiş', 'kg', 'adet' vs.");
+        // ProductsPanel ile AYNI DB kaynağı; serbest metin girilemez.
+        ProductUnitOptions.load(unitLabelCombo, this, null);
+        unitLabelCombo.setToolTipText("Bir porsiyonun tanımı — liste veritabanındaki birimlerden gelir");
         addFormRow(panel, gc, row, "Birim", unitLabelCombo);
 
         row++;
@@ -252,7 +252,7 @@ public class ProductEditDialog extends JDialog {
         priceField.setText(product.getUnitPrice() == null ? "0" : product.getUnitPrice().toPlainString());
         stockSpinner.setValue(product.getStock() == null ? 0 : product.getStock());
         selectCategory(product.getCategoryId());
-        unitLabelCombo.setSelectedItem(product.getUnitLabel() == null ? "porsiyon" : product.getUnitLabel());
+        ProductUnitOptions.select(unitLabelCombo, product.getUnitLabel());
         piecesPerPortionSpinner.setValue(product.getPiecesPerPortion() == null ? 0 : product.getPiecesPerPortion());
     }
 
@@ -263,7 +263,7 @@ public class ProductEditDialog extends JDialog {
         priceField.setText("0");
         stockSpinner.setValue(0);
         categoryCombo.setSelectedIndex(0);
-        unitLabelCombo.setSelectedItem("porsiyon");
+        ProductUnitOptions.select(unitLabelCombo, null);
         piecesPerPortionSpinner.setValue(0);
         productList.clearSelection();
         showMessage("Yeni ürün kaydı", false);
