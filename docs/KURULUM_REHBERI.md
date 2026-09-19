@@ -504,16 +504,34 @@ olarak da dosyaya konabilir — uygulama runtime'ı bu anahtarları hiç okumaz.
 
 #### 8.4.2 Restoran masa düzeni
 
-`C:\Users\kasa\.budget\restaurant-layout.properties` (yoksa oluştur, içine
-projedeki örneği kopyala):
+**Masa düzeni artık veritabanındadır** — yapılandırma dosyası yoktur.
+`restaurant-layout.properties` kullanımdan kaldırıldı; uygulama onu okumaz ve
+gömülü varsayılan düzen de yoktur.
 
-```properties
-area.1.building     = 1. Kat
-area.1.section      = Salon A
-area.1.startTableNo = 101
-area.1.tableCount   = 12
-# kendi restoranına göre düzenle...
+Kaynak tablolar (V004 migration'ı ile gelir ve 13 alan / 70 masa seed edilir):
+
+| Tablo | İçerik |
+|---|---|
+| `restaurant_areas` | Bina / Kat / Salon, `display_order`, `is_active` |
+| `restaurant_table_layout` | Masa numarası → alan, sıra, `is_active` (koordinatlar ileride) |
+
+Düzeni değiştirmek için bu tablolar güncellenir (örnek — Workbench, yönetim hesabıyla):
+
+```sql
+-- Yeni salon
+INSERT INTO restaurant_areas (building, floor, salon, display_order)
+VALUES ('3. Bina', '1. Kat', '1. Salon', 14);
+
+-- O salona masa ekle (numara serbest, bitişik olmak zorunda değil)
+INSERT INTO restaurant_table_layout (table_no, area_id, display_order)
+SELECT 401, id, 1 FROM restaurant_areas
+WHERE building='3. Bina' AND floor='1. Kat' AND salon='1. Salon';
 ```
+
+Değişiklik uygulamanın **yeniden başlatılmasıyla** etkili olur. Düzen boş veya
+tutarsızsa (masasız alan, bilinmeyen alana bağlı masa, yinelenen masa numarası)
+uygulama bilinçli olarak açılmaz ve "Masa düzeni veritabanından okunamadı veya
+geçersiz" mesajını verir — bkz. §15.
 
 #### 8.4.3 Admin parolası
 
@@ -548,8 +566,8 @@ db.password=GÜÇLÜ_BİR_SİFRE
 
 **Sadece IP değişti** (`localhost` → `192.168.1.10`). Kalan her şey aynı.
 
-`restaurant-layout.properties` de **aynı içerikle** kopyalanmalı — tüm
-ekranlar aynı salon tanımını görmeli.
+Masa düzeni için kopyalanacak dosya **yoktur**: düzen veritabanında tutulduğu
+için tüm ekranlar aynı salon tanımını otomatik olarak görür (§8.4.2).
 
 ### Test
 
@@ -780,6 +798,25 @@ Uygulama açılışta şemayı yalnız okuyarak doğrular; hazır değilse bilin
 - Dialogda "database unreachable or configuration missing" → MySQL servisi çalışıyor mu, `db.properties` doğru mu (§4, §8.4.1).
 - `--apply`/`--adopt-existing` "migrate kimliği eksik" diyorsa `DB_MIGRATE_USER` / `DB_MIGRATE_PASS` verilmemiştir (§5.2); `budget_app`'e düşmez.
 - Ayrıntı: `logs/errors.log`.
+
+### "Masa düzeni veritabanından okunamadı veya geçersiz"
+Uygulama masa düzenini `restaurant_areas` / `restaurant_table_layout` tablolarından okur (§8.4.2).
+Düzen tutarsızsa bilinçli olarak açılmaz — yanlış düzenle çalışmak siparişin yanlış masaya yazılmasına yol açar.
+Sık nedenler:
+
+- Tablolar boş → V004 migration'ı uygulanmamış: `tools.Migrate --status` / `--apply` (§5)
+- Bir alandaki tüm masalar `is_active = 0` yapılmış → alanda aktif masa kalmamış
+- Bir masa, pasif veya silinmiş bir `area_id`'ye bağlı
+- Aynı masa numarası birden çok satırda
+
+Kontrol:
+```sql
+SELECT a.id, a.building, a.floor, a.salon, a.is_active, COUNT(l.table_no) AS masa
+FROM restaurant_areas a
+LEFT JOIN restaurant_table_layout l ON l.area_id = a.id AND l.is_active = 1
+GROUP BY a.id ORDER BY a.display_order;
+```
+Ayrıntı: `logs/errors.log`.
 
 ### "Yazıcı bulunamadı / fiş basmıyor"
 - `ping 192.168.1.241` cevap veriyor mu?
