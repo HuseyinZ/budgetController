@@ -85,6 +85,12 @@ class RestaurantLayoutManagementServiceTest {
         @Override public Optional<TableLayoutEntry> findTableByNo(Connection c, int tableNo) {
             return Optional.ofNullable(tables.get(tableNo));
         }
+        @Override public List<RestaurantArea> findAllAreasOrdered(Connection c) {
+            return List.copyOf(areas.values());
+        }
+        @Override public List<TableLayoutEntry> findAllTablesOrdered(Connection c) {
+            return List.copyOf(tables.values());
+        }
         @Override public List<TableLayoutEntry> findTablesByArea(Connection c, int areaId, boolean activeOnly) {
             return tables.values().stream()
                     .filter(t -> t.getAreaId() == areaId)
@@ -341,6 +347,29 @@ class RestaurantLayoutManagementServiceTest {
         assertTrue(dao.tables.values().stream().allMatch(TableLayoutEntry::isActive),
                 "hiçbir masa pasifleşmemeli");
         assertEquals(1, tx.rollbacks);
+    }
+
+    // ---------------- yönetim okuma yolu ----------------
+
+    @Test
+    void managementViewShowsActiveAndInactiveRecordsToAdminOnly() {
+        int id = seedArea();
+        service.deactivateTable(ADMIN, 101);
+
+        assertThrows(SecurityException.class, () -> service.loadForManagement(KASIYER));
+
+        var view = service.loadForManagement(ADMIN);
+        assertEquals(1, view.areas().size());
+        assertEquals(2, view.tablesOf(id).size(), "pasif masa da görünmeli");
+        assertTrue(view.tablesOf(id).stream().anyMatch(t -> !t.isActive()));
+    }
+
+    @Test
+    void managementViewIsImmutable() {
+        seedArea();
+        var view = service.loadForManagement(ADMIN);
+        assertThrows(UnsupportedOperationException.class, () -> view.areas().clear());
+        assertThrows(UnsupportedOperationException.class, () -> view.tables().clear());
     }
 
     // ---------------- yerleşim ----------------

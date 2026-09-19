@@ -614,6 +614,12 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
             return;
         }
         Object newValue = event.getNewValue();
+        if (newValue == null) {
+            // Düzen yeniden yüklendi (AppState.reloadLayout): alan/masa kümesi
+            // değişmiş olabilir → hiyerarşiyi baştan kur.
+            SwingUtilities.invokeLater(this::buildLayout);
+            return;
+        }
         if (newValue instanceof Integer) {
             int tableNo = (Integer) newValue;
             SwingUtilities.invokeLater(() -> {

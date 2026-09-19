@@ -94,6 +94,45 @@ public final class LayoutPlacementRules {
         }
     }
 
+    /** Yerleştirilmiş (koordinatı olan) masa mı? */
+    public static boolean isPlaced(TableLayoutEntry t) {
+        return t != null && t.getPosX() != null && t.getPosY() != null
+                && t.getWidth() != null && t.getHeight() != null;
+    }
+
+    /**
+     * Aynı alandaki masaların üst üste binip binmediğini kontrol eder.
+     * Yalnız yerleştirilmiş masalar karşılaştırılır; kenar teması çakışma
+     * sayılmaz (yan yana masa serbesttir).
+     *
+     * @return çakışan ilk masa çiftini anlatan mesaj; çakışma yoksa boş
+     */
+    public static java.util.Optional<String> findOverlap(java.util.List<TableLayoutEntry> tables) {
+        java.util.List<TableLayoutEntry> placed = tables.stream()
+                .filter(LayoutPlacementRules::isPlaced)
+                .toList();
+        for (int i = 0; i < placed.size(); i++) {
+            for (int j = i + 1; j < placed.size(); j++) {
+                TableLayoutEntry a = placed.get(i);
+                TableLayoutEntry b = placed.get(j);
+                if (intersects(a, b)) {
+                    return java.util.Optional.of(
+                            "Masa " + a.getTableNo() + " ile masa " + b.getTableNo() + " üst üste biniyor");
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private static boolean intersects(TableLayoutEntry a, TableLayoutEntry b) {
+        int ax2 = a.getPosX() + a.getWidth();
+        int ay2 = a.getPosY() + a.getHeight();
+        int bx2 = b.getPosX() + b.getWidth();
+        int by2 = b.getPosY() + b.getHeight();
+        return a.getPosX() < bx2 && b.getPosX() < ax2
+                && a.getPosY() < by2 && b.getPosY() < ay2;
+    }
+
     private static void requireRange(String field, int value, int min, int max) {
         if (value < min || value > max) {
             throw new InvalidPlacementException(

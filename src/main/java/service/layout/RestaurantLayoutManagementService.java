@@ -63,6 +63,41 @@ public class RestaurantLayoutManagementService {
         this.usageCheck = usageCheck;
     }
 
+    /**
+     * Yönetim görüntüsü: TÜM alanlar ve masalar (aktif + pasif).
+     *
+     * @param areas  sırası {@code display_order} → {@code id}
+     * @param tables sırası {@code display_order} → {@code table_no}
+     */
+    public record ManagementView(List<RestaurantArea> areas, List<TableLayoutEntry> tables) {
+        public ManagementView {
+            areas = List.copyOf(areas);
+            tables = List.copyOf(tables);
+        }
+
+        /** Bir alana ait masalar (pasifler dahil), DB sırasında. */
+        public List<TableLayoutEntry> tablesOf(int areaId) {
+            return tables.stream().filter(t -> t.getAreaId() == areaId).toList();
+        }
+    }
+
+    // ==================================================================
+    //  Yönetim okuma yolu — ADMIN
+    // ==================================================================
+
+    /**
+     * Yönetim ekranı için düzenin tamamını okur (pasif kayıtlar dahil).
+     *
+     * <p>Salt okumadır ve okuma da yetkilidir: pasif alan/masa bilgisi
+     * yalnız yöneticiye görünür.
+     */
+    public ManagementView loadForManagement(User user) {
+        requireAdmin(user, "masa düzenini görüntüle");
+        return tx.execute(conn -> new ManagementView(
+                dao.findAllAreasOrdered(conn),
+                dao.findAllTablesOrdered(conn)));
+    }
+
     // ==================================================================
     //  Alan işlemleri
     // ==================================================================
