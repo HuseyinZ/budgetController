@@ -85,6 +85,12 @@ class RestaurantLayoutManagementServiceTest {
         @Override public Optional<TableLayoutEntry> findTableByNo(Connection c, int tableNo) {
             return Optional.ofNullable(tables.get(tableNo));
         }
+        @Override public List<RestaurantArea> findAllAreasOrdered(Connection c) {
+            return List.copyOf(areas.values());
+        }
+        @Override public List<TableLayoutEntry> findAllTablesOrdered(Connection c) {
+            return List.copyOf(tables.values());
+        }
         @Override public List<TableLayoutEntry> findTablesByArea(Connection c, int areaId, boolean activeOnly) {
             return tables.values().stream()
                     .filter(t -> t.getAreaId() == areaId)
@@ -343,6 +349,29 @@ class RestaurantLayoutManagementServiceTest {
         assertEquals(1, tx.rollbacks);
     }
 
+    // ---------------- yönetim okuma yolu ----------------
+
+    @Test
+    void managementViewShowsActiveAndInactiveRecordsToAdminOnly() {
+        int id = seedArea();
+        service.deactivateTable(ADMIN, 101);
+
+        assertThrows(SecurityException.class, () -> service.loadForManagement(KASIYER));
+
+        var view = service.loadForManagement(ADMIN);
+        assertEquals(1, view.areas().size());
+        assertEquals(2, view.tablesOf(id).size(), "pasif masa da görünmeli");
+        assertTrue(view.tablesOf(id).stream().anyMatch(t -> !t.isActive()));
+    }
+
+    @Test
+    void managementViewIsImmutable() {
+        seedArea();
+        var view = service.loadForManagement(ADMIN);
+        assertThrows(UnsupportedOperationException.class, () -> view.areas().clear());
+        assertThrows(UnsupportedOperationException.class, () -> view.tables().clear());
+    }
+
     // ---------------- yerleşim ----------------
 
     @Test
@@ -372,6 +401,70 @@ class RestaurantLayoutManagementServiceTest {
                 () -> service.updatePlacements(ADMIN, List.of(ok, bad)));
         assertEquals(null, dao.tables.get(101).getPosX(),
                 "doğrulama transaction'dan ÖNCE yapılmalı, hiç yazılmamalı");
+    }
+
+    /** Konumlandırılmış masa üretir. */
+    private static TableLayoutEntry placed(int no, int order, int x, int y, int w, int h) {
+        TableLayoutEntry t = table(no, order);
+        t.setPosX(x); t.setPosY(y); t.setWidth(w); t.setHeight(h);
+        return t;
+    }
+
+    @Test
+    void serviceRejectsAnOverlappingBatchWithoutRelyingOnTheUi() {
+        seedArea();
+        dao.writes.clear();
+        int rollbacksBefore = tx.rollbacks;
+
+        var ex = assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.updatePlacements(ADMIN, List.of(
+                        placed(101, 1, 0, 0, 100, 100),
+                        placed(102, 2, 50, 50, 100, 100))));
+
+        assertTrue(ex.getMessage().contains("üst üste"), ex.getMessage());
+        assertTrue(dao.writes.isEmpty(), "çakışmada hiçbir yazma olmamalı: " + dao.writes);
+        assertEquals(rollbacksBefore + 1, tx.rollbacks);
+    }
+
+    @Test
+    void overlapAgainstAnUnchangedExistingTableIsRejected() {
+        seedArea();
+        // 101 sabit konumda; 102 onun üzerine taşınmaya çalışılıyor
+        service.updatePlacement(ADMIN, placed(101, 1, 0, 0, 100, 100));
+        dao.writes.clear();
+
+        assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.updatePlacements(ADMIN, List.of(placed(102, 2, 20, 20, 100, 100))));
+
+        assertTrue(dao.writes.isEmpty(), "değişmeyen masa da hesaba katılmalı: " + dao.writes);
+        assertTrue(dao.tables.get(102).getPosX() == null, "102 konumlandırılmamış kalmalı");
+    }
+
+    @Test
+    void nonOverlappingBatchIsAccepted() {
+        seedArea();
+        dao.writes.clear();
+
+        service.updatePlacements(ADMIN, List.of(
+                placed(101, 1, 0, 0, 100, 100),
+                placed(102, 2, 100, 0, 100, 100)));   // kenar teması → çakışma değil
+
+        assertEquals(List.of("updatePlacement:101", "updatePlacement:102"), dao.writes);
+        assertEquals(0, dao.tables.get(101).getPosX());
+        assertEquals(100, dao.tables.get(102).getPosX());
+    }
+
+    @Test
+    void inactiveTablesAreIgnoredByOverlapValidation() {
+        seedArea();
+        service.updatePlacement(ADMIN, placed(101, 1, 0, 0, 100, 100));
+        service.deactivateTable(ADMIN, 101);   // artık runtime düzende yok
+        dao.writes.clear();
+
+        // 102 pasif masanın üzerine taşınabilir: görsel semantik yalnız aktifleri sayar
+        service.updatePlacements(ADMIN, List.of(placed(102, 2, 10, 10, 100, 100)));
+
+        assertEquals(List.of("updatePlacement:102"), dao.writes);
     }
 
     @Test
