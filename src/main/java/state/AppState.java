@@ -144,6 +144,43 @@ public class AppState {
         }
     }
 
+    /**
+     * DEĞİŞMEZ masa düzeni görüntüsü: alanlar + masa arama tablosu.
+     *
+     * <p>Tek bir referans olarak atomik biçimde takas edilir; okuyucular ya
+     * tamamen eski ya da tamamen yeni düzeni görür, ikisinin karışımını asla.
+     */
+    public static final class LayoutSnapshot {
+        private final List<AreaDefinition> areas;
+        private final Map<Integer, TableLayout> layouts;
+
+        LayoutSnapshot(List<AreaDefinition> areas, Map<Integer, TableLayout> layouts) {
+            this.areas = List.copyOf(areas);
+            this.layouts = Collections.unmodifiableMap(new LinkedHashMap<>(layouts));
+        }
+
+        public List<AreaDefinition> areas() {
+            return areas;
+        }
+
+        /** Düzendeki masa numaraları — DB sırasında. */
+        public java.util.Set<Integer> tableNumbers() {
+            return layouts.keySet();
+        }
+
+        public boolean contains(int tableNo) {
+            return layouts.containsKey(tableNo);
+        }
+
+        TableLayout layoutFor(int tableNo) {
+            return layouts.get(tableNo);
+        }
+
+        public int tableCount() {
+            return layouts.size();
+        }
+    }
+
     private static class Holder {
         private static final AppState INSTANCE = new AppState();
     }
@@ -153,7 +190,12 @@ public class AppState {
     }
 
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
-    private final List<AreaDefinition> areas;
+    /**
+     * Masa düzeni — DEĞİŞMEZ anlık görüntü, tek atomik takasla değiştirilir.
+     * Okuyucular hiçbir zaman yarı eski / yarı yeni düzen görmez.
+     */
+    private final java.util.concurrent.atomic.AtomicReference<LayoutSnapshot> layoutRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private final RestaurantTableService tableService;
     private final OrderService orderService;
@@ -173,7 +215,7 @@ public class AppState {
     private final CategoryPrinterRouteDAO categoryRouteDAO = new CategoryPrinterRouteJdbcDAO();
     private final dao.RefundLogDAO refundLogDAO = new dao.jdbc.RefundLogJdbcDAO();
 
-    private final Map<Integer, TableLayout> layouts = new LinkedHashMap<>();
+    // NOT: masa düzeni artık layoutRef içindeki LayoutSnapshot'ta tutulur.
     private final Map<Integer, Long> tableIds = new ConcurrentHashMap<>();
     private final Map<Integer, TableSignature> tableSignatures = new ConcurrentHashMap<>();
     private final Map<Long, Deque<OrderLogEntry>> orderHistories = new ConcurrentHashMap<>();
@@ -198,8 +240,8 @@ public class AppState {
         this.reportsService = new ReportsService();
         this.productUnitService = new service.ProductUnitService();
         this.layoutService = new RestaurantLayoutService();
-        this.areas = loadAreasFromDatabase();
-        buildLayouts();
+        // Düzen TAMAMEN doğrulanıp kurulduktan sonra tek seferde yerleştirilir.
+        this.layoutRef.set(loadSnapshotFromDatabase());
         initializeTableCache();
         this.poller = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "app-state-poller");
@@ -222,24 +264,51 @@ public class AppState {
      *
      * <p>Yalnız SELECT çalıştırır; hiçbir alan/masa oluşturmaz.
      */
-    private List<AreaDefinition> loadAreasFromDatabase() {
+    private LayoutSnapshot loadSnapshotFromDatabase() {
         List<AreaDefinition> defs = new ArrayList<>();
+        Map<Integer, TableLayout> tableLayouts = new LinkedHashMap<>();
         for (RestaurantLayoutService.AreaTables entry : layoutService.loadActiveLayout()) {
-            defs.add(new AreaDefinition(
+            AreaDefinition area = new AreaDefinition(
                     entry.area().getBuilding(),
                     entry.area().getFloor(),
                     entry.area().getSalon(),
-                    entry.tableNumbers()));
-        }
-        return Collections.unmodifiableList(defs);
-    }
-
-    private void buildLayouts() {
-        for (AreaDefinition area : areas) {
+                    entry.tableNumbers());
+            defs.add(area);
             for (Integer tableNo : area.getTableNumbers()) {
-                layouts.put(tableNo, new TableLayout(tableNo, area.getBuilding(), area.getSection()));
+                tableLayouts.put(tableNo,
+                        new TableLayout(tableNo, area.getBuilding(), area.getSection()));
             }
         }
+        return new LayoutSnapshot(defs, tableLayouts);
+    }
+
+    /** O anki düzen görüntüsü — her okuma tutarlı tek bir sürüm görür. */
+    private LayoutSnapshot layout() {
+        return layoutRef.get();
+    }
+
+    /**
+     * Masa düzenini veritabanından YENİDEN yükler (yönetim ekranı kaydından
+     * sonra çağrılır).
+     *
+     * <p>Yeni düzen tamamen okunup doğrulandıktan SONRA tek atomik takas
+     * yapılır. Yükleme başarısız olursa istisna yükselir ve <b>önceki geçerli
+     * düzen korunur</b> — uygulama yarım düzenle çalışmaz.
+     *
+     * <p>Takastan sonra artık var olmayan masaların önbellek kayıtları
+     * temizlenir. Hiçbir DB yazması yapılmaz.
+     */
+    public void reloadLayout() {
+        LayoutSnapshot fresh = loadSnapshotFromDatabase();   // hata olursa takas yapılmaz
+        layoutRef.set(fresh);
+        pruneStaleTableCaches(fresh);
+        pcs.firePropertyChange(EVENT_TABLES, null, null);
+    }
+
+    /** Düzenden çıkarılan masaların bellek içi izlerini siler (DB'ye dokunmaz). */
+    private void pruneStaleTableCaches(LayoutSnapshot snapshot) {
+        tableIds.keySet().removeIf(tableNo -> !snapshot.contains(tableNo));
+        tableSignatures.keySet().removeIf(tableNo -> !snapshot.contains(tableNo));
     }
 
     /**
@@ -258,14 +327,19 @@ public class AppState {
         for (RestaurantTable table : tableService.getAllTables()) {
             if (table != null
                     && table.getId() != null
-                    && layouts.containsKey(table.getTableNo())) {
+                    && layout().contains(table.getTableNo())) {
                 tableIds.put(table.getTableNo(), table.getId());
             }
         }
     }
 
     public List<AreaDefinition> getAreas() {
-        return areas;
+        return layout().areas();
+    }
+
+    /** O anki düzen görüntüsü — yönetim ekranı ve testler için. */
+    public LayoutSnapshot layoutSnapshot() {
+        return layout();
     }
 
     /**
@@ -386,7 +460,7 @@ public class AppState {
      * UI'sında checkbox listesi oluşturmak için.
      */
     public List<AreaDefinition> getAllAreas() {
-        return new ArrayList<>(areas);
+        return new ArrayList<>(layout().areas());
     }
 
     /**
@@ -401,13 +475,13 @@ public class AppState {
         if (user == null) return List.of();
         Role role = user.getRole();
         if (role == Role.ADMIN || role == Role.KASIYER) {
-            return new ArrayList<>(areas);
+            return new ArrayList<>(layout().areas());
         }
         // GARSON
         java.util.Set<String> allowed = getAccessibleAreaKeys(user);
         if (allowed.isEmpty()) return List.of();
         List<AreaDefinition> out = new ArrayList<>();
-        for (AreaDefinition a : areas) {
+        for (AreaDefinition a : layout().areas()) {
             if (allowed.contains(areaKey(a.getBuilding(), a.getSection()))) {
                 out.add(a);
             }
@@ -421,7 +495,7 @@ public class AppState {
         Role role = user.getRole();
         if (role == Role.ADMIN || role == Role.KASIYER) {
             java.util.Set<String> all = new java.util.HashSet<>();
-            for (AreaDefinition a : areas) {
+            for (AreaDefinition a : layout().areas()) {
                 all.add(areaKey(a.getBuilding(), a.getSection()));
             }
             return all;
@@ -473,7 +547,7 @@ public class AppState {
         if (user == null) return false;
         Role role = user.getRole();
         if (role == Role.ADMIN || role == Role.KASIYER) return true;
-        TableLayout layout = layouts.get(tableNo);
+        TableLayout layout = layout().layoutFor(tableNo);
         if (layout == null) return false;
         java.util.Set<String> allowed = getAccessibleAreaKeys(user);
         return allowed.contains(areaKey(layout.building(), layout.section()));
@@ -1054,7 +1128,7 @@ public class AppState {
     public synchronized List<Integer> getAvailableTransferTargets(int fromTableNo, User user) {
         if (user == null) return List.of();
         List<Integer> result = new ArrayList<>();
-        for (Integer tableNo : layouts.keySet()) {
+        for (Integer tableNo : layout().tableNumbers()) {
             if (tableNo == fromTableNo) continue;
             if (!canAccessTable(tableNo, user)) continue;
             // SALT OKUMA: DB kaydı olmayan masa da geçerli bir hedeftir. Açılış
@@ -1330,7 +1404,7 @@ public class AppState {
         if (open == null) {
             return List.of();
         }
-        TableLayout layout = layouts.get(tableNo);
+        TableLayout layout = layout().layoutFor(tableNo);
         String building = layout == null ? "" : safeStr(layout.building());
         String section  = layout == null ? "" : safeStr(layout.section());
         String salonName;
@@ -1566,7 +1640,7 @@ public class AppState {
     }
 
     private TableLayout requireLayout(int tableNo) {
-        TableLayout layout = layouts.get(tableNo);
+        TableLayout layout = layout().layoutFor(tableNo);
         if (layout == null) {
             throw new IllegalArgumentException("Masa bulunamadı: " + tableNo);
         }
@@ -1833,7 +1907,7 @@ public class AppState {
                     if (table != null) {
                         tableNo = table.getTableNo();
                         tableIds.put(tableNo, table.getId());
-                        TableLayout layout = layouts.get(tableNo);
+                        TableLayout layout = layout().layoutFor(tableNo);
                         if (layout != null) {
                             building = layout.building();
                             section = layout.section();
@@ -1991,7 +2065,7 @@ public class AppState {
     }
 
     private void pollTables() {
-        for (Integer tableNo : layouts.keySet()) {
+        for (Integer tableNo : layout().tableNumbers()) {
             TableSignature newSignature = captureSignature(tableNo);
             TableSignature old = tableSignatures.put(tableNo, newSignature);
             if (!Objects.equals(old, newSignature)) {
@@ -2037,7 +2111,8 @@ public class AppState {
         }
     }
 
-    private record TableLayout(int tableNo, String building, String section) {
+    /** Paket-özel: {@link LayoutSnapshot} testleri bu tipi kurabilsin diye. */
+    record TableLayout(int tableNo, String building, String section) {
     }
 
     private record TableSignature(Long orderId, LocalDateTime updatedAt, TableStatus tableStatus) {

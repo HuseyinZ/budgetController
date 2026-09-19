@@ -42,7 +42,7 @@ class AppStateStartupReadOnlyTest {
     @Test
     void layoutComesFromTheDatabaseOnly() {
         String ctor = bodyOf("private AppState()");
-        assertTrue(ctor.contains("loadAreasFromDatabase()"),
+        assertTrue(ctor.contains("loadSnapshotFromDatabase()"),
                 "masa düzeni DB'den yüklenmeli");
         assertFalse(ctor.contains("createDefaultAreas()"),
                 "eski properties/fallback yükleyicisi çağrılmamalı");
@@ -57,10 +57,10 @@ class AppStateStartupReadOnlyTest {
         assertFalse(source.contains("new AreaDefinition(\"1. Bina\""),
                 "gömülü varsayılan düzen kalmamalı");
 
-        String loader = bodyOf("private List<AreaDefinition> loadAreasFromDatabase()");
+        String loader = bodyOf("private LayoutSnapshot loadSnapshotFromDatabase()");
         assertTrue(loader.contains("layoutService.loadActiveLayout()"),
                 "tek kaynak RestaurantLayoutService olmalı");
-        assertNoWrite(loader, "loadAreasFromDatabase");
+        assertNoWrite(loader, "loadSnapshotFromDatabase");
     }
 
     @Test
@@ -125,8 +125,12 @@ class AppStateStartupReadOnlyTest {
     void transferTargetsIncludeTablesWithoutDatabaseRows() {
         String body = bodyOf("public synchronized List<Integer> getAvailableTransferTargets(int fromTableNo, User user)");
         assertNoWrite(body, "getAvailableTransferTargets");
-        assertTrue(body.contains("layouts.keySet()"),
-                "tüm yapılandırılmış masalar değerlendirilmeli");
+        // Düzen artık değişmez LayoutSnapshot'tan okunur; ölçülen davranış aynı:
+        // yapılandırılmış TÜM masalar değerlendirilmeli.
+        assertTrue(body.contains("layout().tableNumbers()"),
+                "tüm yapılandırılmış masalar anlık görüntüden gezilmeli");
+        assertFalse(body.contains("layouts.keySet()"),
+                "değiştirilebilir düzen haritası kalmamalı");
         assertTrue(body.contains("findExistingTableId("),
                 "salt okuma çözümleyicisi kullanılmalı");
         assertFalse(body.contains("tableIds.get("),
