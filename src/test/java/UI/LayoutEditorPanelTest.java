@@ -92,13 +92,20 @@ class LayoutEditorPanelTest {
     void overlapIsEnforcedByTheServiceNotOnlyByTheUi() {
         String service = readSource(Path.of("src", "main", "java", "service", "layout",
                 "RestaurantLayoutManagementService.java"));
+
+        // Çakışma denetimi tek yerde toplanmıştır; yardımcı gerçekten
+        // LayoutPlacementRules.findOverlap(...) kullanmalı.
+        String helper = bodyOf(service,
+                "private static void requireNoOverlap(List<TableLayoutEntry> resultingActiveTables)");
+        assertTrue(helper.contains("LayoutPlacementRules.findOverlap("),
+                "merkezî denetim gerçek çakışma yardımcısını kullanmalı");
+
         String body = bodyOf(service, "public void updatePlacements(User user, List<TableLayoutEntry> tables)");
-        assertTrue(body.contains("LayoutPlacementRules.findOverlap("),
-                "servis katmanı çakışmayı kendisi reddetmeli");
-        int overlap = body.indexOf("findOverlap(");
+        assertTrue(body.contains("requireNoOverlap("),
+                "servis katmanı çakışmayı kendisi reddetmeli (UI ön kontrolüne güvenilmez)");
+        int overlap = body.indexOf("requireNoOverlap(");
         int write = body.indexOf("dao.updatePlacement(");
-        assertTrue(overlap >= 0 && write > overlap,
-                "doğrulama tüm yazmalardan ÖNCE tamamlanmalı");
+        assertTrue(write > overlap, "doğrulama tüm yazmalardan ÖNCE tamamlanmalı");
         assertTrue(body.contains("findTablesByArea(conn, areaId, true)"),
                 "değişmeyen aktif masalar da nihai düzene dahil edilmeli");
     }
@@ -168,6 +175,25 @@ class LayoutEditorPanelTest {
 
         assertFalse(canvas.contains("setTableNo("), "tuval numarayı değiştirmemeli");
         assertFalse(canvas.contains("setAreaId("), "tuval alanı değiştirmemeli");
+    }
+
+    @Test
+    void activationPathsAlsoValidateOverlap() {
+        String service = readSource(Path.of("src", "main", "java", "service", "layout",
+                "RestaurantLayoutManagementService.java"));
+        for (String method : List.of("public void reactivateTable(User user, int tableNo)",
+                "public void reactivateArea(User user, int areaId, List<Integer> tableNumbers)")) {
+            String body = bodyOf(service, method);
+            assertTrue(body.contains("requireNoOverlap("),
+                    method + " aktifleştirmeden önce çakışmayı denetlemeli");
+            int check = body.indexOf("requireNoOverlap(");
+            int write = body.indexOf("dao.setTableActive(");
+            assertTrue(write > check, method + " doğrulama TÜM yazmalardan önce olmalı");
+            if (body.contains("dao.setAreaActive(")) {
+                assertTrue(body.indexOf("dao.setAreaActive(") > check,
+                        method + " alan aktifleştirmesi de doğrulamadan sonra olmalı");
+            }
+        }
     }
 
     @Test

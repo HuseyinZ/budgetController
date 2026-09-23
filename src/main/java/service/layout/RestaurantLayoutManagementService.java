@@ -208,16 +208,40 @@ public class RestaurantLayoutManagementService {
         tx.execute(conn -> {
             dao.findAreaById(conn, areaId)
                     .orElseThrow(() -> new LayoutRuleViolationException("Alan bulunamadı: " + areaId));
+
+            Set<Integer> requested = new LinkedHashSet<>();
+            List<TableLayoutEntry> activated = new ArrayList<>();
             for (Integer tableNo : tableNumbers) {
+                if (tableNo == null) {
+                    throw new LayoutRuleViolationException("Masa numarası boş olamaz");
+                }
+                if (!requested.add(tableNo)) {
+                    throw new LayoutRuleViolationException("Masa numarası yinelenmiş: " + tableNo);
+                }
                 TableLayoutEntry t = dao.findTableByNo(conn, tableNo)
                         .orElseThrow(() -> new LayoutRuleViolationException("Masa bulunamadı: " + tableNo));
                 if (t.getAreaId() != areaId) {
                     throw new LayoutRuleViolationException(
                             "Masa " + tableNo + " bu alana ait değil");
                 }
+                activated.add(t);
             }
+
+            // NİHAİ aktif küme: hâlâ aktif olanlar + aktifleştirilecekler.
+            // Aktifleştirme de çakışma doğrulamasından geçmek zorundadır; aksi
+            // halde pasifken çakışır konuma kaydedilmiş bir masa geri açılınca
+            // iki aktif masa üst üste binerdi.
+            List<TableLayoutEntry> resulting = new ArrayList<>();
+            for (TableLayoutEntry current : dao.findTablesByArea(conn, areaId, true)) {
+                if (!requested.contains(current.getTableNo())) {
+                    resulting.add(current);
+                }
+            }
+            resulting.addAll(activated);
+            requireNoOverlap(resulting);
+
             dao.setAreaActive(conn, areaId, true);
-            for (Integer tableNo : tableNumbers) {
+            for (Integer tableNo : requested) {
                 dao.setTableActive(conn, tableNo, true);
             }
             return null;
@@ -296,6 +320,16 @@ public class RestaurantLayoutManagementService {
                 throw new LayoutRuleViolationException(
                         "Pasif alanın masası aktifleştirilemez; önce alanı aktifleştirin");
             }
+            // Aktifleştirme sonrası oluşacak AKTİF küme çakışmamalı.
+            List<TableLayoutEntry> resulting = new ArrayList<>();
+            for (TableLayoutEntry current : dao.findTablesByArea(conn, table.getAreaId(), true)) {
+                if (current.getTableNo() != tableNo) {
+                    resulting.add(current);
+                }
+            }
+            resulting.add(table);
+            requireNoOverlap(resulting);
+
             dao.setTableActive(conn, tableNo, true);
             return null;
         });
@@ -348,9 +382,7 @@ public class RestaurantLayoutManagementService {
                     TableLayoutEntry changed = incoming.get(current.getTableNo());
                     resulting.add(changed == null ? current : changed);
                 }
-                LayoutPlacementRules.findOverlap(resulting).ifPresent(message -> {
-                    throw new LayoutRuleViolationException(message);
-                });
+                requireNoOverlap(resulting);
             }
 
             // 3) Doğrulama bittikten SONRA yazma — aynı transaction içinde.
@@ -362,6 +394,19 @@ public class RestaurantLayoutManagementService {
     }
 
     // ==================================================================
+
+    /**
+     * Nihai AKTİF masa kümesinde çakışma olmamalı.
+     *
+     * <p>Hem yerleşim kaydında hem de her aktifleştirmede uygulanır: pasif
+     * masanın konumu aktif düzenin doğrulamasına girmediği için, aktifleşme
+     * anında yeniden denetlenmesi zorunludur.
+     */
+    private static void requireNoOverlap(List<TableLayoutEntry> resultingActiveTables) {
+        LayoutPlacementRules.findOverlap(resultingActiveTables).ifPresent(message -> {
+            throw new LayoutRuleViolationException(message);
+        });
+    }
 
     private void requireNotInUse(int tableNo, String action) {
         if (usageCheck != null && usageCheck.isInUse(tableNo)) {

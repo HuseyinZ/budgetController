@@ -467,6 +467,101 @@ class RestaurantLayoutManagementServiceTest {
         assertEquals(List.of("updatePlacement:102"), dao.writes);
     }
 
+    // ---------------- aktifleştirme çakışma doğrulaması ----------------
+
+    /**
+     * Pasif masanın konumu aktif düzen doğrulamasının dışındadır; bu yüzden
+     * çakışan konuma kaydedilebilir. Açık, aktifleştirme anında kapanmalıdır.
+     */
+    private int seedOverlappingInactiveTable() {
+        int id = seedArea();
+        service.updatePlacements(ADMIN, List.of(
+                placed(101, 1, 0, 0, 100, 100),
+                placed(102, 2, 300, 0, 100, 100)));
+        service.deactivateTable(ADMIN, 102);
+        // 102 artık pasif → aktif küme doğrulamasına girmez, 101'in üzerine taşınabilir
+        service.updatePlacements(ADMIN, List.of(placed(102, 2, 20, 20, 100, 100)));
+        return id;
+    }
+
+    @Test
+    void reactivateTableRejectsOverlapWithAnActiveTable() {
+        seedOverlappingInactiveTable();
+        dao.writes.clear();
+        int rollbacksBefore = tx.rollbacks;
+
+        var ex = assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.reactivateTable(ADMIN, 102));
+
+        assertTrue(ex.getMessage().contains("üst üste"), ex.getMessage());
+        assertTrue(dao.writes.isEmpty(), "çakışmada aktifleştirme yazması olmamalı: " + dao.writes);
+        assertFalse(dao.tables.get(102).isActive(), "masa pasif kalmalı");
+        assertEquals(rollbacksBefore + 1, tx.rollbacks);
+    }
+
+    @Test
+    void reactivateTableSucceedsWhenThereIsNoOverlap() {
+        seedArea();
+        service.updatePlacements(ADMIN, List.of(
+                placed(101, 1, 0, 0, 100, 100),
+                placed(102, 2, 300, 0, 100, 100)));
+        service.deactivateTable(ADMIN, 102);
+        dao.writes.clear();
+
+        service.reactivateTable(ADMIN, 102);
+
+        assertTrue(dao.tables.get(102).isActive());
+        assertEquals(List.of("setTableActive:102=true"), dao.writes);
+    }
+
+    @Test
+    void reactivateAreaRejectsOverlapInTheResultingActiveSet() {
+        int id = seedOverlappingInactiveTable();
+        service.deactivateArea(ADMIN, id);
+        dao.writes.clear();
+
+        assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.reactivateArea(ADMIN, id, List.of(101, 102)));
+
+        assertTrue(dao.writes.isEmpty(), "hiçbir aktifleştirme yazılmamalı: " + dao.writes);
+        assertFalse(dao.areas.get(id).isActive(), "alan pasif kalmalı");
+        assertFalse(dao.tables.get(101).isActive());
+        assertFalse(dao.tables.get(102).isActive());
+    }
+
+    @Test
+    void reactivateAreaSucceedsForANonOverlappingSubset() {
+        int id = seedOverlappingInactiveTable();
+        service.deactivateArea(ADMIN, id);
+        dao.writes.clear();
+
+        // Yalnız 101 açılırsa çakışma yok
+        service.reactivateArea(ADMIN, id, List.of(101));
+
+        assertTrue(dao.areas.get(id).isActive());
+        assertTrue(dao.tables.get(101).isActive());
+        assertFalse(dao.tables.get(102).isActive());
+        assertEquals(List.of("setAreaActive:1=true", "setTableActive:101=true"), dao.writes);
+    }
+
+    @Test
+    void reactivateAreaRejectsDuplicateOrForeignTableNumbers() {
+        int id = seedArea();
+        service.deactivateArea(ADMIN, id);
+        dao.writes.clear();
+
+        var duplicate = assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.reactivateArea(ADMIN, id, List.of(101, 101)));
+        assertTrue(duplicate.getMessage().contains("yinelenmiş"), duplicate.getMessage());
+
+        int otherArea = service.createAreaWithTables(ADMIN, area("2. Bina", "1. Kat", "", 2),
+                new ArrayList<>(List.of(table(201, 1))));
+        assertThrows(RestaurantLayoutManagementService.LayoutRuleViolationException.class,
+                () -> service.reactivateArea(ADMIN, id, List.of(201)));
+        assertFalse(dao.areas.get(id).isActive(), "alan pasif kalmalı");
+        assertTrue(dao.areas.get(otherArea).isActive());
+    }
+
     @Test
     void placementOfUnknownTableIsRejectedAndRolledBack() {
         seedArea();

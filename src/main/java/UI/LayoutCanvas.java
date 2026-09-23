@@ -102,7 +102,10 @@ class LayoutCanvas extends JPanel {
         TableLayoutEntry hit = tableAt(e.getX(), e.getY());
         selectedTableNo = hit == null ? null : hit.getTableNo();
         selectionListener.accept(selectedTableNo == null ? -1 : selectedTableNo);
-        if (hit != null && LayoutPlacementRules.isPlaced(hit)) {
+        // PASİF masa sürüklenemez: konumu çakışma doğrulamasının dışında kalır,
+        // sonradan aktifleştirilince iki aktif masa üst üste binebilirdi.
+        // Seçilebilir (özellikleri görünür), ama konumu değişmez.
+        if (hit != null && hit.isActive() && LayoutPlacementRules.isPlaced(hit)) {
             dragging = hit;
             grabDx = toNormalized(e.getX()) - hit.getPosX();
             grabDy = toNormalized(e.getY()) - hit.getPosY();
