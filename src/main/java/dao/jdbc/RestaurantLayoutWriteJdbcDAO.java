@@ -87,6 +87,39 @@ public class RestaurantLayoutWriteJdbcDAO implements RestaurantLayoutWriteDAO {
     }
 
     @Override
+    public List<RestaurantArea> findAllAreasOrdered(Connection conn) {
+        final String sql = "SELECT id, building, floor, salon, display_order, is_active "
+                + "FROM restaurant_areas ORDER BY display_order, id";
+        List<RestaurantArea> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                out.add(mapArea(rs));
+            }
+        } catch (SQLException ex) {
+            throw wrap(ex);
+        }
+        return out;
+    }
+
+    @Override
+    public List<TableLayoutEntry> findAllTablesOrdered(Connection conn) {
+        final String sql = "SELECT table_no, area_id, pos_x, pos_y, width, height, shape, "
+                + "rotation_deg, display_order, is_active FROM restaurant_table_layout "
+                + "ORDER BY display_order, table_no";
+        List<TableLayoutEntry> out = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                out.add(mapTable(rs));
+            }
+        } catch (SQLException ex) {
+            throw wrap(ex);
+        }
+        return out;
+    }
+
+    @Override
     public boolean areaKeyExists(Connection conn, String building, String floor, String salon,
                                  Integer exceptAreaId) {
         final String sql = "SELECT COUNT(*) FROM restaurant_areas "

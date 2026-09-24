@@ -32,6 +32,15 @@ public interface RestaurantLayoutWriteDAO {
 
     Optional<RestaurantArea> findAreaById(Connection conn, int areaId);
 
+    /**
+     * TÜM alanlar (aktif + pasif), {@code display_order} → {@code id} sırasıyla.
+     * Yönetim ekranı pasif kayıtları da görmek zorundadır.
+     */
+    List<RestaurantArea> findAllAreasOrdered(Connection conn);
+
+    /** TÜM masalar (aktif + pasif), {@code display_order} → {@code table_no} sırasıyla. */
+    List<TableLayoutEntry> findAllTablesOrdered(Connection conn);
+
     /** Aynı (building, floor, salon) üçlüsüne sahip başka alan var mı? */
     boolean areaKeyExists(Connection conn, String building, String floor, String salon, Integer exceptAreaId);
 

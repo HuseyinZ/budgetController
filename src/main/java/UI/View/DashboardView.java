@@ -36,6 +36,7 @@ public class DashboardView extends JFrame {
     private static final String CARD_HOURLY = "hourly";
     private static final String CARD_REFUNDS = "refunds";
     private static final String CARD_RESERVATIONS = "reservations";
+    private static final String CARD_LAYOUT = "layout";
     private static final String CARD_EMPTY = "empty";
 
     private final AppState appState;
@@ -173,6 +174,10 @@ public class DashboardView extends JFrame {
         configs.add(new CardConfig(CARD_RESERVATIONS, "Rezervasyonlar",
                 () -> new ReservationsPanel(currentUser),
                 r -> r == Role.ADMIN || r == Role.KASIYER || r == Role.GARSON));
+        //   - "Masa Düzeni":     SADECE ADMIN (alan/masa yönetimi ve yerleşim editörü)
+        configs.add(new CardConfig(CARD_LAYOUT, "Masa Düzeni",
+                () -> new UI.LayoutEditorPanel(appState, currentUser),
+                r -> r == Role.ADMIN));
 
         String initialCard = null;
 

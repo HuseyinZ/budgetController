@@ -8,8 +8,13 @@ import model.TableLayoutEntry;
 import model.User;
 
 import java.sql.Connection;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Masa düzeni YÖNETİMİ — yönetici (ADMIN) işlemleri.
@@ -61,6 +66,41 @@ public class RestaurantLayoutManagementService {
         this.dao = dao;
         this.tx = tx;
         this.usageCheck = usageCheck;
+    }
+
+    /**
+     * Yönetim görüntüsü: TÜM alanlar ve masalar (aktif + pasif).
+     *
+     * @param areas  sırası {@code display_order} → {@code id}
+     * @param tables sırası {@code display_order} → {@code table_no}
+     */
+    public record ManagementView(List<RestaurantArea> areas, List<TableLayoutEntry> tables) {
+        public ManagementView {
+            areas = List.copyOf(areas);
+            tables = List.copyOf(tables);
+        }
+
+        /** Bir alana ait masalar (pasifler dahil), DB sırasında. */
+        public List<TableLayoutEntry> tablesOf(int areaId) {
+            return tables.stream().filter(t -> t.getAreaId() == areaId).toList();
+        }
+    }
+
+    // ==================================================================
+    //  Yönetim okuma yolu — ADMIN
+    // ==================================================================
+
+    /**
+     * Yönetim ekranı için düzenin tamamını okur (pasif kayıtlar dahil).
+     *
+     * <p>Salt okumadır ve okuma da yetkilidir: pasif alan/masa bilgisi
+     * yalnız yöneticiye görünür.
+     */
+    public ManagementView loadForManagement(User user) {
+        requireAdmin(user, "masa düzenini görüntüle");
+        return tx.execute(conn -> new ManagementView(
+                dao.findAllAreasOrdered(conn),
+                dao.findAllTablesOrdered(conn)));
     }
 
     // ==================================================================
@@ -168,16 +208,40 @@ public class RestaurantLayoutManagementService {
         tx.execute(conn -> {
             dao.findAreaById(conn, areaId)
                     .orElseThrow(() -> new LayoutRuleViolationException("Alan bulunamadı: " + areaId));
+
+            Set<Integer> requested = new LinkedHashSet<>();
+            List<TableLayoutEntry> activated = new ArrayList<>();
             for (Integer tableNo : tableNumbers) {
+                if (tableNo == null) {
+                    throw new LayoutRuleViolationException("Masa numarası boş olamaz");
+                }
+                if (!requested.add(tableNo)) {
+                    throw new LayoutRuleViolationException("Masa numarası yinelenmiş: " + tableNo);
+                }
                 TableLayoutEntry t = dao.findTableByNo(conn, tableNo)
                         .orElseThrow(() -> new LayoutRuleViolationException("Masa bulunamadı: " + tableNo));
                 if (t.getAreaId() != areaId) {
                     throw new LayoutRuleViolationException(
                             "Masa " + tableNo + " bu alana ait değil");
                 }
+                activated.add(t);
             }
+
+            // NİHAİ aktif küme: hâlâ aktif olanlar + aktifleştirilecekler.
+            // Aktifleştirme de çakışma doğrulamasından geçmek zorundadır; aksi
+            // halde pasifken çakışır konuma kaydedilmiş bir masa geri açılınca
+            // iki aktif masa üst üste binerdi.
+            List<TableLayoutEntry> resulting = new ArrayList<>();
+            for (TableLayoutEntry current : dao.findTablesByArea(conn, areaId, true)) {
+                if (!requested.contains(current.getTableNo())) {
+                    resulting.add(current);
+                }
+            }
+            resulting.addAll(activated);
+            requireNoOverlap(resulting);
+
             dao.setAreaActive(conn, areaId, true);
-            for (Integer tableNo : tableNumbers) {
+            for (Integer tableNo : requested) {
                 dao.setTableActive(conn, tableNo, true);
             }
             return null;
@@ -256,25 +320,37 @@ public class RestaurantLayoutManagementService {
                 throw new LayoutRuleViolationException(
                         "Pasif alanın masası aktifleştirilemez; önce alanı aktifleştirin");
             }
+            // Aktifleştirme sonrası oluşacak AKTİF küme çakışmamalı.
+            List<TableLayoutEntry> resulting = new ArrayList<>();
+            for (TableLayoutEntry current : dao.findTablesByArea(conn, table.getAreaId(), true)) {
+                if (current.getTableNo() != tableNo) {
+                    resulting.add(current);
+                }
+            }
+            resulting.add(table);
+            requireNoOverlap(resulting);
+
             dao.setTableActive(conn, tableNo, true);
             return null;
         });
     }
 
-    /** Görsel yerleşimi ve sırayı günceller. Masa numarası ve alan değişmez. */
+    /**
+     * Görsel yerleşimi ve sırayı günceller. Masa numarası ve alan değişmez.
+     *
+     * <p>Tek masalık kısayol: toplu yola delege eder, böylece çakışma
+     * doğrulaması her yerleşim yazmasında AYNI şekilde uygulanır.
+     */
     public void updatePlacement(User user, TableLayoutEntry table) {
-        requireAdmin(user, "masa yerleşimi güncelle");
-        LayoutPlacementRules.validateAndNormalize(table);
-        tx.execute(conn -> {
-            dao.findTableByNo(conn, table.getTableNo())
-                    .orElseThrow(() -> new LayoutRuleViolationException(
-                            "Masa bulunamadı: " + table.getTableNo()));
-            dao.updatePlacement(conn, table);
-            return null;
-        });
+        updatePlacements(user, List.of(table));
     }
 
-    /** Birden çok masanın yerleşimini TEK transaction'da günceller (editör kaydı). */
+    /**
+     * Birden çok masanın yerleşimini TEK transaction'da günceller (editör kaydı).
+     *
+     * <p>Çakışma kontrolü BURADA yapılır — servis katmanı yetkilidir. UI'daki
+     * ön kontrol yalnız hızlı geri bildirim içindir; ona güvenilmez.
+     */
     public void updatePlacements(User user, List<TableLayoutEntry> tables) {
         requireAdmin(user, "masa yerleşimi güncelle");
         if (tables == null || tables.isEmpty()) {
@@ -285,11 +361,31 @@ public class RestaurantLayoutManagementService {
         }
         requireDistinctTableNumbers(tables);
         tx.execute(conn -> {
+            // 1) Hepsi var mı? Alan bilgisi DAİMA DB'den alınır: editör masayı
+            //    başka alana taşıyamaz, gelen kayıttaki area_id dikkate alınmaz.
+            Map<Integer, TableLayoutEntry> incoming = new LinkedHashMap<>();
+            Set<Integer> affectedAreas = new LinkedHashSet<>();
             for (TableLayoutEntry t : tables) {
-                dao.findTableByNo(conn, t.getTableNo())
+                TableLayoutEntry existing = dao.findTableByNo(conn, t.getTableNo())
                         .orElseThrow(() -> new LayoutRuleViolationException(
                                 "Masa bulunamadı: " + t.getTableNo()));
+                incoming.put(t.getTableNo(), t);
+                affectedAreas.add(existing.getAreaId());
             }
+
+            // 2) Etkilenen HER alan için NİHAİ düzeni kur ve çakışmayı reddet.
+            //    Değişmeyen mevcut masalar da hesaba katılır; pasif masalar
+            //    dışarıda bırakılır (runtime düzen yalnız aktifleri yükler).
+            for (Integer areaId : affectedAreas) {
+                List<TableLayoutEntry> resulting = new ArrayList<>();
+                for (TableLayoutEntry current : dao.findTablesByArea(conn, areaId, true)) {
+                    TableLayoutEntry changed = incoming.get(current.getTableNo());
+                    resulting.add(changed == null ? current : changed);
+                }
+                requireNoOverlap(resulting);
+            }
+
+            // 3) Doğrulama bittikten SONRA yazma — aynı transaction içinde.
             for (TableLayoutEntry t : tables) {
                 dao.updatePlacement(conn, t);
             }
@@ -298,6 +394,19 @@ public class RestaurantLayoutManagementService {
     }
 
     // ==================================================================
+
+    /**
+     * Nihai AKTİF masa kümesinde çakışma olmamalı.
+     *
+     * <p>Hem yerleşim kaydında hem de her aktifleştirmede uygulanır: pasif
+     * masanın konumu aktif düzenin doğrulamasına girmediği için, aktifleşme
+     * anında yeniden denetlenmesi zorunludur.
+     */
+    private static void requireNoOverlap(List<TableLayoutEntry> resultingActiveTables) {
+        LayoutPlacementRules.findOverlap(resultingActiveTables).ifPresent(message -> {
+            throw new LayoutRuleViolationException(message);
+        });
+    }
 
     private void requireNotInUse(int tableNo, String action) {
         if (usageCheck != null && usageCheck.isInUse(tableNo)) {
