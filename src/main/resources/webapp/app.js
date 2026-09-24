@@ -395,32 +395,261 @@ async function goToTables() {
   }
 }
 
-function populateFilters() {
-  const bldSet = new Set(App.tables.map(t => t.building));
-  const bldSel = document.getElementById('buildingFilter');
-  bldSel.innerHTML = '<option value="">Tüm Binalar</option>' +
-    [...bldSet].map(b => `<option value="${b}">${b}</option>`).join('');
+// --------------------------------------------------------------------
+//   Bina → Kat → Salon filtreleri
+//
+//   Salon seçeneği değeri "=" + salon adıdır: böylece adı BOŞ olan salon
+//   (tek salonlu kat, örn. Bahçe) "Tüm Salonlar" ("") ile karışmaz.
+// --------------------------------------------------------------------
 
+function salonOptionValue(salon) {
+  return '=' + (salon || '');
+}
+
+function uniqueInOrder(values) {
+  const seen = new Set();
+  return values.filter(v => (seen.has(v) ? false : (seen.add(v), true)));
+}
+
+function optionHtml(value, label) {
+  return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+}
+
+/** Kat listesini seçili binaya göre kurar; geçerliyse önceki seçimi korur. */
+function refreshFloorOptions(keep) {
+  const b = document.getElementById('buildingFilter').value;
   const floorSel = document.getElementById('floorFilter');
-  floorSel.innerHTML = '<option value="">Tüm Katlar</option>';
+  const floors = uniqueInOrder(App.tables.filter(t => !b || t.building === b).map(t => t.floor));
+  floorSel.innerHTML = '<option value="">Tüm Katlar</option>' +
+    floors.map(f => optionHtml(f, f)).join('');
+  floorSel.value = floors.includes(keep) ? keep : '';
+}
 
-  bldSel.addEventListener('change', () => {
-    const b = bldSel.value;
-    const floors = new Set(App.tables.filter(t => !b || t.building === b).map(t => t.floor));
-    floorSel.innerHTML = '<option value="">Tüm Katlar</option>' +
-      [...floors].map(f => `<option value="${f}">${f}</option>`).join('');
+/**
+ * Salon listesini seçili bina + kata göre kurar. Bina ve kat seçilmeden salon
+ * seçilemez. Katta tek salon varsa o salon kendiliğinden seçilir.
+ */
+function refreshSalonOptions(keep) {
+  const b = document.getElementById('buildingFilter').value;
+  const f = document.getElementById('floorFilter').value;
+  const salonSel = document.getElementById('salonFilter');
+  if (!b || !f) {
+    salonSel.innerHTML = '<option value="">Tüm Salonlar</option>';
+    salonSel.value = '';
+    salonSel.disabled = true;
+    return;
+  }
+  const salons = uniqueInOrder(App.tables
+    .filter(t => t.building === b && t.floor === f)
+    .map(t => t.salon || ''));
+  salonSel.disabled = false;
+  salonSel.innerHTML = '<option value="">Tüm Salonlar</option>' +
+    salons.map(s => optionHtml(salonOptionValue(s), s || 'Tek salon')).join('');
+  const values = salons.map(salonOptionValue);
+  if (values.includes(keep)) {
+    salonSel.value = keep;
+  } else if (values.length === 1) {
+    salonSel.value = values[0];
+  } else {
+    salonSel.value = '';
+  }
+}
+
+function populateFilters() {
+  const bldSel = document.getElementById('buildingFilter');
+  const floorSel = document.getElementById('floorFilter');
+  const salonSel = document.getElementById('salonFilter');
+  const previous = { building: bldSel.value, floor: floorSel.value, salon: salonSel.value };
+
+  const buildings = uniqueInOrder(App.tables.map(t => t.building));
+  bldSel.innerHTML = '<option value="">Tüm Binalar</option>' +
+    buildings.map(b => optionHtml(b, b)).join('');
+  bldSel.value = buildings.includes(previous.building) ? previous.building : '';
+  refreshFloorOptions(previous.floor);
+  refreshSalonOptions(previous.salon);
+
+  // Tek dinleyici ATANIR (yenisi eskisinin yerine geçer, eklenmez):
+  // goToTables her çağrıldığında dinleyiciler birikmez.
+  // Üst seviye değişince alt seçimler sıfırlanır.
+  bldSel.onchange = () => {
+    refreshFloorOptions('');
+    refreshSalonOptions('');
     renderTables();
+  };
+  floorSel.onchange = () => {
+    refreshSalonOptions('');
+    renderTables();
+  };
+  salonSel.onchange = renderTables;
+}
+
+function tableStatusClass(t) {
+  return t.status === 'EMPTY' ? 'table-empty'
+       : t.status === 'ORDERED' ? 'table-ordered'
+       : t.status === 'SERVED'  ? 'table-served'
+       : 'table-empty';
+}
+
+/** Masa kartının içeriği — ızgara ve fiziksel plan için AYNI. */
+function tableInnerHtml(t) {
+  const totalStr = t.total && Number(t.total) > 0
+    ? `<span class="table-total">₺${Number(t.total).toFixed(2)}</span>` : '';
+  // Yaklaşan rezervasyon rozeti
+  let resvBadge = '';
+  if (App.upcomingResv && App.upcomingResv.has(t.tableNo)) {
+    const r = App.upcomingResv.get(t.tableNo);
+    const hhmm = r.startTime ? r.startTime.slice(11, 16) : '';
+    resvBadge = `<span class="table-resv-badge">🕒 ${hhmm}</span>`;
+  }
+  return `<span class="table-no">Masa ${t.tableNo}</span>
+              ${totalStr}
+              ${resvBadge}`;
+}
+
+// --------------------------------------------------------------------
+//   Fiziksel kat planı — Swing FloorPlanPanel ile aynı geometri
+//
+//   Yerleşim 0-1000 normalize uzaydadır. X ve Y ayrı ölçeklenir, böylece plan
+//   ekranı küçük bir kenar boşluğu dışında tamamen kullanır. RECT/OVAL esner;
+//   SQUARE kare, ROUND daire kalır (kısa kenar, kutunun merkezine oturur).
+//   Dönüş yalnız şekil katmanına uygulanır; yazı düz ve okunaklı kalır.
+// --------------------------------------------------------------------
+
+const FLOOR_PLAN = { SPACE: 1000, PAD: 8, MIN_TABLE_PX: 48, MIN_WIDTH: 300, MIN_HEIGHT: 260 };
+
+function hasPlacement(t) {
+  return [t.posX, t.posY, t.width, t.height].every(v => typeof v === 'number' && isFinite(v));
+}
+
+function tableShape(t) {
+  const s = String(t.shape || 'RECT').toUpperCase();
+  return ['RECT', 'SQUARE', 'ROUND', 'OVAL'].includes(s) ? s : 'RECT';
+}
+
+/** Normalize yerleşim → piksel dikdörtgen (döndürülmemiş). Saf fonksiyon. */
+function floorPlanRect(t, W, H) {
+  const sx = Math.max(0, W - 2 * FLOOR_PLAN.PAD) / FLOOR_PLAN.SPACE;
+  const sy = Math.max(0, H - 2 * FLOOR_PLAN.PAD) / FLOOR_PLAN.SPACE;
+  let x = FLOOR_PLAN.PAD + t.posX * sx;
+  let y = FLOOR_PLAN.PAD + t.posY * sy;
+  let w = t.width * sx;
+  let h = t.height * sy;
+  const shape = tableShape(t);
+  if (shape === 'SQUARE' || shape === 'ROUND') {
+    const side = Math.min(w, h);
+    x += (w - side) / 2;
+    y += (h - side) / 2;
+    w = side;
+    h = side;
+  }
+  return { x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) };
+}
+
+/** En küçük masa okunaklı kalsın diye gereken en küçük plan boyutu (px). */
+function floorPlanMinSize(tables) {
+  let needX = 0;
+  let needY = 0;
+  tables.forEach(t => {
+    needX = Math.max(needX, FLOOR_PLAN.MIN_TABLE_PX / Math.max(1, t.width));
+    needY = Math.max(needY, FLOOR_PLAN.MIN_TABLE_PX / Math.max(1, t.height));
   });
-  floorSel.addEventListener('change', renderTables);
+  return {
+    width: Math.max(FLOOR_PLAN.MIN_WIDTH, Math.ceil(FLOOR_PLAN.SPACE * needX) + 2 * FLOOR_PLAN.PAD),
+    height: Math.max(FLOOR_PLAN.MIN_HEIGHT, Math.ceil(FLOOR_PLAN.SPACE * needY) + 2 * FLOOR_PLAN.PAD),
+  };
+}
+
+/** Masa boyuna göre okunaklı yazı (11-18 px) — Swing ile aynı kural. */
+function floorPlanFontPx(w, h) {
+  return Math.max(11, Math.min(18, Math.min(w / 7, h / 3.2)));
+}
+
+function renderFloorPlan(host, tables) {
+  App.floorPlanTables = tables;
+  host.className = 'floor-plan-host';
+  host.innerHTML = `<div class="floor-plan-canvas">` + tables.map(t => {
+    const rot = Number(t.rotationDeg) || 0;
+    return `<button class="table-button floor-table ${tableStatusClass(t)} shape-${tableShape(t)}" data-table="${t.tableNo}">
+              <span class="floor-table-shape ${tableStatusClass(t)}" style="transform:rotate(${rot}deg)"></span>
+              ${tableInnerHtml(t)}
+            </button>`;
+  }).join('') + `</div>`;
+  layoutFloorPlan();
+  ensureFloorPlanObserver(host);
+}
+
+/** Planı mevcut ekran boyutuna göre yeniden yerleştirir (yeniden çizmeden). */
+function layoutFloorPlan() {
+  const host = document.getElementById('tablesGrid');
+  const canvas = host && host.querySelector('.floor-plan-canvas');
+  const tables = App.floorPlanTables;
+  if (!canvas || !tables || host.clientWidth <= 0) return;
+
+  // İkisi de VIEWPORT koordinatı: getBoundingClientRect().top görünür alana
+  // göredir, window.innerHeight görünür alanın yüksekliğidir. Kaydırma ofseti
+  // eklenmez; negatif sonuç 0'a sabitlenir (alt sınırı floorPlanMinSize verir).
+  const availableHeight = Math.max(0, Math.floor(window.innerHeight - host.getBoundingClientRect().top - 12));
+  const min = floorPlanMinSize(tables);
+  // Ekranı doldur; yalnız gerçekten küçükse okunaklı en küçük boyutta kal (kaydırma)
+  const W = Math.max(host.clientWidth, min.width);
+  const H = Math.max(availableHeight, min.height);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const byNo = new Map(tables.map(t => [t.tableNo, t]));
+  canvas.querySelectorAll('.floor-table').forEach(btn => {
+    const t = byNo.get(Number(btn.dataset.table));
+    if (!t) return;
+    const r = floorPlanRect(t, W, H);
+    btn.style.left = r.x + 'px';
+    btn.style.top = r.y + 'px';
+    btn.style.width = r.w + 'px';
+    btn.style.height = r.h + 'px';
+    btn.style.fontSize = floorPlanFontPx(r.w, r.h) + 'px';
+  });
+}
+
+let floorPlanRelayoutPending = false;
+function scheduleFloorPlanLayout() {
+  if (floorPlanRelayoutPending) return;
+  floorPlanRelayoutPending = true;
+  requestAnimationFrame(() => {
+    floorPlanRelayoutPending = false;
+    layoutFloorPlan();
+  });
+}
+
+/** Genişlik (ResizeObserver) ve yükseklik (pencere) değişimlerinde anında yeniden yerleştir. */
+function ensureFloorPlanObserver(host) {
+  if (App.floorPlanObserver) return;
+  if (typeof ResizeObserver === 'function') {
+    App.floorPlanObserver = new ResizeObserver(scheduleFloorPlanLayout);
+    App.floorPlanObserver.observe(host);
+  } else {
+    App.floorPlanObserver = true;
+  }
+  window.addEventListener('resize', scheduleFloorPlanLayout);
+  window.addEventListener('orientationchange', scheduleFloorPlanLayout);
+}
+
+function renderTableGrid(host, tables) {
+  App.floorPlanTables = null;
+  host.className = 'tables-grid';
+  host.innerHTML = tables.map(t =>
+    `<button class="table-button ${tableStatusClass(t)}" data-table="${t.tableNo}" style="position:relative;">
+              ${tableInnerHtml(t)}
+            </button>`).join('');
 }
 
 function renderTables() {
   const b = document.getElementById('buildingFilter').value;
   const f = document.getElementById('floorFilter').value;
+  const s = document.getElementById('salonFilter').value;
 
-  // Önce bina/kat filtrelerini uygula
+  // Önce bina/kat/salon filtrelerini uygula
   let filtered = App.tables.filter(t =>
-    (!b || t.building === b) && (!f || t.floor === f));
+    (!b || t.building === b) && (!f || t.floor === f) &&
+    (!s || salonOptionValue(t.salon) === s));
 
   // Durum bazlı sayım (filtrelenmemiş listenden)
   const totalCount = filtered.length;
@@ -437,30 +666,23 @@ function renderTables() {
   }
 
   const grid = document.getElementById('tablesGrid');
+  // Fiziksel plan: bina + kat + salon TAM seçili ve durum filtresi "Tümü";
+  // Boş/Dolu filtresi veya eksik seçim → mevcut duyarlı ızgara.
+  const floorPlan = !!(b && f && s) && App.statusFilter === 'all'
+    && filtered.length > 0 && filtered.every(hasPlacement);
+  document.getElementById('view-tables').classList.toggle('floor-mode', floorPlan);
+
   if (filtered.length === 0) {
+    App.floorPlanTables = null;
+    grid.className = 'tables-grid';
     grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:#999;padding:30px;">Filtreye uyan masa yok</p>';
     return;
   }
-  grid.innerHTML = filtered.map(t => {
-    const statusClass = t.status === 'EMPTY' ? 'table-empty'
-                       : t.status === 'ORDERED' ? 'table-ordered'
-                       : t.status === 'SERVED'  ? 'table-served'
-                       : 'table-empty';
-    const totalStr = t.total && Number(t.total) > 0
-      ? `<span class="table-total">₺${Number(t.total).toFixed(2)}</span>` : '';
-    // Yaklaşan rezervasyon rozeti
-    let resvBadge = '';
-    if (App.upcomingResv && App.upcomingResv.has(t.tableNo)) {
-      const r = App.upcomingResv.get(t.tableNo);
-      const hhmm = r.startTime ? r.startTime.slice(11, 16) : '';
-      resvBadge = `<span class="table-resv-badge">🕒 ${hhmm}</span>`;
-    }
-    return `<button class="table-button ${statusClass}" data-table="${t.tableNo}" style="position:relative;">
-              <span class="table-no">Masa ${t.tableNo}</span>
-              ${totalStr}
-              ${resvBadge}
-            </button>`;
-  }).join('');
+  if (floorPlan) {
+    renderFloorPlan(grid, filtered);
+  } else {
+    renderTableGrid(grid, filtered);
+  }
   grid.querySelectorAll('.table-button').forEach(btn => {
     btn.addEventListener('click', () => openTable(Number(btn.dataset.table)));
   });
