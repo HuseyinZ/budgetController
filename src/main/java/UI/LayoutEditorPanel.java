@@ -74,6 +74,11 @@ public class LayoutEditorPanel extends JPanel {
     private final JSpinner orderSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 9999, 1));
     private final JComboBox<String> shapeCombo = new JComboBox<>(
             LayoutPlacementRules.SUPPORTED_SHAPES.stream().sorted().toArray(String[]::new));
+    /** Izgara adımı — anında uygulanır. */
+    private final JSpinner gridSpinner = new JSpinner(new SpinnerNumberModel(
+            LayoutCanvas.DEFAULT_GRID_STEP, LayoutCanvas.MIN_GRID_STEP,
+            LayoutCanvas.MAX_GRID_STEP, 5));
+    private final javax.swing.JCheckBox snapCheck = new javax.swing.JCheckBox("Izgaraya yapış");
     private final JLabel statusLabel = new JLabel(" ");
     /** Diğer eylem butonlarıyla aynı görsel ölçüde. */
     private final JButton saveButton = button("Kaydet", null);
@@ -154,10 +159,41 @@ public class LayoutEditorPanel extends JPanel {
     }
 
     private java.awt.Component buildCanvasSide() {
+        JPanel canvasSide = new JPanel(new BorderLayout(4, 4));
+        canvasSide.add(buildGridBar(), BorderLayout.NORTH);
+        canvasSide.add(new JScrollPane(canvas), BorderLayout.CENTER);
+
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                new JScrollPane(canvas), buildTableSide());
+                canvasSide, buildTableSide());
         split.setResizeWeight(0.75);
         return split;
+    }
+
+    /** Izgara ayarları — değişiklikler anında tuvale uygulanır. */
+    private java.awt.Component buildGridBar() {
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+
+        snapCheck.setSelected(true);
+        snapCheck.setToolTipText("Sürüklerken masalar ızgaraya yapışır "
+                + "(Shift basılı tutarak geçici olarak serbest hareket ettirebilirsiniz)");
+        snapCheck.addActionListener(e -> {
+            canvas.setSnapEnabled(snapCheck.isSelected());
+            gridSpinner.setEnabled(snapCheck.isSelected());
+            statusLabel.setText(snapCheck.isSelected()
+                    ? "Izgaraya yapışma açık (Shift → serbest hareket)."
+                    : "Serbest hareket açık.");
+        });
+
+        gridSpinner.setToolTipText("Izgara adımı (0-1000 normalize uzayda)");
+        gridSpinner.addChangeListener(e -> {
+            canvas.setGridStep((Integer) gridSpinner.getValue());
+            statusLabel.setText("Izgara adımı: " + canvas.getGridStep());
+        });
+
+        bar.add(new JLabel("Izgara adımı"));
+        bar.add(gridSpinner);
+        bar.add(snapCheck);
+        return bar;
     }
 
     private java.awt.Component buildTableSide() {

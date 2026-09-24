@@ -231,6 +231,18 @@ class LayoutEditorPanelTest {
     }
 
     @Test
+    void gridSettingsAreExposedAndAppliedImmediately() {
+        String body = bodyOf(panel, "private java.awt.Component buildGridBar()");
+        assertTrue(body.contains("canvas.setGridStep("), "ızgara adımı tuvale iletilmeli");
+        assertTrue(body.contains("canvas.setSnapEnabled("), "yapışma açılıp kapatılabilmeli");
+        assertTrue(body.contains("addChangeListener"), "adım değişikliği anında uygulanmalı");
+        assertTrue(panel.contains("LayoutCanvas.MIN_GRID_STEP")
+                && panel.contains("LayoutCanvas.MAX_GRID_STEP"),
+                "adım sınırları tuvalin sözleşmesinden gelmeli");
+        assertTrue(body.contains("Shift"), "geçici serbest hareket kullanıcıya anlatılmalı");
+    }
+
+    @Test
     void editorShowsInactiveAreasAndTablesToo() {
         assertTrue(panel.contains("(pasif)"), "pasif kayıtlar işaretlenerek gösterilmeli");
         assertTrue(canvas.contains("INACTIVE_FILL"), "tuval pasif masayı ayırt etmeli");
