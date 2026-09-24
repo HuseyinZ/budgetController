@@ -117,12 +117,51 @@ class LayoutCanvas extends JPanel {
         if (dragging == null) {
             return;
         }
+        // Önce ÖNERİLEN konum hesaplanır, sonra diğer aktif masalarla çakışma
+        // denetlenir. Çakışıyorsa hareket reddedilir ve masa SON GEÇERLİ
+        // konumunda kalır — geçersiz durum düzenleme sırasında hiç oluşmaz.
         int x = clamp(toNormalized(e.getX()) - grabDx, dragging.getWidth());
         int y = clamp(toNormalized(e.getY()) - grabDy, dragging.getHeight());
+        if (x == dragging.getPosX() && y == dragging.getPosY()) {
+            return;
+        }
+        if (wouldOverlap(dragging, x, y, dragging.getWidth(), dragging.getHeight())) {
+            return;
+        }
         dragging.setPosX(x);
         dragging.setPosY(y);
         dirty.add(dragging.getTableNo());
         repaint();
+    }
+
+    /**
+     * Önerilen konum/ölçü, DİĞER aktif ve yerleştirilmiş masalardan biriyle
+     * üst üste biner mi? Kenar teması çakışma sayılmaz (servis tarafındaki
+     * {@code LayoutPlacementRules.findOverlap} ile aynı semantik).
+     *
+     * <p>Pasif masalar hesaba katılmaz: runtime düzen yalnız aktifleri yükler.
+     */
+    boolean wouldOverlap(TableLayoutEntry moving, int x, int y, int width, int height) {
+        if (moving == null || !moving.isActive()) {
+            return false;
+        }
+        int right = x + width;
+        int bottom = y + height;
+        for (TableLayoutEntry other : tables) {
+            if (other == moving || other.getTableNo() == moving.getTableNo()) {
+                continue;
+            }
+            if (!other.isActive() || !LayoutPlacementRules.isPlaced(other)) {
+                continue;
+            }
+            int otherRight = other.getPosX() + other.getWidth();
+            int otherBottom = other.getPosY() + other.getHeight();
+            if (x < otherRight && other.getPosX() < right
+                    && y < otherBottom && other.getPosY() < bottom) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void onRelease() {

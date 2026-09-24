@@ -75,7 +75,8 @@ public class LayoutEditorPanel extends JPanel {
     private final JComboBox<String> shapeCombo = new JComboBox<>(
             LayoutPlacementRules.SUPPORTED_SHAPES.stream().sorted().toArray(String[]::new));
     private final JLabel statusLabel = new JLabel(" ");
-    private final JButton saveButton = new JButton("Kaydet");
+    /** Diğer eylem butonlarıyla aynı görsel ölçüde. */
+    private final JButton saveButton = button("Kaydet", null);
 
     /** Editörün çalışma kopyası — DB'ye yazılana kadar yalnız bellekte. */
     private final List<TableLayoutEntry> workingTables = new ArrayList<>();
@@ -100,6 +101,7 @@ public class LayoutEditorPanel extends JPanel {
         add(buildAreaSide(), BorderLayout.WEST);
         add(buildCanvasSide(), BorderLayout.CENTER);
         add(buildStatusBar(), BorderLayout.SOUTH);
+        saveButton.addActionListener(e -> onSavePlacements());
 
         canvas.setSelectionListener(this::onCanvasSelection);
         canvas.setMovedListener(t -> markDirty(t.getTableNo()));
@@ -112,8 +114,9 @@ public class LayoutEditorPanel extends JPanel {
     // ==================================================================
 
     private java.awt.Component buildAreaSide() {
-        JPanel panel = new JPanel(new BorderLayout(4, 4));
-        panel.setPreferredSize(new Dimension(280, 100));
+        JPanel panel = new JPanel(new BorderLayout(4, 6));
+        // "Alanı Pasifleştir" gibi uzun etiketler 2x2 ızgarada kırpılmadan sığsın
+        panel.setPreferredSize(new Dimension(380, 100));
 
         areaList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         areaList.setCellRenderer(new DefaultListCellRenderer() {
@@ -137,7 +140,8 @@ public class LayoutEditorPanel extends JPanel {
             }
         });
 
-        JPanel areaButtons = new JPanel(new GridLayout(0, 2, 4, 4));
+        JPanel areaButtons = new JPanel(new GridLayout(2, 2, 8, 8));
+        areaButtons.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
         areaButtons.add(button("Yeni Alan", this::onCreateArea));
         areaButtons.add(button("Alanı Düzenle", this::onEditArea));
         areaButtons.add(button("Alanı Pasifleştir", this::onDeactivateArea));
@@ -157,8 +161,8 @@ public class LayoutEditorPanel extends JPanel {
     }
 
     private java.awt.Component buildTableSide() {
-        JPanel panel = new JPanel(new BorderLayout(4, 4));
-        panel.setPreferredSize(new Dimension(260, 100));
+        JPanel panel = new JPanel(new BorderLayout(4, 6));
+        panel.setPreferredSize(new Dimension(320, 100));
 
         tableList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tableList.setCellRenderer(new DefaultListCellRenderer() {
@@ -192,7 +196,8 @@ public class LayoutEditorPanel extends JPanel {
         form.add(labeled("Sıra", orderSpinner));
         form.add(Box.createVerticalStrut(6));
 
-        JPanel tableButtons = new JPanel(new GridLayout(0, 2, 4, 4));
+        JPanel tableButtons = new JPanel(new GridLayout(0, 1, 8, 8));
+        tableButtons.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
         tableButtons.add(button("Masa Ekle", this::onAddTable));
         tableButtons.add(button("Masa Pasifleştir", this::onDeactivateTable));
         tableButtons.add(button("Masa Aktifleştir", this::onReactivateTable));
@@ -214,8 +219,8 @@ public class LayoutEditorPanel extends JPanel {
 
     private java.awt.Component buildStatusBar() {
         JPanel bar = new JPanel(new BorderLayout(8, 0));
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        saveButton.addActionListener(e -> onSavePlacements());
+        bar.setBorder(BorderFactory.createEmptyBorder(6, 0, 0, 0));
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.add(button("Değişiklikleri Geri Al", this::onDiscard));
         right.add(saveButton);
         bar.add(statusLabel, BorderLayout.CENTER);
@@ -223,9 +228,28 @@ public class LayoutEditorPanel extends JPanel {
         return bar;
     }
 
-    private static JButton button(String text, Runnable action) {
+    /** Eylem butonu yüksekliği — dokunmatik dostu, etiket kırpılmaz. */
+    static final int ACTION_BUTTON_HEIGHT = 50;
+    /** Etiketin iki yanında bırakılan boşluk (px). */
+    static final int ACTION_BUTTON_PADDING = 28;
+
+    /**
+     * Editörün tüm eylem butonları aynı görsel ölçüyle üretilir: etiketin
+     * gerçek genişliği ölçülür ve yatay boşluk eklenir, böylece metin hiçbir
+     * dilde kırpılmaz.
+     */
+    static JButton button(String text, Runnable action) {
         JButton b = new JButton(text);
-        b.addActionListener(e -> action.run());
+        b.setFont(b.getFont().deriveFont(java.awt.Font.BOLD, 14f));
+        b.setMargin(new java.awt.Insets(6, 14, 6, 14));
+        b.setFocusPainted(false);
+        int textWidth = b.getFontMetrics(b.getFont()).stringWidth(text);
+        Dimension size = new Dimension(textWidth + ACTION_BUTTON_PADDING * 2, ACTION_BUTTON_HEIGHT);
+        b.setPreferredSize(size);
+        b.setMinimumSize(size);
+        if (action != null) {
+            b.addActionListener(e -> action.run());
+        }
         return b;
     }
 
@@ -347,6 +371,14 @@ public class LayoutEditorPanel extends JPanel {
         }
     }
 
+    /**
+     * Özellik alanlarını uygular.
+     *
+     * <p>Genişlik/yükseklik ÖNCE öneri olarak hesaplanır ve diğer aktif
+     * masalarla çakışma denetlenir; geçersizse değer SON GEÇERLİ haline geri
+     * alınır ve durum çubuğunda uyarı gösterilir. Şekil, dönüş ve sıra
+     * davranışı değişmedi. Servis tarafı yine nihai otoritedir.
+     */
     private void applyPropertyChange() {
         if (suppressPropertyEvents) {
             return;
@@ -355,13 +387,45 @@ public class LayoutEditorPanel extends JPanel {
         if (t == null) {
             return;
         }
-        t.setWidth((Integer) widthSpinner.getValue());
-        t.setHeight((Integer) heightSpinner.getValue());
+        int proposedWidth = (Integer) widthSpinner.getValue();
+        int proposedHeight = (Integer) heightSpinner.getValue();
+
+        if (LayoutPlacementRules.isPlaced(t) && t.isActive()
+                && (proposedWidth != t.getWidth() || proposedHeight != t.getHeight())) {
+            boolean outOfBounds = t.getPosX() + proposedWidth > LayoutPlacementRules.MAX_COORD
+                    || t.getPosY() + proposedHeight > LayoutPlacementRules.MAX_COORD;
+            if (outOfBounds
+                    || canvas.wouldOverlap(t, t.getPosX(), t.getPosY(), proposedWidth, proposedHeight)) {
+                revertSizeSpinners(t);
+                statusLabel.setText(outOfBounds
+                        ? "Bu ölçü masayı alan sınırının dışına taşırıyor — değişiklik geri alındı."
+                        : "Bu ölçü başka bir masayla çakışıyor — değişiklik geri alındı.");
+                return;
+            }
+            t.setWidth(proposedWidth);
+            t.setHeight(proposedHeight);
+        } else {
+            // Yerleştirilmemiş veya pasif masa aktif düzeni etkilemez
+            t.setWidth(proposedWidth);
+            t.setHeight(proposedHeight);
+        }
+
         t.setShape((String) shapeCombo.getSelectedItem());
         t.setRotationDeg((Integer) rotationSpinner.getValue());
         t.setDisplayOrder((Integer) orderSpinner.getValue());
         markDirty(t.getTableNo());
         canvas.setTables(workingTables, dirtyTables);
+    }
+
+    /** Ölçü alanlarını masanın son geçerli değerlerine döndürür. */
+    private void revertSizeSpinners(TableLayoutEntry t) {
+        suppressPropertyEvents = true;
+        try {
+            widthSpinner.setValue(t.getWidth() == null ? LayoutAutoArrange.DEFAULT_WIDTH : t.getWidth());
+            heightSpinner.setValue(t.getHeight() == null ? LayoutAutoArrange.DEFAULT_HEIGHT : t.getHeight());
+        } finally {
+            suppressPropertyEvents = false;
+        }
     }
 
     private void markDirty(int tableNo) {

@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tuval davranışı: PASİF masa sürüklenemez.
@@ -85,6 +87,96 @@ class LayoutCanvasDragTest {
 
         assertEquals(900, active.getPosX(), "0-1000 uzayının dışına taşmamalı");
         assertEquals(900, active.getPosY());
+    }
+
+    // ---------------- düzenleme sırasında çakışma engeli ----------------
+
+    private static LayoutCanvas canvasWith(List<TableLayoutEntry> tables) {
+        LayoutCanvas canvas = new LayoutCanvas();
+        canvas.setSize(1000, 1000);
+        canvas.setTables(tables, Set.of());
+        return canvas;
+    }
+
+    private static TableLayoutEntry at(int no, int x, int y, int w, int h, boolean active) {
+        TableLayoutEntry t = table(no, active);
+        t.setPosX(x); t.setPosY(y); t.setWidth(w); t.setHeight(h);
+        return t;
+    }
+
+    @Test
+    void activeTableCannotBeDraggedOntoAnotherActiveTable() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry blocker = at(102, 400, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, blocker));
+
+        press(canvas, 50, 50);
+        drag(canvas, 480, 50);   // 430,0 → 102 ile çakışır
+
+        assertEquals(0, moving.getPosX(), "çakışan hareket reddedilmeli");
+        assertEquals(0, moving.getPosY());
+    }
+
+    @Test
+    void rejectedDragKeepsTheLastValidPosition() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry blocker = at(102, 400, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, blocker));
+
+        press(canvas, 50, 50);
+        drag(canvas, 250, 50);   // geçerli → 200,0
+        drag(canvas, 480, 50);   // geçersiz → reddedilir
+
+        assertEquals(200, moving.getPosX(), "son GEÇERLİ konum korunmalı");
+        assertEquals(0, moving.getPosY());
+    }
+
+    @Test
+    void freeMovementStillWorks() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry other = at(102, 800, 800, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, other));
+
+        press(canvas, 50, 50);
+        drag(canvas, 350, 250);
+
+        assertEquals(300, moving.getPosX());
+        assertEquals(200, moving.getPosY());
+    }
+
+    @Test
+    void edgeTouchingIsAllowedWhileDragging() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry blocker = at(102, 300, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, blocker));
+
+        press(canvas, 50, 50);
+        drag(canvas, 250, 50);   // 200..300 ile 300..400 → yalnız kenar teması
+
+        assertEquals(200, moving.getPosX(), "kenar teması serbest olmalı");
+    }
+
+    @Test
+    void inactiveTablesDoNotBlockDragging() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry passive = at(102, 400, 0, 100, 100, false);
+        LayoutCanvas canvas = canvasWith(List.of(moving, passive));
+
+        press(canvas, 50, 50);
+        drag(canvas, 480, 50);
+
+        assertEquals(430, moving.getPosX(), "pasif masa aktif düzeni engellemez");
+    }
+
+    @Test
+    void overlapProbeMatchesServiceSemantics() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry blocker = at(102, 300, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, blocker));
+
+        assertTrue(canvas.wouldOverlap(moving, 250, 0, 100, 100), "üst üste binme");
+        assertFalse(canvas.wouldOverlap(moving, 200, 0, 100, 100), "kenar teması serbest");
+        assertFalse(canvas.wouldOverlap(moving, 0, 0, 100, 100), "kendisiyle çakışmaz");
     }
 
     @Test

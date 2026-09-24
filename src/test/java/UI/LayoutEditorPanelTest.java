@@ -197,6 +197,40 @@ class LayoutEditorPanelTest {
     }
 
     @Test
+    void sizeEditsAreRejectedWhenTheyWouldOverlap() {
+        String body = bodyOf(panel, "private void applyPropertyChange()");
+        int probe = body.indexOf("canvas.wouldOverlap(");
+        int apply = body.indexOf("t.setWidth(proposedWidth)");
+        assertTrue(probe >= 0, "ölçü değişimi çakışmaya karşı denetlenmeli");
+        assertTrue(apply > probe, "önerilen ölçü ancak doğrulandıktan sonra uygulanmalı");
+        assertTrue(body.contains("revertSizeSpinners("),
+                "geçersiz ölçü son geçerli değere geri alınmalı");
+        assertTrue(body.contains("statusLabel.setText("), "kullanıcıya kısa uyarı gösterilmeli");
+        // Şekil / dönüş / sıra davranışı değişmedi
+        assertTrue(body.contains("t.setShape(") && body.contains("t.setRotationDeg(")
+                && body.contains("t.setDisplayOrder("), body);
+    }
+
+    @Test
+    void actionButtonsAreLargeEnoughToShowTheirLabels() {
+        for (String label : List.of("Yeni Alan", "Alanı Düzenle", "Alanı Pasifleştir",
+                "Alanı Aktifleştir", "Masa Ekle", "Masa Pasifleştir", "Masa Aktifleştir",
+                "Değişiklikleri Geri Al", "Kaydet")) {
+            javax.swing.JButton b = LayoutEditorPanel.button(label, null);
+            int textWidth = b.getFontMetrics(b.getFont()).stringWidth(label);
+
+            assertTrue(b.getPreferredSize().height >= 48 && b.getPreferredSize().height <= 52,
+                    label + " yüksekliği 48-52 px olmalı: " + b.getPreferredSize().height);
+            assertTrue(b.getPreferredSize().width > textWidth,
+                    label + " genişliği metni kırpmamalı");
+            assertTrue(b.getPreferredSize().width - textWidth >= 40,
+                    label + " için yatay boşluk yetersiz");
+            assertTrue(b.getFont().isBold(), label + " kalın yazı tipiyle gösterilmeli");
+            assertTrue(b.getFont().getSize() >= 14, label + " yazı tipi çok küçük");
+        }
+    }
+
+    @Test
     void editorShowsInactiveAreasAndTablesToo() {
         assertTrue(panel.contains("(pasif)"), "pasif kayıtlar işaretlenerek gösterilmeli");
         assertTrue(canvas.contains("INACTIVE_FILL"), "tuval pasif masayı ayırt etmeli");
