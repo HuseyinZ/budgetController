@@ -25,8 +25,8 @@ import java.util.List;
 public final class LayoutAutoArrange {
 
     /** Varsayılan görsel masa ölçüsü (0-1000 normalize uzayda). */
-    public static final int DEFAULT_WIDTH = 110;
-    public static final int DEFAULT_HEIGHT = 90;
+    public static final int DEFAULT_WIDTH = 130;
+    public static final int DEFAULT_HEIGHT = 160;
     private static final int GAP = 20;
 
     /** Yer kalmazsa sırayla denenen karo ölçüleri — ilki varsayılandır. */
