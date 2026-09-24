@@ -1,7 +1,6 @@
-package service.api;
+package service.layout;
 
 import model.TablePlacement;
-import service.layout.LayoutAutoArrange;
 import state.AppState;
 
 import java.util.LinkedHashMap;
@@ -15,13 +14,13 @@ import java.util.Map;
  * "Katlar" görünümüyle AYNI deterministik geçici yerleşimi alır
  * ({@link LayoutAutoArrange#resolve}); hiçbir şey kaydedilmez.
  */
-final class TablePlacementJson {
+public final class TablePlacementJson {
 
     private TablePlacementJson() {
     }
 
     /** Alanın masaları için görüntülenebilir (konumu çözülmüş) yerleşimler. */
-    static Map<Integer, TablePlacement> resolvedByTableNo(AppState.AreaDefinition area) {
+    public static Map<Integer, TablePlacement> resolvedByTableNo(AppState.AreaDefinition area) {
         Map<Integer, TablePlacement> out = new LinkedHashMap<>();
         for (TablePlacement p : LayoutAutoArrange.resolve(area.getPlacements())) {
             out.put(p.tableNo(), p);
@@ -33,7 +32,7 @@ final class TablePlacementJson {
      * Masa satırına 0-1000 normalize yerleşim alanlarını ekler. Yerleşim yoksa
      * alan eklenmez; PWA bu durumda ızgara görünümünde kalır.
      */
-    static void putPlacement(Map<String, Object> row, TablePlacement p) {
+    public static void putPlacement(Map<String, Object> row, TablePlacement p) {
         if (p == null || !p.isPlaced()) {
             return;
         }

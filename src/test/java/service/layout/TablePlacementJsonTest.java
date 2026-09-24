@@ -1,8 +1,7 @@
-package service.api;
+package service.layout;
 
 import model.TablePlacement;
 import org.junit.jupiter.api.Test;
-import service.layout.LayoutAutoArrange;
 import state.AppState;
 
 import java.io.IOException;
@@ -24,6 +23,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * hiçbir şey kaydedilmez.
  */
 class TablePlacementJsonTest {
+
+    private static final Path HELPER =
+            Path.of("src", "main", "java", "service", "layout", "TablePlacementJson.java");
 
     private static AppState.AreaDefinition area(List<Integer> numbers, List<TablePlacement> placements) {
         return new AppState.AreaDefinition("1. Bina", "1. Kat", "1. Salon", numbers, placements);
@@ -100,8 +102,10 @@ class TablePlacementJsonTest {
     void listTablesKeepsPermissionsAndReadsOnlyTheSnapshot() throws IOException {
         String api = Files.readString(Path.of("src", "main", "java", "service", "api", "ApiServer.java"),
                 StandardCharsets.UTF_8);
-        String body = bodyOf(api, "private void listTables(Context ctx)");
+        assertTrue(api.contains("import service.layout.TablePlacementJson;"),
+                "ApiServer yardımcıyı yalnız yeni konumdan kullanmalı");
 
+        String body = bodyOf(api, "private void listTables(Context ctx)");
         assertTrue(body.contains("appState.getAccessibleAreas(user)"), "yetki filtresi değişmemeli");
         assertTrue(body.contains("TablePlacementJson.resolvedByTableNo(area)"));
         assertTrue(body.contains("TablePlacementJson.putPlacement(t, placements.get(tableNo))"));
@@ -112,11 +116,17 @@ class TablePlacementJsonTest {
             assertFalse(body.contains(forbidden), "listTables DB'ye/yazmaya dokunmamalı: " + forbidden);
         }
 
-        String helper = Files.readString(Path.of("src", "main", "java", "service", "api", "TablePlacementJson.java"),
-                StandardCharsets.UTF_8);
+        String helper = Files.readString(HELPER, StandardCharsets.UTF_8);
         for (String forbidden : List.of("DataConnection", "Db.", "Jdbc", "dao.")) {
             assertFalse(helper.contains(forbidden), "yardımcı DB'ye erişmemeli: " + forbidden);
         }
+    }
+
+    @Test
+    void helperNoLongerLivesInTheProtectedApiPackage() {
+        assertFalse(Files.exists(Path.of("src", "main", "java", "service", "api", "TablePlacementJson.java")),
+                "service/api TIER-1 korumalı; yardımcı orada kalmamalı");
+        assertTrue(Files.exists(HELPER));
     }
 
     private static String bodyOf(String source, String signature) {

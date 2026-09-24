@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.mindrot.jbcrypt.BCrypt;
 import service.UserService;
+import service.layout.TablePlacementJson;
 import state.AppState;
 import state.TableSnapshot;
 
