@@ -26,10 +26,21 @@ import java.util.Set;
  */
 public class RestaurantLayoutService {
 
-    /** Bir alan ve ona bağlı masa numaraları (DB sırasında). */
-    public record AreaTables(RestaurantArea area, List<Integer> tableNumbers) {
+    /**
+     * Bir alan, ona bağlı masa numaraları ve bu masaların DEĞİŞMEZ yerleşimleri
+     * (DB sırasında). {@code placements} ile {@code tableNumbers} aynı sıradadır.
+     */
+    public record AreaTables(RestaurantArea area,
+                             List<Integer> tableNumbers,
+                             List<model.TablePlacement> placements) {
         public AreaTables {
             tableNumbers = List.copyOf(tableNumbers);
+            placements = placements == null ? List.of() : List.copyOf(placements);
+        }
+
+        /** Yerleşim bilgisi olmadan (tüm masalar konumsuz kabul edilir). */
+        public AreaTables(RestaurantArea area, List<Integer> tableNumbers) {
+            this(area, tableNumbers, List.of());
         }
     }
 
@@ -82,6 +93,9 @@ public class RestaurantLayoutService {
         }
 
         Map<Integer, List<Integer>> byArea = new LinkedHashMap<>();
+        // Yerleşim alanları (x/y/genişlik/yükseklik/şekil/dönüş) çalışan düzene
+        // taşınır; aksi halde "Katlar" görünümü kaydedilen yerleşimi göremez.
+        Map<Integer, List<model.TablePlacement>> placementsByArea = new LinkedHashMap<>();
         Map<Integer, RestaurantArea> areaById = new LinkedHashMap<>();
         for (RestaurantArea area : areas) {
             if (area.getId() == null) {
@@ -92,6 +106,7 @@ public class RestaurantLayoutService {
                         "Masa düzeni geçersiz: alan kimliği yinelenmiş (" + area.getId() + ")");
             }
             byArea.put(area.getId(), new ArrayList<>());
+            placementsByArea.put(area.getId(), new ArrayList<>());
         }
 
         Set<Integer> seenTables = new LinkedHashSet<>();
@@ -112,6 +127,7 @@ public class RestaurantLayoutService {
                                 + " aktif olmayan veya bilinmeyen bir alana bağlı");
             }
             bucket.add(t.getTableNo());
+            placementsByArea.get(t.getAreaId()).add(model.TablePlacement.of(t));
         }
 
         List<AreaTables> out = new ArrayList<>();
@@ -123,7 +139,7 @@ public class RestaurantLayoutService {
                         "Masa düzeni geçersiz: alanda hiç aktif masa yok ("
                                 + area.getBuilding() + " / " + area.getFloor() + ")");
             }
-            out.add(new AreaTables(area, numbers));
+            out.add(new AreaTables(area, numbers, placementsByArea.get(area.getId())));
         }
         return List.copyOf(out);
     }

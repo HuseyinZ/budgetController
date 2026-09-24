@@ -97,6 +97,12 @@ public class AppState {
          * keyfi/boşluklu numaralara izin verir, bu yüzden liste tutulur.
          */
         private final List<Integer> tableNumbers;
+        /**
+         * Masa numarası → DEĞİŞMEZ yerleşim (0-1000 normalize). Her masa için
+         * bir kayıt bulunur; konumu olmayan masalar {@link model.TablePlacement#isPlaced()}
+         * {@code false} döner ve görüntü tarafında geçici yerleşim alır.
+         */
+        private final Map<Integer, model.TablePlacement> placements;
 
         /** 3 seviyeli (geriye uyum): Bina + Kat + Masa. Salon boş. */
         public AreaDefinition(String building, String section, int startTableNo, int tableCount) {
@@ -112,12 +118,37 @@ public class AppState {
                             .collect(Collectors.toList()));
         }
 
-        /** Açık masa numarası listesi — DB kaynağının kullandığı biçim. */
+        /** Açık masa numarası listesi; yerleşim bilgisi yok (tüm masalar konumsuz). */
         public AreaDefinition(String building, String section, String salon, List<Integer> tableNumbers) {
+            this(building, section, salon, tableNumbers, List.of());
+        }
+
+        /**
+         * Açık masa numarası listesi + kaydedilmiş yerleşimler — DB kaynağının
+         * kullandığı biçim. Yerleşimi verilmeyen masa konumsuz kabul edilir;
+         * alana ait olmayan yerleşim kayıtları yok sayılır.
+         */
+        public AreaDefinition(String building, String section, String salon,
+                              List<Integer> tableNumbers, List<model.TablePlacement> placements) {
             this.building = building == null ? "" : building;
             this.section = section == null ? "" : section;
             this.salon = salon == null ? "" : salon;
             this.tableNumbers = tableNumbers == null ? List.of() : List.copyOf(tableNumbers);
+
+            Map<Integer, model.TablePlacement> byNo = new LinkedHashMap<>();
+            if (placements != null) {
+                for (model.TablePlacement p : placements) {
+                    if (p != null) {
+                        byNo.put(p.tableNo(), p);
+                    }
+                }
+            }
+            Map<Integer, model.TablePlacement> ordered = new LinkedHashMap<>();
+            for (Integer tableNo : this.tableNumbers) {
+                model.TablePlacement p = byNo.get(tableNo);
+                ordered.put(tableNo, p != null ? p : model.TablePlacement.unplaced(tableNo));
+            }
+            this.placements = Collections.unmodifiableMap(ordered);
         }
 
         public String getBuilding() {
@@ -141,6 +172,16 @@ public class AppState {
         /** Alandaki masa numaraları, DB sırasında. Değiştirilemez. */
         public List<Integer> getTableNumbers() {
             return tableNumbers;
+        }
+
+        /** Masaların değişmez yerleşimleri, masa sırasında (konumsuzlar dahil). */
+        public List<model.TablePlacement> getPlacements() {
+            return List.copyOf(placements.values());
+        }
+
+        /** Bir masanın yerleşimi; masa bu alana ait değilse boş. */
+        public java.util.Optional<model.TablePlacement> getPlacement(int tableNo) {
+            return java.util.Optional.ofNullable(placements.get(tableNo));
         }
     }
 
@@ -265,14 +306,25 @@ public class AppState {
      * <p>Yalnız SELECT çalıştırır; hiçbir alan/masa oluşturmaz.
      */
     private LayoutSnapshot loadSnapshotFromDatabase() {
+        return buildSnapshot(layoutService.loadActiveLayout());
+    }
+
+    /**
+     * Doğrulanmış düzenden DEĞİŞMEZ anlık görüntü kurar. Saf fonksiyondur
+     * (DB'ye dokunmaz); yerleşim alanları (konum, ölçü, şekil, dönüş)
+     * {@link AreaDefinition} içine taşınır, böylece "Katlar" görünümü
+     * kaydedilmiş düzeni yeniden başlatmadan çizebilir.
+     */
+    static LayoutSnapshot buildSnapshot(List<RestaurantLayoutService.AreaTables> entries) {
         List<AreaDefinition> defs = new ArrayList<>();
         Map<Integer, TableLayout> tableLayouts = new LinkedHashMap<>();
-        for (RestaurantLayoutService.AreaTables entry : layoutService.loadActiveLayout()) {
+        for (RestaurantLayoutService.AreaTables entry : entries) {
             AreaDefinition area = new AreaDefinition(
                     entry.area().getBuilding(),
                     entry.area().getFloor(),
                     entry.area().getSalon(),
-                    entry.tableNumbers());
+                    entry.tableNumbers(),
+                    entry.placements());
             defs.add(area);
             for (Integer tableNo : area.getTableNumbers()) {
                 tableLayouts.put(tableNo,

@@ -64,6 +64,39 @@ class RestaurantLayoutServiceTest {
     }
 
     @Test
+    void placementFieldsSurviveTheService() {
+        TableLayoutEntry placed = table(101, 1, 1);
+        placed.setPosX(120);
+        placed.setPosY(340);
+        placed.setWidth(150);
+        placed.setHeight(90);
+        placed.setShape("round");
+        placed.setRotationDeg(45);
+        TableLayoutEntry unplaced = table(102, 1, 2);
+
+        var layout = service(List.of(area(1, "A", "Kat", "", 1)),
+                List.of(placed, unplaced)).loadActiveLayout();
+
+        var placements = layout.get(0).placements();
+        assertEquals(2, placements.size(), "her masa için bir yerleşim");
+        assertEquals(List.of(101, 102),
+                placements.stream().map(model.TablePlacement::tableNo).toList(),
+                "yerleşimler masa sırasıyla hizalı olmalı");
+
+        model.TablePlacement p = placements.get(0);
+        assertEquals(120, p.posX());
+        assertEquals(340, p.posY());
+        assertEquals(150, p.width());
+        assertEquals(90, p.height());
+        assertEquals("ROUND", p.shape(), "şekil normalize edilmeli");
+        assertEquals(45, p.rotationDeg());
+        assertTrue(p.isPlaced());
+        assertTrue(!placements.get(1).isPlaced(), "konumsuz masa konumsuz kalmalı");
+
+        assertThrows(UnsupportedOperationException.class, () -> placements.add(null));
+    }
+
+    @Test
     void supportsNonContiguousTableNumbers() {
         var layout = service(
                 List.of(area(1, "A", "Kat", "", 1)),
