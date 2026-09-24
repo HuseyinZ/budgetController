@@ -246,6 +246,54 @@ header h1 { margin: 0; font-size: 18px; }
 .table-ordered { background: #9bcbef; color: #0d3a5f; }
 .table-served  { background: #a5d6a7; color: #1b5e20; }
 
+/* ---------- Fiziksel kat planı (tam salon + "Tümü") ----------
+   Konum/ölçü/yazı boyu JS'de 0-1000 normalize yerleşimden hesaplanır.
+   Durum rengi şekil katmanındadır (döndürülür); buton ve yazı düz kalır. */
+.floor-plan-host {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.floor-plan-canvas {
+  position: relative;
+  box-sizing: border-box;
+  background: #fafaf7;
+  border: 1px solid #e1e1dc;
+  border-radius: 10px;
+}
+.table-button.floor-table {
+  position: absolute;
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 2px;
+  gap: 2px;
+  align-items: center;
+  background: transparent !important;
+  border-radius: 0;
+  overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+}
+.floor-table .floor-table-shape {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 1.5px solid rgba(0, 0, 0, 0.55);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.floor-table.shape-ROUND .floor-table-shape,
+.floor-table.shape-OVAL .floor-table-shape { border-radius: 50%; }
+.table-button.floor-table .table-no,
+.table-button.floor-table .table-total {
+  position: relative;
+  z-index: 1;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.table-button.floor-table .table-no { font-size: 1em; }
+.table-button.floor-table .table-total { font-size: 0.8em; }
+.table-button.floor-table .table-resv-badge { z-index: 2; }
+
 /* ---------- Order items ---------- */
 .order-items {
   display: flex;
@@ -1048,5 +1096,7 @@ header h1 { margin: 0; font-size: 18px; }
 }
 @media (min-width: 900px) {
   .view { max-width: 1000px; margin: 0 auto; }
+  /* Fiziksel planda geniş ekranın tamamı kullanılır — gereksiz yan boşluk yok */
+  .view.floor-mode { max-width: none; }
   .products-list { grid-template-columns: repeat(4, 1fr); }
 }
