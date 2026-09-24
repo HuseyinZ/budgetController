@@ -6,7 +6,9 @@ import state.TableSnapshot;
 
 import model.MoneyUtil;
 import model.Role;
+import model.TablePlacement;
 import model.User;
+import service.layout.LayoutAutoArrange;
 
 import javax.swing.*;
 import java.awt.*;
@@ -108,10 +110,14 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
     // ============================================================
 
     private void buildLayout() {
+        // Düzen yeniden yüklendiğinde (AppState.reloadLayout) kullanıcı aynı
+        // salonda kalsın; salon artık yoksa ilk salona düşülür.
+        String previousSalonKey = currentSalonKey;
         removeAll();
         tableButtons.clear();
         salonButtons.clear();
         currentSalonKey = null;
+        currentArea = null;
 
         // Garson sadece yetkilendirilmiş alanları görür; Admin/Kasiyer tümünü.
         List<AppState.AreaDefinition> accessible = appState.getAccessibleAreas(currentUser);
@@ -170,10 +176,19 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
 
         add(rightPanel, BorderLayout.CENTER);
 
-        // İlk salonu otomatik seç
+        // Önceki salonu (yeni anlık görüntüdeki karşılığıyla) koru; yoksa ilk salon.
+        // Yeni AreaDefinition nesnesi kullanılır → kaydedilen yerleşim hemen görünür.
         if (!accessible.isEmpty()) {
-            AppState.AreaDefinition first = accessible.get(0);
-            selectSalon(first);
+            AppState.AreaDefinition target = accessible.get(0);
+            if (previousSalonKey != null) {
+                for (AppState.AreaDefinition a : accessible) {
+                    if (previousSalonKey.equals(salonKey(a.getBuilding(), a.getSection(), a.getSalon()))) {
+                        target = a;
+                        break;
+                    }
+                }
+            }
+            selectSalon(target);
         }
 
         revalidate();
@@ -352,8 +367,10 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
 
         JComponent content;
         if (activeFilter == StatusFilter.ALL) {
-            content = buildTablesGrid(currentArea);
+            // Seçili alan: KAYDEDİLMİŞ kat planı (0-1000 normalize, ölçeklenir)
+            content = buildFloorPlan(currentArea);
         } else {
+            // Boş/Dolu filtreleri tüm salonlara yayılır → ızgara/liste kalır
             content = buildGlobalFilteredView();
         }
 
@@ -534,20 +551,18 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
         refreshGrid();
     }
 
-    /** Verilen alana ait masaları grid içinde basar — aktif filtreye göre. */
-    private JPanel buildTablesGrid(AppState.AreaDefinition area) {
-        // Dış wrapper: Scrollable BoxLayout Y_AXIS — ScrollPane'in mouse wheel
-        // scroll'unu kesin destekler (tracksViewportWidth=true, height=false).
-        ScrollablePanel wrapper = new ScrollablePanel();
-        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+    /**
+     * Seçili alanın masalarını KAYDEDİLMİŞ yerleşime göre kat planı olarak çizer.
+     *
+     * <p>Yerleşim, {@code AppState} anlık görüntüsündeki {@link AppState.AreaDefinition}
+     * içinden okunur — bu panel veritabanına HİÇ dokunmaz. Konumu olmayan masalar
+     * deterministik geçici yuva alır ({@link LayoutAutoArrange#resolve}); bu yuvalar
+     * kayıtlı masalarla çakışmaz ve hiçbir şey kaydedilmez.
+     */
+    private JComponent buildFloorPlan(AppState.AreaDefinition area) {
+        List<Integer> tableNumbers = area.getTableNumbers();
 
-        JPanel grid = new JPanel(new GridLayout(0, 5, 8, 8));
-        grid.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        grid.setAlignmentX(Component.LEFT_ALIGNMENT);
-        List<Integer> tableNumbers = new ArrayList<>(area.getTableNumbers());
-        Collections.sort(tableNumbers);
-
-        // Sayım — sayma için her zaman tüm masaları kontrol et
+        // Sayım — her zaman tüm masalar
         int total = tableNumbers.size();
         int empty = 0;
         int occupied = 0;
@@ -561,40 +576,44 @@ public class RestaurantTablesPanel extends JPanel implements Scrollable {
                     + "  •  Dolu: " + occupied);
         }
 
-        int shown = 0;
-        for (Integer tableNo : tableNumbers) {
-            TableOrderStatus st = appState.snapshot(tableNo).getStatus();
-            boolean isEmpty = (st == null || st == TableOrderStatus.EMPTY);
-            // Filter
-            if (activeFilter == StatusFilter.EMPTY && !isEmpty) continue;
-            if (activeFilter == StatusFilter.OCCUPIED && isEmpty) continue;
-            JButton button = createTableButton(tableNo);
-            grid.add(button);
-            shown++;
+        List<TablePlacement> resolved = LayoutAutoArrange.resolve(area.getPlacements());
+        if (resolved.isEmpty()) {
+            JLabel none = new JLabel("Bu alanda masa yok", SwingConstants.CENTER);
+            none.setForeground(Color.GRAY);
+            none.setFont(none.getFont().deriveFont(Font.ITALIC, 14f));
+            none.setBorder(BorderFactory.createEmptyBorder(40, 0, 40, 0));
+            return none;
         }
 
-        if (shown == 0) {
-            JLabel empty1 = new JLabel("Bu filtreye uyan masa yok",
-                    SwingConstants.CENTER);
-            empty1.setForeground(Color.GRAY);
-            empty1.setFont(empty1.getFont().deriveFont(Font.ITALIC, 14f));
-            empty1.setAlignmentX(Component.LEFT_ALIGNMENT);
-            empty1.setBorder(BorderFactory.createEmptyBorder(40, 0, 40, 0));
-            wrapper.add(empty1);
-        } else {
-            wrapper.add(grid);
+        FloorPlanPanel plan = new FloorPlanPanel();
+        for (TablePlacement placement : resolved) {
+            plan.addTable(createFloorTableButton(placement.tableNo()), placement);
         }
-        return wrapper;
+        return plan;
     }
 
+    /** Filtreli ızgara görünümleri için klasik dikdörtgen masa butonu. */
     private JButton createTableButton(int tableNo) {
         JButton button = new JButton();
-        button.setFocusPainted(false);
         button.setOpaque(true);
         button.setBackground(Color.RED);
         Dimension preferredSize = new Dimension(150, 100);
         button.setPreferredSize(preferredSize);
         button.setMinimumSize(preferredSize);
+        return registerTableButton(button, tableNo);
+    }
+
+    /** Kat planı için kaydedilmiş şekil/dönüşle çizilen masa butonu. */
+    private JButton createFloorTableButton(int tableNo) {
+        return registerTableButton(new FloorTableButton(), tableNo);
+    }
+
+    /**
+     * Ortak davranış — iki görünümde de AYNI: tıklama sipariş diyaloğunu açar,
+     * buton {@link #refreshButton} ile durum/toplam/renk güncellemesi alır.
+     */
+    private JButton registerTableButton(JButton button, int tableNo) {
+        button.setFocusPainted(false);
         button.addActionListener(e -> openTableDialog(tableNo));
         tableButtons.put(tableNo, button);
         refreshButton(tableNo);
