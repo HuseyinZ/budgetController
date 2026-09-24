@@ -161,6 +161,9 @@ class LayoutCanvasDragTest {
         TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
         TableLayoutEntry passive = at(102, 400, 0, 100, 100, false);
         LayoutCanvas canvas = canvasWith(List.of(moving, passive));
+        // Bu test yalnız "pasif masa engel değildir" kuralını ölçer; yapışma
+        // kapatılarak ham konum doğrudan doğrulanır (yapışmanın kendi testleri var).
+        canvas.setSnapEnabled(false);
 
         press(canvas, 50, 50);
         drag(canvas, 480, 50);
@@ -177,6 +180,90 @@ class LayoutCanvasDragTest {
         assertTrue(canvas.wouldOverlap(moving, 250, 0, 100, 100), "üst üste binme");
         assertFalse(canvas.wouldOverlap(moving, 200, 0, 100, 100), "kenar teması serbest");
         assertFalse(canvas.wouldOverlap(moving, 0, 0, 100, 100), "kendisiyle çakışmaz");
+    }
+
+    // ---------------- ızgara / yapışma ----------------
+
+    private static void dragWithShift(LayoutCanvas canvas, int x, int y) {
+        canvas.dispatchEvent(new MouseEvent(canvas, MouseEvent.MOUSE_DRAGGED,
+                System.currentTimeMillis(), MouseEvent.SHIFT_DOWN_MASK, x, y, 0, false));
+    }
+
+    @Test
+    void draggingSnapsToTheGridByDefault() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving));
+        assertTrue(canvas.isSnapEnabled(), "yapışma varsayılan olarak açık olmalı");
+        assertEquals(LayoutCanvas.DEFAULT_GRID_STEP, canvas.getGridStep());
+
+        press(canvas, 10, 10);
+        drag(canvas, 273, 10);   // ham 263 → 25'lik ızgarada 275
+
+        assertEquals(275, moving.getPosX(), "en yakın ızgara çizgisine yapışmalı");
+        assertEquals(0, moving.getPosY());
+    }
+
+    @Test
+    void gridStepChangeAppliesImmediately() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving));
+        canvas.setGridStep(100);
+
+        press(canvas, 10, 10);
+        drag(canvas, 243, 10);   // ham 233 → 100'lük ızgarada 200
+
+        assertEquals(200, moving.getPosX());
+        assertEquals(100, canvas.getGridStep());
+    }
+
+    @Test
+    void shiftEnablesTemporaryFreeMovementWithoutChangingTheSetting() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving));
+
+        press(canvas, 10, 10);
+        dragWithShift(canvas, 243, 10);   // ham 233 — yapışma yok
+
+        assertEquals(233, moving.getPosX(), "Shift ile serbest hareket etmeli");
+        assertTrue(canvas.isSnapEnabled(), "kalıcı ayar değişmemeli");
+    }
+
+    @Test
+    void snapCanBeTurnedOff() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving));
+        canvas.setSnapEnabled(false);
+
+        press(canvas, 10, 10);
+        drag(canvas, 243, 10);
+
+        assertEquals(233, moving.getPosX());
+    }
+
+    @Test
+    void snapRoundingIsIndependentOfCanvasSize() {
+        // Izgara normalize uzayda hesaplanır → yeniden boyutlandırma etkilemez
+        LayoutCanvas canvas = canvasWith(List.of(at(101, 0, 0, 100, 100, true)));
+        canvas.setGridStep(50);
+        assertEquals(100, canvas.snap(110));
+        canvas.setSize(500, 500);
+        assertEquals(100, canvas.snap(110));
+        assertEquals(150, canvas.snap(130));
+    }
+
+    @Test
+    void snapNeverBreaksOverlapOrBoundsRules() {
+        TableLayoutEntry moving = at(101, 0, 0, 100, 100, true);
+        TableLayoutEntry blocker = at(102, 300, 0, 100, 100, true);
+        LayoutCanvas canvas = canvasWith(List.of(moving, blocker));
+        canvas.setGridStep(25);
+
+        press(canvas, 10, 10);
+        drag(canvas, 260, 10);   // yapışınca 250 → 250..350 ile 300..400 çakışır
+        assertEquals(0, moving.getPosX(), "yapışmış konum da çakışma denetiminden geçmeli");
+
+        drag(canvas, 5000, 10);  // sınır dışı
+        assertTrue(moving.getPosX() + moving.getWidth() <= 1000, "sınır korunmalı");
     }
 
     @Test

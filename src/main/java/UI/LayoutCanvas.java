@@ -30,10 +30,22 @@ class LayoutCanvas extends JPanel {
     private static final Color INACTIVE_FILL = new Color(232, 232, 232);
     private static final Color DIRTY_BORDER = new Color(0, 120, 200);
     private static final Color SELECTED_BORDER = new Color(200, 80, 0);
+    private static final Color GRID_COLOR = new Color(226, 226, 226);
 
     /** Ekranda gösterilen masalar (editörün çalışma kopyası). */
     private final List<TableLayoutEntry> tables = new ArrayList<>();
     private final java.util.Set<Integer> dirty = new java.util.HashSet<>();
+
+    /** Izgara adımı (0-1000 normalize uzayda). 0 → ızgara kapalı. */
+    private int gridStep = DEFAULT_GRID_STEP;
+    /** Sürükleme sırasında ızgaraya yapış. */
+    private boolean snapEnabled = true;
+    /** Geçici serbest hareket (Shift basılı) — ayarları değiştirmez. */
+    private boolean freeMoveOverride;
+
+    static final int DEFAULT_GRID_STEP = 25;
+    static final int MIN_GRID_STEP = 5;
+    static final int MAX_GRID_STEP = 200;
 
     private Integer selectedTableNo;
     private TableLayoutEntry dragging;
@@ -53,6 +65,42 @@ class LayoutCanvas extends JPanel {
         };
         addMouseListener(mouse);
         addMouseMotionListener(mouse);
+    }
+
+    /** Izgara adımını değiştirir; değişiklik ANINDA uygulanır (çizim + yapışma). */
+    void setGridStep(int step) {
+        this.gridStep = Math.max(0, Math.min(step, MAX_GRID_STEP));
+        repaint();
+    }
+
+    int getGridStep() {
+        return gridStep;
+    }
+
+    void setSnapEnabled(boolean enabled) {
+        this.snapEnabled = enabled;
+    }
+
+    boolean isSnapEnabled() {
+        return snapEnabled;
+    }
+
+    /** Shift ile geçici serbest hareket — kalıcı ayarı değiştirmez. */
+    void setFreeMoveOverride(boolean freeMove) {
+        this.freeMoveOverride = freeMove;
+    }
+
+    /** Bu an için yapışma etkin mi? */
+    boolean snapActive() {
+        return snapEnabled && !freeMoveOverride && gridStep >= MIN_GRID_STEP;
+    }
+
+    /** Değeri en yakın ızgara çizgisine yuvarlar. */
+    int snap(int value) {
+        if (!snapActive()) {
+            return value;
+        }
+        return Math.round(value / (float) gridStep) * gridStep;
     }
 
     void setSelectionListener(IntConsumer listener) {
@@ -120,8 +168,11 @@ class LayoutCanvas extends JPanel {
         // Önce ÖNERİLEN konum hesaplanır, sonra diğer aktif masalarla çakışma
         // denetlenir. Çakışıyorsa hareket reddedilir ve masa SON GEÇERLİ
         // konumunda kalır — geçersiz durum düzenleme sırasında hiç oluşmaz.
-        int x = clamp(toNormalized(e.getX()) - grabDx, dragging.getWidth());
-        int y = clamp(toNormalized(e.getY()) - grabDy, dragging.getHeight());
+        // Shift → geçici serbest hareket; ayar kalıcı olarak değişmez.
+        freeMoveOverride = e.isShiftDown();
+        // Sıra: ham konum → ızgaraya yapış → sınıra clamp → çakışma denetimi
+        int x = clamp(snap(toNormalized(e.getX()) - grabDx), dragging.getWidth());
+        int y = clamp(snap(toNormalized(e.getY()) - grabDy), dragging.getHeight());
         if (x == dragging.getPosX() && y == dragging.getPosY()) {
             return;
         }
@@ -204,6 +255,7 @@ class LayoutCanvas extends JPanel {
         int edge = toPixel(SPACE);
         g2.setColor(new Color(245, 245, 245));
         g2.fillRect(0, 0, edge, edge);
+        drawGrid(g2, edge);
         g2.setColor(new Color(210, 210, 210));
         g2.drawRect(0, 0, edge, edge);
 
@@ -214,6 +266,26 @@ class LayoutCanvas extends JPanel {
             drawTable(g2, t);
         }
         g2.dispose();
+    }
+
+    /**
+     * İnce, açık gri, kesik ızgara çizgileri. Normalize uzayda hesaplanır, bu
+     * yüzden pencere boyutu değişince ölçekle birlikte doğru yerde kalır.
+     */
+    private void drawGrid(Graphics2D g2, int edge) {
+        if (gridStep < MIN_GRID_STEP) {
+            return;
+        }
+        Graphics2D g = (Graphics2D) g2.create();
+        g.setColor(GRID_COLOR);
+        g.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+                10f, new float[]{3f, 4f}, 0f));
+        for (int v = gridStep; v < SPACE; v += gridStep) {
+            int p = toPixel(v);
+            g.drawLine(p, 0, p, edge);
+            g.drawLine(0, p, edge, p);
+        }
+        g.dispose();
     }
 
     private void drawTable(Graphics2D g2, TableLayoutEntry t) {
