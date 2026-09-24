@@ -55,13 +55,28 @@ final class FloorTableButton extends JButton {
         this.rotationDeg = rotationDeg;
         this.baseWidth = Math.max(0, baseWidth);
         this.baseHeight = Math.max(0, baseHeight);
-        // Küçük masada metin taşmasın: yazı boyu masa boyuyla orantılı (10-16 pt)
-        int side = Math.min(this.baseWidth, this.baseHeight);
-        if (side > 0) {
-            float size = Math.max(10f, Math.min(16f, side / 5f));
+        float size = fontSizeFor(this.baseWidth, this.baseHeight);
+        if (size > 0) {
             setFont(getFont().deriveFont(size));
         }
         repaint();
+    }
+
+    static final float MIN_FONT_PT = 11f;
+    static final float MAX_FONT_PT = 18f;
+
+    /**
+     * Masa boyutuna göre okunaklı yazı boyu. İki satır (numara + toplam)
+     * yüksekliğe, "Masa 101" genişliğe sığacak şekilde eksenler ayrı
+     * değerlendirilir; 11-18 pt aralığında tutulur. 0 → ölçü bilinmiyor.
+     */
+    static float fontSizeFor(int widthPx, int heightPx) {
+        if (widthPx <= 0 || heightPx <= 0) {
+            return 0f;
+        }
+        float byWidth = widthPx / 7f;      // "Masa 101" ≈ 7 karakter genişliği
+        float byHeight = heightPx / 3.2f;  // iki satır + satır aralığı
+        return Math.max(MIN_FONT_PT, Math.min(MAX_FONT_PT, Math.min(byWidth, byHeight)));
     }
 
     String getShapeName() {

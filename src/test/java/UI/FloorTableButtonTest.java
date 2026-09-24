@@ -91,7 +91,24 @@ class FloorTableButtonTest {
 
     @Test
     void fontScalesWithTableSizeWithinReadableBounds() {
-        assertEquals(10f, button("RECT", 0, 30, 30).getFont().getSize2D(), 0.01, "alt sınır");
-        assertEquals(16f, button("RECT", 0, 300, 300).getFont().getSize2D(), 0.01, "üst sınır");
+        assertEquals(FloorTableButton.MIN_FONT_PT, button("RECT", 0, 30, 30).getFont().getSize2D(), 0.01,
+                "alt sınır");
+        assertEquals(FloorTableButton.MAX_FONT_PT, button("RECT", 0, 300, 300).getFont().getSize2D(), 0.01,
+                "üst sınır");
+    }
+
+    @Test
+    void typicalWideScreenTableGetsAClearlyReadableFont() {
+        // Geniş ekranda tipik masa ≈ 108x49 px → iki satır rahat okunmalı
+        float size = FloorTableButton.fontSizeFor(108, 49);
+        assertTrue(size >= 14f, "yazı boyu: " + size);
+        assertTrue(size * 2 * 1.2f <= 49, "iki satır yüksekliğe sığmalı");
+    }
+
+    @Test
+    void fontSizeIsLimitedByTheSmallerAxis() {
+        assertEquals(FloorTableButton.fontSizeFor(70, 300), FloorTableButton.fontSizeFor(70, 1000), 0.01,
+                "dar masada genişlik belirleyici");
+        assertEquals(0f, FloorTableButton.fontSizeFor(0, 50), "ölçü bilinmiyorsa değiştirme");
     }
 }
