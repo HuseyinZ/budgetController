@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.mindrot.jbcrypt.BCrypt;
 import service.UserService;
+import service.layout.TablePlacementJson;
 import state.AppState;
 import state.TableSnapshot;
 
@@ -540,13 +541,17 @@ public class ApiServer {
 
     /**
      * GET /api/tables
-     * Kullanıcının erişebildiği tüm masaların özetini döner (bina/kat/salon/no/status).
+     * Kullanıcının erişebildiği tüm masaların özetini döner (bina/kat/salon/no/status)
+     * ve fiziksel plan için 0-1000 normalize yerleşimi (posX/posY/width/height/
+     * shape/rotationDeg). Yerleşim AppState anlık görüntüsünden gelir; konumsuz
+     * masalar DB'ye yazılmadan geçici yerleşim alır.
      */
     private void listTables(Context ctx) {
         User user = requireUser(ctx);
         List<AppState.AreaDefinition> areas = appState.getAccessibleAreas(user);
         List<Map<String, Object>> tables = new java.util.ArrayList<>();
         for (AppState.AreaDefinition area : areas) {
+            Map<Integer, model.TablePlacement> placements = TablePlacementJson.resolvedByTableNo(area);
             for (Integer tableNo : area.getTableNumbers()) {
                 TableSnapshot snap = appState.snapshot(tableNo);
                 Map<String, Object> t = new HashMap<>();
@@ -556,6 +561,7 @@ public class ApiServer {
                 t.put("salon", area.getSalon());
                 t.put("status", snap.getStatus() == null ? null : snap.getStatus().name());
                 t.put("total", snap.getTotal());
+                TablePlacementJson.putPlacement(t, placements.get(tableNo));
                 tables.add(t);
             }
         }
